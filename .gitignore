@@ -1,0 +1,14 @@
+# Frontend dependencies and generated outputs
+life-circle-demo/node_modules/
+life-circle-demo/dist/
+life-circle-demo/output/
+life-circle-demo/test-results/
+life-circle-demo/playwright-report/
+life-circle-demo/*.tsbuildinfo
+life-circle-demo/*.log
+
+# Local editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
