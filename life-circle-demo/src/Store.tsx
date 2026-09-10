@@ -20,7 +20,7 @@ export function Store({ children }: { children: ReactNode }) {
         status = await demoService.getStatus(id);
       }
       if (!mounted.current || live.current.requestId !== requestId) return;
-      if (status.status !== 'completed') { dispatch({ type: 'error', requestId, status: status.status === 'unavailable' ? 'unavailable' : 'failed', error: status.status === 'unavailable' ? '暂无演示数据，请选择地图上的 A、B、C 预设点。' : '本次模拟分析失败，重试后将返回正常演示结果。' }); return; }
+      if (status.status !== 'completed') { dispatch({ type: 'error', requestId, status: status.status === 'unavailable' ? 'unavailable' : 'failed', error: status.status === 'unavailable' ? '该坐标超出示意地图范围，请在地图内选择中心点。' : '本次模拟分析失败，重试后将返回正常演示结果。' }); return; }
       const result = await demoService.getResult(id);
       if (mounted.current) dispatch({ type: 'success', requestId, result });
     } catch { if (mounted.current) dispatch({ type: 'error', requestId, status: 'failed', error: '分析暂不可用，请重新体检。' }); }

@@ -15,7 +15,7 @@ export function DemoMap({ center, samples, result, filter, layers, focus, onFocu
   const visibleCenter = centerPoint.x >= 0 && centerPoint.x <= 1000 && centerPoint.y >= 0 && centerPoint.y <= 760;
   useEffect(() => { if (focus) setView({ x: focus.x - 300, y: focus.y - 228, w: 600, h: 456 }); }, [focus]);
   const zoom = (factor: number) => setView(v => { const w = Math.min(1500, Math.max(300, v.w * factor)); return { x: v.x + (v.w - w) / 2, y: v.y + (v.h - w * .76) / 2, w, h: w * .76 }; });
-  const locate = (f: Facility) => onFocus({ ...f, detail: `${categoryMeta[f.category].label} · ${f.inCircle ? '15 分钟圈内（演示）' : '圈外参考，不计入圈内数量'}`, nonce: Date.now() });
+  const locate = (f: Facility) => onFocus({ ...f, detail: `${categoryMeta[f.category].label} · 15 分钟圈内（演示）`, nonce: Date.now() });
   return <div className={styles.mapSurface}>
     <div className={styles.mapHeading}><span className={styles.liveDot}/><span>街区空间视图</span><span className={styles.smallMuted}>本地示意地图</span></div>
     <svg ref={svg} className={styles.mapSvg} aria-label="可交互演示地图" preserveAspectRatio="xMidYMid slice" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
@@ -41,8 +41,8 @@ export function DemoMap({ center, samples, result, filter, layers, focus, onFocu
       <g className={styles.placeLabels}><text x="207" y="186">青禾公园</text><text x="550" y="624">南苑绿地</text><text x="92" y="400">西里住区</text><text x="558" y="110">文景住区</text><text x="579" y="390">东里住区</text><text x="235" y="681">南苑住区</text><text x="875" y="180" transform="rotate(75 875 180)" fill="#6e9da4">青 禾 河</text></g>
       {result && layers.circle && <g data-testid="circle-layer"><polygon points={points(result.circle)} fill="url(#reach)" stroke="#238b77" strokeWidth="2.5" strokeDasharray="7 5"/><text x={result.circle[1].x} y={result.circle[1].y-14} className={styles.circleLabel}>15 分钟步行范围 · 演示</text></g>}
       {result && layers.blind && result.zones.filter(z=>filter==='all'||z.category===filter).map(z=><g key={z.id} data-testid={`zone-${z.status}`}><polygon points={points(z.points)} fill={z.status==='unknown'?'url(#unknownHatch)':'#859295'} fillOpacity=".5" stroke={z.status==='unknown'?'#bb9135':'#64777b'} strokeWidth="2" strokeDasharray="5 3"/><text x={z.position.x} y={z.position.y} textAnchor="middle" className={styles.zoneLabel}>{z.status==='unknown'?'? 数据待补充':'! 菜市场盲区'}</text></g>)}
-      {result && layers.facilities && <g data-testid="facilities-layer">{filterFacilities(result,filter).map(f=><g key={f.id} data-testid={`facility-${f.category}`} role="button" tabIndex={0} aria-label={`${f.name}，${f.inCircle?'圈内':'圈外参考'}`} transform={`translate(${f.x} ${f.y})`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();locate(f);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();locate(f);}}} className={styles.mapMarker}>
-        <circle r="17" fill="white" stroke={categoryMeta[f.category].color} strokeWidth="2" opacity={f.inCircle?1:.65}/><text textAnchor="middle" dy="5" fill={categoryMeta[f.category].color} fontSize="15" fontWeight="700">{categoryMeta[f.category].symbol}</text>{!f.inCircle&&<text y="30" textAnchor="middle" fill="#677980" fontSize="10">圈外参考</text>}
+      {result && layers.facilities && <g data-testid="facilities-layer">{filterFacilities(result,filter).map(f=><g key={f.id} data-testid={`facility-${f.category}`} role="button" tabIndex={0} aria-label={`${f.name}，圈内`} transform={`translate(${f.x} ${f.y})`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();locate(f);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();locate(f);}}} className={styles.mapMarker}>
+        <circle r="17" fill="white" stroke={categoryMeta[f.category].color} strokeWidth="2"/><text textAnchor="middle" dy="5" fill={categoryMeta[f.category].color} fontSize="15" fontWeight="700">{categoryMeta[f.category].symbol}</text>
       </g>)}</g>}
       {samples.map((s,i)=><g key={s.id} role="button" tabIndex={0} aria-label={`选择演示点 ${String.fromCharCode(65+i)}`} transform={`translate(${s.position.x} ${s.position.y})`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();onFocus(undefined);onPick(s.center);}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onPick(s.center);}}} className={styles.mapMarker}>
         <circle r="12" fill="#fff" stroke="#466f70" strokeWidth="1.5"/><text dy="4" textAnchor="middle" fontSize="11" fill="#335b5b" fontWeight="700">{String.fromCharCode(65+i)}</text>
@@ -53,7 +53,7 @@ export function DemoMap({ center, samples, result, filter, layers, focus, onFocu
     <div className={styles.mapTools}><Tooltip title="放大"><Button aria-label="放大地图" icon={<PlusOutlined/>} onClick={()=>zoom(.8)}/></Tooltip><Tooltip title="缩小"><Button aria-label="缩小地图" icon={<MinusOutlined/>} onClick={()=>zoom(1.25)}/></Tooltip><Tooltip title="复位视图"><Button aria-label="复位地图" icon={<AimOutlined/>} onClick={()=>{setView({x:0,y:0,w:1000,h:760});onFocus(undefined);}}/></Tooltip></div>
     {focus && <div className={styles.mapPopup}><EnvironmentOutlined/><div><strong>{focus.name}</strong><p>{focus.detail}</p></div><Button size="small" type="text" aria-label="关闭地图详情" icon={<CloseOutlined/>} onClick={()=>onFocus(undefined)}/></div>}
     {loading && <div className={styles.mapLoading} role="status"><span className={styles.pulse}/>正在加载演示结果…</div>}
-    {!visibleCenter && <div className={styles.mapNotice}>所选坐标超出示意地图，请选择预设演示点。</div>}
+    {!visibleCenter && <div className={styles.mapNotice}>所选坐标超出示意地图，请在地图范围内选点。</div>}
     <div className={styles.mapFoot}><span>拖动平移 · 点击选点 · A / B / C 为预设点</span><span>示意地图 / 非真实地理数据</span></div>
   </div>;
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { samples, createResult } from './data';
-import { summarize, filterFacilities, findSample } from './domain';
+import { samples, createResult, customSample } from './data';
+import { summarize, filterFacilities, findSample, pointInPolygon, pointToCenter } from './domain';
 import { reducer, initialState } from './state';
 import { createDemoService } from './service';
 
@@ -11,10 +11,23 @@ describe('deterministic demo evidence', () => {
       const counts = summarize(result);
       expect(counts.total).toBe(result.facilities.filter(f => f.inCircle).length);
       expect(result.facilities.some(f => !f.inCircle)).toBe(true);
+      expect(filterFacilities(result, 'all').every(f => f.inCircle)).toBe(true);
       expect(result.sample.id).toBe(sample.id);
       expect(createResult(sample, 'normal').facilities).toEqual(result.facilities);
     }
     expect(samples.map(s => createResult(s, 'normal').circle)).not.toEqual([[], [], []]);
+  });
+  it('keeps facilities at fixed geography while each center sees a different scan', () => {
+    const results = samples.map(s => createResult(s, 'normal'));
+    const footprint = (r: (typeof results)[number]) => JSON.stringify(r.facilities.map(f => [f.name, f.x, f.y]).sort());
+    expect(results.map(footprint)).toEqual([footprint(results[0]), footprint(results[0]), footprint(results[0])]);
+    const scans = results.map(r => r.facilities.filter(f => f.inCircle).map(f => f.name).sort().join('|'));
+    expect(new Set(scans).size).toBe(samples.length);
+  });
+  it('classifies a point against the reach polygon', () => {
+    const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(pointInPolygon({ x: 5, y: 5 }, square)).toBe(true);
+    expect(pointInPolygon({ x: 15, y: 5 }, square)).toBe(false);
   });
   it('unknown category is not a confirmed blind spot or a false zero', () => {
     const result = createResult(samples[0], 'insufficient');
@@ -65,5 +78,26 @@ describe('async demo service', () => {
     const service = createDemoService(0);
     const id = await service.createAnalysis({ center: { lng: 0, lat: 0 }, scenario: 'normal' });
     expect((await service.getStatus(id)).status).toBe('unavailable');
+  });
+  it('produces a custom result for any in-map coordinate', async () => {
+    const service = createDemoService(0);
+    const center = pointToCenter({ x: 500, y: 400 });
+    const id = await service.createAnalysis({ center, scenario: 'normal' });
+    expect((await service.getStatus(id)).status).toBe('completed');
+    const result = await service.getResult(id);
+    expect(result.sample.id).toBe('custom');
+    expect(result.sample.position.x).toBeCloseTo(500, 3);
+    expect(result.sample.position.y).toBeCloseTo(400, 3);
+  });
+  it('keeps coordinates outside the map unavailable', async () => {
+    const service = createDemoService(0);
+    const id = await service.createAnalysis({ center: pointToCenter({ x: -50, y: 400 }), scenario: 'normal' });
+    expect((await service.getStatus(id)).status).toBe('unavailable');
+  });
+  it('shows a preset blind zone only when the center is near it', () => {
+    const near = customSample(pointToCenter({ x: 450, y: 355 }));
+    const far = customSample(pointToCenter({ x: 900, y: 700 }));
+    expect(createResult(near, 'missing').zones).toHaveLength(1);
+    expect(createResult(far, 'missing').zones).toHaveLength(0);
   });
 });

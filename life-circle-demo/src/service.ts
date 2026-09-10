@@ -1,5 +1,5 @@
-import { createResult, samples } from './data';
-import { findSample } from './domain';
+import { createResult, customSample, samples } from './data';
+import { findSample, inMapBounds } from './domain';
 import type { AnalysisResult, AnalysisService, Conditions, TaskStatus } from './types';
 export function createDemoService(delay = 650): AnalysisService {
   const jobs = new Map<string, { ready: number; status: TaskStatus; result?: AnalysisResult }>();
@@ -9,11 +9,12 @@ export function createDemoService(delay = 650): AnalysisService {
     async getSamples() { return structuredClone(samples); },
     async createAnalysis(conditions: Conditions) {
       const id = `demo-${++sequence}`;
-      const sample = findSample(samples, conditions.center);
+      const available = inMapBounds(conditions.center);
+      const sample = findSample(samples, conditions.center) ?? customSample(conditions.center);
       const key = `${conditions.center.lng}:${conditions.center.lat}`;
-      const fails = conditions.scenario === 'failure' && !failures.has(key);
-      if (sample && fails) failures.add(key);
-      jobs.set(id, { ready: Date.now() + delay, status: !sample ? 'unavailable' : fails ? 'failed' : 'completed', result: sample && !fails ? createResult(sample, conditions.scenario) : undefined });
+      const fails = available && conditions.scenario === 'failure' && !failures.has(key);
+      if (fails) failures.add(key);
+      jobs.set(id, { ready: Date.now() + delay, status: !available ? 'unavailable' : fails ? 'failed' : 'completed', result: available && !fails ? createResult(sample, conditions.scenario) : undefined });
       // The demo has no history feature; retain only recent requests.
       if (jobs.size > 20) jobs.delete(jobs.keys().next().value!);
       return id;
