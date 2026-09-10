@@ -17,10 +17,10 @@ test('complete flow, filters, layers, facilities and full report', async ({ page
   mkdirSync('output/playwright', { recursive: true });
   await page.screenshot({ path: 'output/playwright/desktop-initial.png', fullPage: true, animations: 'disabled' });
   await analyze(page);
-  await expect(page.getByTestId('total-count')).toHaveText('9');
+  await expect(page.getByTestId('total-count')).toHaveText('7');
   await page.getByRole('button', { name: '药店', exact: true }).click();
   await expect(page.getByTestId('facility-market')).toHaveCount(0);
-  await expect(page.getByTestId('facility-pharmacy')).toHaveCount(4);
+  await expect(page.getByTestId('facility-pharmacy')).toHaveCount(2);
   await page.getByRole('checkbox', { name: '民生设施', exact: true }).uncheck();
   await expect(page.getByTestId('facilities-layer')).toHaveCount(0);
   await page.getByRole('checkbox', { name: '民生设施', exact: true }).check();
@@ -42,7 +42,7 @@ test('missing and unknown data remain distinct', async ({ page }) => {
   await page.getByLabel('演示场景', { exact: true }).selectOption('missing');
   await analyze(page);
   await expect(page.getByTestId('zone-blind')).toHaveCount(1);
-  await expect(page.getByTestId('count-market')).toHaveText('2');
+  await expect(page.getByTestId('count-market')).toHaveText('3');
   await page.getByRole('button', { name: /东北住区.*服务盲区/ }).click();
   await expect(page.getByRole('button', { name: '关闭地图详情' })).toBeVisible();
   await page.screenshot({ path: 'output/playwright/desktop-blind.png', fullPage: true, animations: 'disabled' });
@@ -58,11 +58,11 @@ test('failure recovers on retry and custom position never inherits a result', as
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
   await expect(page.getByText(/本次模拟分析失败/)).toBeVisible();
   await page.getByRole('button', { name: '重试分析', exact: true }).click();
-  await expect(page.getByTestId('total-count')).toHaveText('9');
+  await expect(page.getByTestId('total-count')).toHaveText('7');
   await page.getByRole('textbox', { name: '中心点经度' }).fill('110');
   await page.getByRole('button', { name: '应用坐标', exact: true }).click();
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
-  await expect(page.getByText(/暂无演示数据，请选择地图/)).toBeVisible();
+  await expect(page.getByText(/超出示意地图范围/)).toBeVisible();
   await expect(page.getByText(/下方保留的是/)).toBeVisible();
 });
 test('all presets, coordinates and old requests', async ({ page }) => {
@@ -71,7 +71,7 @@ test('all presets, coordinates and old requests', async ({ page }) => {
     await page.getByLabel('演示样例', { exact: true }).selectOption(id);
     await page.getByRole('button', { name: '开始体检', exact: true }).click();
     await expect(page.getByText(/条件已修改，需重新分析/)).not.toBeVisible();
-    await expect(page.getByTestId('total-count')).toHaveText('9');
+    await expect(page.getByTestId('total-count')).toHaveText('6');
   }
   await page.getByRole('button', { name: '选择演示点 A', exact: true }).press('Enter');
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
@@ -85,7 +85,6 @@ test('all presets, coordinates and old requests', async ({ page }) => {
 });
 test('mobile panels and report are operable without overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: '分析设置', exact: true }).click();
   await page.getByLabel('演示场景', { exact: true }).selectOption('missing');
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
   await expect(page.getByTestId('zone-blind')).toBeVisible();
@@ -94,6 +93,29 @@ test('mobile panels and report are operable without overflow', async ({ page }) 
   await page.getByRole('button', { name: /查看完整体检报告/ }).click();
   await expect(page.getByTestId('report')).toBeVisible();
   await page.screenshot({ path: 'output/playwright/mobile-report.png', fullPage: true, animations: 'disabled' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('medium width stacks the analysis panel below the map at equal width', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 1000 });
+  await expect(page.getByRole('heading', { name: '分析设置' })).toBeVisible();
+  const mapBox = (await page.getByLabel('可交互演示地图', { exact: true }).evaluate(el => {
+    const r = el.closest('section')!.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };
+  }))!;
+  const panelBox = await page.getByRole('heading', { name: '分析设置' }).evaluate(el => {
+    const r = el.closest('aside')!.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+  expect(panelBox.y).toBeGreaterThan(mapBox.y + mapBox.height - 6);
+  expect(Math.abs(panelBox.x - mapBox.x)).toBeLessThan(4);
+  expect(Math.abs(panelBox.width - mapBox.width)).toBeLessThan(4);
+  await page.screenshot({ path: 'output/playwright/tablet-stacked.png', fullPage: true, animations: 'disabled' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('very narrow width shows an interaction notice without overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 340, height: 800 });
+  await expect(page.getByText('窗口过窄，交互空间有限，请加宽窗口或横屏使用。')).toBeVisible();
+  await page.screenshot({ path: 'output/playwright/narrow-notice.png', fullPage: true, animations: 'disabled' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
@@ -116,6 +138,16 @@ test('zoom and pan preserve the selection; background click selects a new positi
   await page.mouse.click(x, y);
   await expect(page.getByRole('textbox', { name: '中心点经度' })).not.toHaveValue('116.399');
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
-  await expect(page.getByText(/暂无演示数据，请选择地图/)).toBeVisible();
+  await expect(page.getByTestId('circle-layer')).toBeVisible();
+  await expect(page.getByTestId('total-count')).toHaveText(/^\d+$/);
+});
+
+test('any in-map point produces an analysis result', async ({ page }) => {
+  await page.getByRole('textbox', { name: '中心点经度' }).fill('116.395');
+  await page.getByRole('button', { name: '应用坐标', exact: true }).click();
+  await page.getByRole('button', { name: '开始体检', exact: true }).click();
+  await expect(page.getByTestId('circle-layer')).toBeVisible();
+  await expect(page.getByTestId('total-count')).toHaveText(/^\d+$/);
+  await page.screenshot({ path: 'output/playwright/custom-point.png', fullPage: true, animations: 'disabled' });
 });
 
