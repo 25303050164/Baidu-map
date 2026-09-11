@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Checkbox, Drawer, Input, Segmented, Tag } from 'antd';
 import { ArrowRightOutlined, CheckCircleOutlined, CompassOutlined, EnvironmentOutlined, ExperimentOutlined, FileTextOutlined, InfoCircleOutlined, BlockOutlined, ReloadOutlined, SettingOutlined, ShopOutlined, MedicineBoxOutlined, ReadOutlined, RadarChartOutlined, CloseOutlined } from '@ant-design/icons';
 import { useStore } from './Store';
 import { categories, categoryMeta, scenarioLabels, type Category, type Filter, type Scenario } from './types';
 import { filterFacilities, findSample, summarize } from './domain';
+import { analysisResultToReportView } from './report';
+import { ReportPage } from './ReportPage';
 import { DemoMap, type Focus } from './Map';
 import { FacilityChart } from './Chart';
 import styles from './styles.module.css';
@@ -18,6 +20,7 @@ export default function App() {
   useEffect(()=>{setCoords({lng:String(state.center.lng),lat:String(state.center.lat)});setCoordError('');},[state.center]);
   useEffect(()=>{setFocus(undefined);},[state.result,state.filter,state.center]);
   const sample=findSample(state.samples,state.center),result=state.result,summary=result?summarize(result):undefined;
+  const reportView=useMemo(()=>result?analysisResultToReportView(result):undefined,[result]);
   const pending=coords.lng!==String(state.center.lng)||coords.lat!==String(state.center.lat);
   function applyCoords(){ const lng=Number(coords.lng),lat=Number(coords.lat);if(!coords.lng.trim()||!coords.lat.trim()||!Number.isFinite(lng)||!Number.isFinite(lat)||lng< -180||lng>180||lat< -90||lat>90){setCoordError('请输入有效经纬度：经度 -180～180，纬度 -90～90。');return;}dispatch({type:'edit',center:{lng,lat}});setCoordError(''); }
   const analysisPanel=<>
@@ -66,11 +69,9 @@ export default function App() {
     <footer className={styles.footer}><span><InfoCircleOutlined/> 本 Demo 仅展示交互效果，未接入真实地图与算法。</span><span>邻里 · 让社区生活触手可及</span></footer>
     <Drawer title="生活圈概览" open={mobilePanel==='results'} placement="right" onClose={()=>setMobilePanel(null)} size={340}>{resultPanel}</Drawer>
     <Drawer title="生活圈体检报告" open={report} onClose={()=>setReport(false)} size={680} extra={<Tag color="gold">演示数据</Tag>}>
-      {result&&<article className={styles.report} data-testid="report"><div className={styles.eyebrow}>COMMUNITY CHECKUP / DEMO</div><h1>{result.sample.name}</h1><p className={styles.reportLead}>15 分钟生活圈 · 可视化体检报告</p>{state.dirty&&<Alert type="warning" title="当前设置已变更，本报告仍属于下列原分析条件。" showIcon/>}<dl><div><dt>中心点</dt><dd>{result.sample.center.lng.toFixed(6)}, {result.sample.center.lat.toFixed(6)}</dd></div><div><dt>生成时间</dt><dd>{new Date(result.generatedAt).toLocaleString('zh-CN',{hour12:false})}</dd></div><div><dt>演示场景</dt><dd>{scenarioLabels[result.scenario]}{result.scenario==='failure'?'（重试成功）':''}</dd></div><div><dt>分析口径</dt><dd>15 分钟步行范围与 1 公里盲区分别展示</dd></div><div><dt>数据来源</dt><dd>本地固定模拟数据，无真实更新时间</dd></div><div><dt>评估范围</dt><dd>示意地图范围内的点位；距离口径尚待正式确认</dd></div></dl>
-        <h2>01 / 圈内设施统计</h2><p>全部类别，不受主界面筛选影响，仅统计 15 分钟圈内设施。</p><table className={styles.reportTable}><thead><tr><th>设施类别</th><th>圈内数量</th><th>数据状态</th></tr></thead><tbody>{categories.map(c=><tr key={c}><td>{categoryMeta[c].label}</td><td>{summary![c]??'无法确定'}</td><td>{result.quality[c]==='complete'?'演示数据完整':'数据不足'}</td></tr>)}</tbody></table><FacilityChart result={result}/>
-        <h2>02 / 1 公里服务问题</h2>{result.zones.length?result.zones.map(z=><div key={z.id} className={styles.reportIssue}><strong>{z.name} · {categoryMeta[z.category].label} · {z.status==='blind'?'服务盲区':'无法判断'}</strong><p>{z.reason}</p></div>):<p>当前演示场景未设置服务盲区，不代表真实社区服务充分。</p>}
-        <h2>03 / 结果适用边界</h2><p>本报告仅展示产品交互。等时圈和盲区为预设示意结果，未经路网、距离或现场核查。单点结果不代表全社区人口覆盖率，设施可达不代表容量、质量或使用资格得到满足。</p><div className={styles.reportEnd}>— 演示报告结束 —</div>
-      </article>}
+      {reportView
+        ?<ReportPage view={reportView} stale={state.dirty} lastAttemptFailed={state.status==='failed'||state.status==='unavailable'}/>
+        :<div className={styles.empty}><span className={styles.emptyIcon}><RadarChartOutlined/></span><h3>尚无分析结果</h3><p>完成一次体检后，<br/>这里将生成完整报告。</p></div>}
     </Drawer>
   </div>;
 }
