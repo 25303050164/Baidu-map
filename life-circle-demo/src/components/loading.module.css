@@ -1,0 +1,31 @@
+/* AI 体检过程 Loading：覆盖层 + 卡片 + 地图圆盘动画（定位波纹 / 雷达扫描 / 设施浮现 / 等时圈 / 完成） */
+.overlay{position:fixed;inset:0;z-index:1200;background:#17363370;backdrop-filter:blur(3px);display:grid;place-items:center;animation:cardIn .3s both}
+.card{width:min(380px,86vw);background:white;border-radius:13px;padding:30px 26px 24px;text-align:center;box-shadow:0 18px 50px #0c2b2630}
+.stageVisual{position:relative;width:190px;height:190px;margin:4px auto 20px;border-radius:50%;background:radial-gradient(circle,#f4fbf8 0%,#e9f2ee 70%);border:1px solid #e2eee9}
+.pinCore{position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#159a82;box-shadow:0 0 0 4px #ffffff,0 0 0 6px #159a8233;animation:breathe 1.6s ease-in-out infinite}
+.ripple{position:absolute;left:50%;top:50%;width:190px;height:190px;margin:-95px 0 0 -95px;border-radius:50%;border:2px solid #159a82;opacity:0;animation:ripple 2.2s linear infinite}
+.rippleLate{animation-delay:1.1s}
+.radar{position:absolute;left:50%;top:50%;width:150px;height:150px;margin:-75px 0 0 -75px;border-radius:50%;background:conic-gradient(from 0deg,#159a8244,#159a8205 60deg,transparent 70deg);opacity:0}
+.radarOn{opacity:1;animation:radarSpin 2.4s linear infinite}
+.reachRing{position:absolute;left:50%;top:50%;width:130px;height:130px;margin:-65px 0 0 -65px;border-radius:50%;border:2px dashed #6fbfa8;opacity:0}
+.reachRingOn{animation:ringIn .7s ease both,ringSpin 14s linear .7s infinite}
+.spot{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:white;border:1.5px solid currentColor;color:#333;display:grid;place-items:center;font-size:11px;font-weight:700;box-shadow:0 2px 6px #24483f1f;animation:spotPop .5s cubic-bezier(.34,1.56,.64,1) both}
+.check{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:#159a82;color:white;display:grid;place-items:center;font-size:18px;font-weight:700;box-shadow:0 0 0 5px #ffffff,0 0 0 7px #159a8240;animation:checkPop .5s cubic-bezier(.34,1.56,.64,1) both}
+.stageTitle{font-size:16px;font-weight:650;color:#24504a;letter-spacing:.5px}
+.stageDetail{font-size:11px;color:#8ba09c;margin:8px 0 18px;min-height:16px;transition:opacity .3s}
+.progressBar{height:6px;border-radius:3px;background:#edf3f2;overflow:hidden}
+.progressFill{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#159a82,#147d70);transition:width .5s linear}
+.progressMeta{display:flex;align-items:center;justify-content:space-between;margin-top:13px}
+.stepDots{display:flex;gap:6px}
+.stepDot,.stepDotOn{width:8px;height:8px;border-radius:50%;background:#dfe9e6;transition:all .3s}
+.stepDotOn{background:#159a82;box-shadow:0 0 0 3px #159a8222}
+.progressNumber{font-family:Consolas,monospace;font-size:13px;font-weight:600;color:#147d70}
+@keyframes cardIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes ripple{0%{transform:scale(.2);opacity:.85}100%{transform:scale(1.15);opacity:0}}
+@keyframes radarSpin{to{transform:rotate(360deg)}}
+@keyframes ringIn{from{opacity:0;transform:scale(.7)}to{opacity:.9;transform:none}}
+@keyframes ringSpin{to{transform:rotate(360deg)}}
+@keyframes spotPop{0%{opacity:0;transform:scale(0)}70%{transform:scale(1.3)}100%{opacity:1;transform:scale(1)}}
+@keyframes checkPop{0%{opacity:0;transform:scale(0)}70%{transform:scale(1.25)}100%{opacity:1;transform:scale(1)}}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+@media(prefers-reduced-motion:reduce){.overlay,.pinCore,.ripple,.radarOn,.reachRingOn,.spot,.check{animation:none}.ripple,.reachRing{opacity:0}.reachRingOn{opacity:.9}.spot{opacity:1}.check{opacity:1}.progressFill{transition:none}}

@@ -4,9 +4,19 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('button', { name: '开始体检', exact: true })).toBeEnabled();
 });
+async function expectAnalysisLoadingPasses(page: import('@playwright/test').Page) {
+  await expect(page.getByTestId('analysis-loading')).toBeVisible();
+  await expect(page.getByTestId('analysis-loading')).not.toBeVisible({ timeout: 10000 });
+}
+async function closeAutoOpenedReport(page: import('@playwright/test').Page) {
+  await expect(page.getByTestId('report')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('report')).not.toBeVisible();
+}
 async function analyze(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
-  await expect(page.getByRole('button', { name: /查看完整体检报告/ })).toBeEnabled();
+  await expectAnalysisLoadingPasses(page);
+  await closeAutoOpenedReport(page);
   await expect(page.getByTestId('circle-layer')).toBeVisible();
 }
 test('complete flow, filters, layers, facilities and full report', async ({ page }) => {
@@ -50,6 +60,8 @@ test('missing and unknown data remain distinct', async ({ page }) => {
   await page.getByLabel('演示场景', { exact: true }).selectOption('insufficient');
   await expect(page.getByText(/条件已修改，需重新分析/)).toBeVisible();
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
+  await expectAnalysisLoadingPasses(page);
+  await closeAutoOpenedReport(page);
   await expect(page.getByTestId('zone-unknown')).toHaveCount(1);
   await expect(page.getByTestId('zone-blind')).toHaveCount(0);
   await expect(page.getByTestId('count-pharmacy')).toHaveText('—');
@@ -57,29 +69,68 @@ test('missing and unknown data remain distinct', async ({ page }) => {
 test('failure recovers on retry and custom position never inherits a result', async ({ page }) => {
   await page.getByLabel('演示场景', { exact: true }).selectOption('failure');
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
+  // 失败时 Loading 提前结束，错误横幅接管，报告不弹出。
+  await expectAnalysisLoadingPasses(page);
   await expect(page.getByText(/本次模拟分析失败/)).toBeVisible();
+  await expect(page.getByTestId('report')).not.toBeVisible();
   await page.getByRole('button', { name: '重试分析', exact: true }).click();
+  await expectAnalysisLoadingPasses(page);
   await expect(page.getByTestId('total-count')).toHaveText('7');
+  await closeAutoOpenedReport(page);
   await page.getByRole('textbox', { name: '中心点经度' }).fill('110');
   await page.getByRole('button', { name: '应用坐标', exact: true }).click();
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
+  await expectAnalysisLoadingPasses(page);
   await expect(page.getByText(/超出示意地图范围/)).toBeVisible();
   await expect(page.getByText(/下方保留的是/)).toBeVisible();
+  await expect(page.getByTestId('report')).not.toBeVisible();
 });
-test('all presets, coordinates and old requests', async ({ page }) => {
+test('report stays accessible from the header entry after closing', async ({ page }) => {
+  // 尚无报告时主界面不出现入口
+  await expect(page.getByRole('button', { name: '查看体检报告', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '开始体检', exact: true }).click();
+  await expectAnalysisLoadingPasses(page);
+  await closeAutoOpenedReport(page);
+  // 关闭报告后：页头入口出现，悬停可见最近报告信息，点击可重新打开
+  const entry = page.getByRole('button', { name: '查看体检报告', exact: true });
+  await expect(entry).toBeVisible();
+  await entry.hover();
+  await expect(page.getByText(/最近报告：青禾街区 · A 点/)).toBeVisible();
+  await entry.click();
+  await expect(page.getByTestId('report')).toBeVisible();
+  await expect(page.getByTestId('report')).toContainText('青禾街区 · A 点');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('report')).not.toBeVisible();
+  // 再次打开：报告生命周期持续
+  await entry.click();
+  await expect(page.getByTestId('report')).toBeVisible();
+  // 条件变更后：旧报告仍可访问，并带过期提示
+  await page.keyboard.press('Escape');
+  await page.getByLabel('演示场景', { exact: true }).selectOption('missing');
+  await entry.click();
+  await expect(page.getByTestId('report')).toBeVisible();
+  await expect(page.getByTestId('report')).toContainText('分析条件已修改');
+  await expect(page.getByTestId('report')).toContainText('青禾街区 · A 点');
+});
+test('all presets, coordinates and retained old results', async ({ page }) => {
+  // 每次“开始体检”都会完整播放 AI 体检 Loading（约 6s），放宽本用例超时。
+  test.slow();
   await analyze(page);
   for (const id of ['b','c']) {
     await page.getByLabel('演示样例', { exact: true }).selectOption(id);
     await page.getByRole('button', { name: '开始体检', exact: true }).click();
+    await expectAnalysisLoadingPasses(page);
+    await closeAutoOpenedReport(page);
     await expect(page.getByText(/条件已修改，需重新分析/)).not.toBeVisible();
     await expect(page.getByTestId('total-count')).toHaveText('6');
   }
   await page.getByRole('button', { name: '选择演示点 A', exact: true }).press('Enter');
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
+  await expectAnalysisLoadingPasses(page);
+  await closeAutoOpenedReport(page);
   await page.getByLabel('演示样例', { exact: true }).selectOption('b');
   await expect(page.getByRole('textbox', { name: '中心点经度' })).toHaveValue('116.403');
-  await page.waitForTimeout(850);
-  await expect(page.getByText(/下方保留的是「青禾街区 · C 点/)).toBeVisible();
+  await expect(page.getByText(/下方保留的是「青禾街区 · A 点/)).toBeVisible();
   await page.getByRole('textbox', { name: '中心点纬度' }).fill('99');
   await page.getByRole('button', { name: '应用坐标', exact: true }).click();
   await expect(page.getByText(/请输入有效经纬度/)).toBeVisible();
@@ -88,6 +139,8 @@ test('mobile panels and report are operable without overflow', async ({ page }) 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel('演示场景', { exact: true }).selectOption('missing');
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
+  await expectAnalysisLoadingPasses(page);
+  await closeAutoOpenedReport(page);
   await expect(page.getByTestId('zone-blind')).toBeVisible();
   await page.screenshot({ path: 'output/playwright/mobile-map.png', fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: '查看结果', exact: true }).click();
@@ -139,6 +192,8 @@ test('zoom and pan preserve the selection; background click selects a new positi
   await page.mouse.click(x, y);
   await expect(page.getByRole('textbox', { name: '中心点经度' })).not.toHaveValue('116.399');
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
+  await expectAnalysisLoadingPasses(page);
+  await closeAutoOpenedReport(page);
   await expect(page.getByTestId('circle-layer')).toBeVisible();
   await expect(page.getByTestId('total-count')).toHaveText(/^\d+$/);
 });
@@ -147,6 +202,8 @@ test('any in-map point produces an analysis result', async ({ page }) => {
   await page.getByRole('textbox', { name: '中心点经度' }).fill('116.395');
   await page.getByRole('button', { name: '应用坐标', exact: true }).click();
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
+  await expectAnalysisLoadingPasses(page);
+  await closeAutoOpenedReport(page);
   await expect(page.getByTestId('circle-layer')).toBeVisible();
   await expect(page.getByTestId('total-count')).toHaveText(/^\d+$/);
   await page.screenshot({ path: 'output/playwright/custom-point.png', fullPage: true, animations: 'disabled' });
