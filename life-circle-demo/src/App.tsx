@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Checkbox, Drawer, Input, Segmented, Tag } from 'antd';
+import { Alert, Button, Checkbox, Drawer, Input, Segmented, Tag, Tooltip } from 'antd';
 import { ArrowRightOutlined, CheckCircleOutlined, CompassOutlined, EnvironmentOutlined, ExperimentOutlined, FileTextOutlined, InfoCircleOutlined, BlockOutlined, ReloadOutlined, SettingOutlined, ShopOutlined, MedicineBoxOutlined, ReadOutlined, RadarChartOutlined, CloseOutlined } from '@ant-design/icons';
 import { useStore } from './Store';
 import { categories, categoryMeta, scenarioLabels, type Category, type Filter, type Scenario } from './types';
 import { filterFacilities, findSample, summarize } from './domain';
 import { analysisResultToReportView } from './report';
 import { ReportPage } from './ReportPage';
+import { AnalysisLoading } from './components/AnalysisLoading';
+import { loadingOutcome } from './components/loadingFlow';
 import { DemoMap, type Focus } from './Map';
 import { FacilityChart } from './Chart';
 import styles from './styles.module.css';
@@ -15,12 +17,17 @@ export default function App() {
   const [phone,setPhone]=useState(()=>window.matchMedia('(max-width: 800px)').matches);
   useEffect(()=>{const media=window.matchMedia('(max-width: 800px)');const change=()=>{setPhone(media.matches);if(!media.matches)setMobilePanel(null);};media.addEventListener('change',change);return()=>media.removeEventListener('change',change);},[]);
   const [report,setReport]=useState(false),[mobilePanel,setMobilePanel]=useState<'results'|null>(null),[tab,setTab]=useState<string>('问题区域');
+  // AI 体检 Loading：点击开始体检后立即显示；分析成功且动画播完→关闭并自动打开报告；失败→立即关闭，错误横幅按原逻辑接管。
+  const [analysisLoading,setAnalysisLoading]=useState(false),[animationDone,setAnimationDone]=useState(false);
   const [focus,setFocus]=useState<Focus>(),[layers,setLayers]=useState({circle:true,facilities:true,blind:true});
   const [coords,setCoords]=useState({lng:String(state.center.lng),lat:String(state.center.lat)}),[coordError,setCoordError]=useState('');
   useEffect(()=>{setCoords({lng:String(state.center.lng),lat:String(state.center.lat)});setCoordError('');},[state.center]);
   useEffect(()=>{setFocus(undefined);},[state.result,state.filter,state.center]);
   const sample=findSample(state.samples,state.center),result=state.result,summary=result?summarize(result):undefined;
   const reportView=useMemo(()=>result?analysisResultToReportView(result):undefined,[result]);
+  // 编排策略见 components/loadingFlow.ts：分析失败立即关闭；成功则等动画播完再关闭并自动展示报告。
+  const loading=loadingOutcome({started:analysisLoading,animationDone,analysisStatus:state.status});
+  useEffect(()=>{if(!analysisLoading||loading.visible)return;setAnalysisLoading(false);if(loading.openReport)setReport(true);},[analysisLoading,loading.visible,loading.openReport]);
   const pending=coords.lng!==String(state.center.lng)||coords.lat!==String(state.center.lat);
   function applyCoords(){ const lng=Number(coords.lng),lat=Number(coords.lat);if(!coords.lng.trim()||!coords.lat.trim()||!Number.isFinite(lng)||!Number.isFinite(lat)||lng< -180||lng>180||lat< -90||lat>90){setCoordError('请输入有效经纬度：经度 -180～180，纬度 -90～90。');return;}dispatch({type:'edit',center:{lng,lat}});setCoordError(''); }
   const analysisPanel=<>
@@ -30,7 +37,7 @@ export default function App() {
     <div className={styles.field}><div className={styles.rowBetween}><label>中心点坐标</label><span className={styles.coordinateBadge}>演示坐标</span></div><div className={styles.coordinateInputs}><div><span>经度 LNG</span><Input aria-label="中心点经度" value={coords.lng} onChange={e=>setCoords({...coords,lng:e.target.value})} onPressEnter={applyCoords}/></div><div><span>纬度 LAT</span><Input aria-label="中心点纬度" value={coords.lat} onChange={e=>setCoords({...coords,lat:e.target.value})} onPressEnter={applyCoords}/></div></div><Button size="small" block onClick={applyCoords} disabled={!pending}>应用坐标</Button>{coordError&&<p role="alert" className={styles.errorText}>{coordError}</p>}{pending&&<small>应用坐标后可开始体检</small>}</div>
     <div className={styles.rules}><div><span className={styles.ruleIcon}><CompassOutlined/></span><div><strong>15 分钟</strong><p>中心点步行可达范围</p></div><span className={styles.ruleUnit}>时间</span></div><div><span className={styles.ruleIcon}><RadarChartOutlined/></span><div><strong>1 公里</strong><p>分类服务盲区判断</p></div><span className={styles.ruleUnit}>距离</span></div><small>两套指标独立展示 · 规则仅作演示</small></div>
     <div className={styles.field}><label>关注的民生设施</label><div className={styles.categoryPills}>{categories.map(c=><span key={c} style={{color:categoryMeta[c].color}}>{icons[c]}{categoryMeta[c].label}</span>)}</div></div>
-    <Button aria-label={state.status==='failed'?'重试分析':'开始体检'} type="primary" size="large" block icon={state.status==='failed'?<ReloadOutlined/>:<RadarChartOutlined/>} loading={state.status==='loading'} disabled={pending||!state.samples.length} onClick={()=>{setMobilePanel(null);void analyze();}}>{state.status==='failed'?'重试分析':'开始体检'}</Button>
+    <Button aria-label={state.status==='failed'?'重试分析':'开始体检'} type="primary" size="large" block icon={state.status==='failed'?<ReloadOutlined/>:<RadarChartOutlined/>} loading={state.status==='loading'} disabled={pending||!state.samples.length||analysisLoading} onClick={()=>{setMobilePanel(null);setAnalysisLoading(true);setAnimationDone(false);void analyze();}}>{state.status==='failed'?'重试分析':'开始体检'}</Button>
     <p className={styles.buttonHint}>无需 API 密钥 · 本地模拟分析</p>
     <div className={styles.layerSection}><h3><BlockOutlined/> 地图图层</h3>{([{key:'circle',label:'15 分钟范围',color:'#168875'},{key:'facilities',label:'民生设施',color:'#397ac6'},{key:'blind',label:'1 公里盲区',color:'#7f8e94'}] as const).map(l=><div className={styles.layerRow} key={l.key}><Checkbox checked={layers[l.key]} onChange={e=>setLayers({...layers,[l.key]:e.target.checked})}>{l.label}</Checkbox><span style={{background:l.color}}/></div>)}</div>
     <div className={styles.note}><InfoCircleOutlined/><p>这里展示的是产品交互效果。道路、设施与体检结论均为模拟数据。</p></div>
@@ -51,7 +58,7 @@ export default function App() {
     <div className={styles.reportButton}><Button block icon={<FileTextOutlined/>} disabled={!result} onClick={()=>setReport(true)}>查看完整体检报告 <ArrowRightOutlined/></Button></div>
   </>;
   return <div className={styles.app}>
-    <header className={styles.header}><div className={styles.brand}><span><EnvironmentOutlined/></span><strong>邻里<span>生活圈体检</span></strong></div><nav className={styles.nav}><span className={styles.activeNav}>生活圈分析</span><span>15 MINUTE CITY</span></nav><div className={styles.headerRight}><span className={styles.offlineDot}/>本地运行<Tag color="gold" variant="filled"><ExperimentOutlined/> 演示数据</Tag></div></header>
+    <header className={styles.header}><div className={styles.brand}><span><EnvironmentOutlined/></span><strong>邻里<span>生活圈体检</span></strong></div><nav className={styles.nav}><span className={styles.activeNav}>生活圈分析</span><span>15 MINUTE CITY</span></nav><div className={styles.headerRight}><span className={styles.offlineDot}/>本地运行<Tag color="gold" variant="filled"><ExperimentOutlined/> 演示数据</Tag>{result&&reportView&&<Tooltip title={`最近报告：${reportView.centerName} · ${new Date(reportView.generatedAt).toLocaleString('zh-CN',{hour12:false})}`}><Button aria-label="查看体检报告" color="primary" variant="outlined" size="small" icon={<FileTextOutlined/>} onClick={()=>setReport(true)}>查看体检报告</Button></Tooltip>}</div></header>
     <section className={styles.intro}><div><div className={styles.eyebrow}>COMMUNITY INSIGHTS <span> / </span> 社区空间洞察</div><h1>看见身边的生活半径<span className={styles.titleDot}>.</span></h1><p>从一个地点出发，了解步行可达范围，发现生活服务缺口。</p></div><div className={styles.introRight}><div><span className={styles.liveDot}/>当前分析位置</div><strong>{sample?.name??'自定义位置'}</strong><small>青禾街区为虚构演示样例</small></div></section>
     <div className={styles.mobileToolbar}><Button aria-label="查看结果" icon={<RadarChartOutlined/>} onClick={()=>setMobilePanel('results')}>查看结果</Button></div>
     <main className={styles.workspace}>
@@ -73,6 +80,7 @@ export default function App() {
         ?<ReportPage view={reportView} stale={state.dirty} lastAttemptFailed={state.status==='failed'||state.status==='unavailable'}/>
         :<div className={styles.empty}><span className={styles.emptyIcon}><RadarChartOutlined/></span><h3>尚无分析结果</h3><p>完成一次体检后，<br/>这里将生成完整报告。</p></div>}
     </Drawer>
+    <AnalysisLoading visible={analysisLoading} onFinish={()=>setAnimationDone(true)}/>
   </div>;
 }
 function TooltipNote(){return <span className={styles.mapBarNote}><EnvironmentOutlined/> 点击地图选择中心点</span>;}
