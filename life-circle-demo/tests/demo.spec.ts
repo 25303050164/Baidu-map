@@ -31,7 +31,8 @@ test('complete flow, filters, layers, facilities and full report', async ({ page
   await page.screenshot({ path: 'output/playwright/desktop-result.png', fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: /查看完整体检报告/ }).click();
   await expect(page.getByTestId('report')).toContainText('全部类别，不受主界面筛选影响');
-  await expect(page.getByTestId('report').getByRole('row')).toHaveCount(4);
+  await expect(page.getByTestId('facility-stats-table').getByRole('row')).toHaveCount(4);
+  await expect(page.getByTestId('zone-stats-table').getByRole('row')).toHaveCount(4);
   await page.screenshot({ path: 'output/playwright/report.png', fullPage: true, animations: 'disabled' });
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('report')).not.toBeVisible();
