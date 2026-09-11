@@ -60,12 +60,23 @@ src/
   Store.tsx          状态容器与异步分析编排
   state.ts           状态转换及过期请求隔离
   service.ts         四类异步能力及可复现模拟任务
-  data.ts            三个演示点与固定场景
+  data.ts            三个演示点与固定场景（设施走分类管线）
   domain.ts          坐标示意映射、分类筛选和统计
   types.ts           业务类型与类别定义
+  taxonomy.ts        设施大类/小类、关键字字典与边界配置
+  classify.ts        名称归一化与关键字匹配、误类排除
+  dedup.ts           稳定 UID 去重与兜底键
+  geofence.ts        圈内判定
+  pipeline.ts        分类→去重→圈内判定，地图与统计的唯一结果源
+  fixtures/          验收样例（每类≥5条、误类、重复 UID）
   domain.test.ts     业务数据与状态测试
+  classify.test.ts   分类与误类排除测试
+  dedup.test.ts      UID 去重测试
+  pipeline.test.ts   管线与地图/统计一致性测试
 tests/
   demo.spec.ts       Playwright 浏览器流程验收
+docs/
+  设施分类与UID去重说明.md   分类字典、去重、圈内判定与验收说明
 ```
 
 页面通过服务层获取样例与结果，不直接读取模拟文件。后续可替换 `service.ts` 为后端调用，替换 `Map.tsx` 为百度地图实现；保留统一业务对象、图表和报告。SVG 示意坐标映射不是地理坐标转换算法。
@@ -78,7 +89,7 @@ npm run build
 npm run test:e2e
 ```
 
-- Vitest：统计、未知状态、预设点匹配、任意点分析、盲区远近、过期结果隔离及服务重试。
+- Vitest：统计、未知状态、预设点匹配、任意点分析、盲区远近、过期结果隔离、服务重试，以及设施分类、误类排除、UID 去重与地图/统计一致性。
 - Playwright：完整流程、图层与筛选、报告、三处预设点、自定义坐标、任意点分析、异常及窄屏操作。
 - `npm run build`：TypeScript 检查与生产构建。
 - 浏览器截图：`output/playwright/`；失败追踪：`test-results/`；测试报告：`playwright-report/`。

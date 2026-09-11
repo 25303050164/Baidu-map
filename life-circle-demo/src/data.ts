@@ -1,4 +1,5 @@
 import { centerToPoint, distance, pointInPolygon, pointToCenter } from './domain';
+import { buildFacilities } from './pipeline';
 import type { AnalysisResult, Category, Center, Point, Sample, Scenario, Zone } from './types';
 export const samples: Sample[] = [
   { id: 'a', name: '青禾街区 · A 点', subtitle: '邻里中心 / 虚构演示街区', position: { x: 450, y: 355 } },
@@ -14,27 +15,27 @@ export function customSample(center: Center): Sample {
 // neighbourhood, so each center sees a different subset.
 const reachShape: [number, number][] = [[-190,-120],[-100,-190],[20,-175],[130,-190],[205,-95],[185,-5],[215,85],[140,160],[30,185],[-70,210],[-155,135],[-175,55],[-220,-20]];
 
-type Fixture = { id: string; name: string; category: Category; x: number; y: number; missing?: boolean };
-const fixtures: Fixture[] = [
-  { id: 'm1', name: '青禾菜市场', category: 'market', x: 350, y: 300 },
-  { id: 'm2', name: '邻里鲜市', category: 'market', x: 580, y: 175, missing: true },
-  { id: 'm3', name: '东里菜场', category: 'market', x: 705, y: 205, missing: true },
-  { id: 'm4', name: '南苑生鲜市集', category: 'market', x: 250, y: 620 },
-  { id: 'm5', name: '河畔菜市场', category: 'market', x: 905, y: 190 },
-  { id: 'm6', name: '中心街市集', category: 'market', x: 475, y: 440 },
-  { id: 'm7', name: '青禾生鲜', category: 'market', x: 395, y: 285 },
-  { id: 'm8', name: '西里菜场', category: 'market', x: 110, y: 330 },
-  { id: 'p1', name: '青禾药房', category: 'pharmacy', x: 405, y: 395 },
-  { id: 'p2', name: '康宁药店', category: 'pharmacy', x: 700, y: 320 },
-  { id: 'p3', name: '邻家药房', category: 'pharmacy', x: 320, y: 560 },
-  { id: 'p4', name: '文景药房', category: 'pharmacy', x: 615, y: 115 },
-  { id: 'p5', name: '西街药房', category: 'pharmacy', x: 140, y: 230 },
-  { id: 'p6', name: '中心街药房', category: 'pharmacy', x: 480, y: 410 },
-  { id: 's1', name: '青禾实验小学', category: 'school', x: 255, y: 235 },
-  { id: 's2', name: '东里小学', category: 'school', x: 545, y: 300 },
-  { id: 's3', name: '文景小学', category: 'school', x: 660, y: 140 },
-  { id: 's4', name: '南桥小学', category: 'school', x: 330, y: 730 },
-  { id: 's5', name: '南苑小学', category: 'school', x: 200, y: 610 }
+type Fixture = { uid: string; name: string; category: Category; x: number; y: number; missing?: boolean };
+export const fixtures: Fixture[] = [
+  { uid: 'demo-market-01', name: '青禾菜市场', category: 'market', x: 350, y: 300 },
+  { uid: 'demo-market-02', name: '邻里鲜市', category: 'market', x: 580, y: 175, missing: true },
+  { uid: 'demo-market-03', name: '东里菜场', category: 'market', x: 705, y: 205, missing: true },
+  { uid: 'demo-market-04', name: '南苑生鲜市集', category: 'market', x: 250, y: 620 },
+  { uid: 'demo-market-05', name: '河畔菜市场', category: 'market', x: 905, y: 190 },
+  { uid: 'demo-market-06', name: '中心街市集', category: 'market', x: 475, y: 440 },
+  { uid: 'demo-market-07', name: '青禾生鲜', category: 'market', x: 395, y: 285 },
+  { uid: 'demo-market-08', name: '西里菜场', category: 'market', x: 110, y: 330 },
+  { uid: 'demo-pharmacy-01', name: '青禾药房', category: 'pharmacy', x: 405, y: 395 },
+  { uid: 'demo-pharmacy-02', name: '康宁药店', category: 'pharmacy', x: 700, y: 320 },
+  { uid: 'demo-pharmacy-03', name: '邻家药房', category: 'pharmacy', x: 320, y: 560 },
+  { uid: 'demo-pharmacy-04', name: '文景药房', category: 'pharmacy', x: 615, y: 115 },
+  { uid: 'demo-pharmacy-05', name: '西街药房', category: 'pharmacy', x: 140, y: 230 },
+  { uid: 'demo-pharmacy-06', name: '中心街药房', category: 'pharmacy', x: 480, y: 410 },
+  { uid: 'demo-school-01', name: '青禾实验小学', category: 'school', x: 255, y: 235 },
+  { uid: 'demo-school-02', name: '东里小学', category: 'school', x: 545, y: 300 },
+  { uid: 'demo-school-03', name: '文景小学', category: 'school', x: 660, y: 140 },
+  { uid: 'demo-school-04', name: '南桥小学', category: 'school', x: 330, y: 730 },
+  { uid: 'demo-school-05', name: '南苑小学', category: 'school', x: 200, y: 610 }
 ];
 
 export const BLIND_RANGE = 450;
@@ -55,12 +56,11 @@ export function createResult(sample: Sample, scenario: Scenario): AnalysisResult
   const { x, y } = sample.position;
   const move = (a: number, b: number): Point => ({ x: x + a, y: y + b });
   const circle = reachShape.map(([a, b]) => move(a, b));
-  const facilities = fixtures
-    .filter(f => !(scenario === 'missing' && f.missing))
-    .map(f => ({
-      id: `${sample.id}-${f.id}`, name: f.name, category: f.category, x: f.x, y: f.y,
-      inCircle: pointInPolygon({ x: f.x, y: f.y }, circle)
-    }));
+  const active = fixtures.filter(f => !(scenario === 'missing' && f.missing));
+  const { facilities } = buildFacilities(
+    active.map(f => ({ uid: f.uid, name: f.name, x: f.x, y: f.y })),
+    circle
+  );
   const sceneZone = scenario === 'missing' ? presetZones.missing : scenario === 'insufficient' ? presetZones.insufficient : undefined;
   const showZone = !!sceneZone && (pointInPolygon(sample.position, sceneZone.points) || sceneZone.points.some(p => distance(p, sample.position) <= BLIND_RANGE));
   return {
