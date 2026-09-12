@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N02 浏览器跨域验收</title>
+<style>
+body { font: 16px/1.7 system-ui; max-width: 760px; margin: 60px auto; padding: 24px; }
+button { padding: 10px 18px; margin-right: 12px; cursor: pointer; }
+pre { padding: 20px; background: #f2f5f7; white-space: pre-wrap; }
+</style>
+<h1>N02 浏览器跨域验收</h1>
+<p>本页只调用本机健康检查，不接收 AK，也不调用百度接口。</p>
+<p id="origin"></p>
+<button id="simple">检查普通跨域请求</button>
+<button id="preflight">检查预检跨域请求</button>
+<pre id="result" role="status">等待检查</pre>
+<script>
+document.getElementById('origin').textContent = '当前来源：' + location.origin;
+async function check(preflight) {
+  const result = document.getElementById('result');
+  result.textContent = '检查中';
+  try {
+    const response = await fetch('http://127.0.0.1:8000/health', {
+      mode: 'cors', credentials: 'omit',
+      headers: preflight ? { 'Content-Type': 'application/json' } : {},
+      signal: AbortSignal.timeout(5000),
+    });
+    const body = await response.json();
+    const passed = response.ok && body.status === 'ok' && typeof body.baidu_ak_configured === 'boolean';
+    result.textContent = JSON.stringify({
+      check: preflight ? 'preflight' : 'simple',
+      outcome: passed ? 'PASS' : 'FAIL', origin: location.origin,
+      http_status: response.status, health: body,
+    }, null, 2);
+  } catch {
+    result.textContent = 'FAIL：浏览器无法读取健康检查；请核对服务启动、端口与 CORS_ORIGINS。';
+  }
+}
+document.getElementById('simple').onclick = () => check(false);
+document.getElementById('preflight').onclick = () => check(true);
+</script>
+</html>
