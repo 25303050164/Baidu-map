@@ -12,3 +12,13 @@ life-circle-demo/*.log
 .vscode/
 .DS_Store
 Thumbs.db
+.pip-cache/
+
+# Backend secrets, dependencies and local evidence
+**/.env
+**/.env.*
+!**/.env.example
+backend/.venv/
+**/__pycache__/
+**/.pytest_cache/
+backend/logs/
