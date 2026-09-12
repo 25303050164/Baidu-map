@@ -16,7 +16,7 @@ class Clock:
 
 
 class Scheduler:
-    def __init__(self, request, provider, cancel_token, clock=None):
+    def __init__(self, request, provider, cancel_token, clock=None, on_progress=None):
         self.request, self.provider, self.token = request, provider, cancel_token
         if provider.network and request.qps is None:
             raise ValueError("真实 Provider 必须显式配置实际 QPS")
@@ -34,6 +34,7 @@ class Scheduler:
         self._draining = set()
         # One owner schedules a batch; concurrent callers wait for and reuse its cache.
         self.lock = asyncio.Lock()
+        self.on_progress = on_progress
 
     @property
     def remaining(self):
@@ -142,6 +143,8 @@ class Scheduler:
                         tasks.append(asyncio.create_task(self._invoke(point, attempt)))
                         # Start the transport before scheduling the next rate-limited send.
                         await asyncio.sleep(0)
+                        if self.on_progress:
+                            self.on_progress()
                     observations = await asyncio.gather(*tasks)
                     for point, observation in zip(sent, observations):
                         results[point] = observation

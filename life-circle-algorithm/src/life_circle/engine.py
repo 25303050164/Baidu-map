@@ -1,3 +1,4 @@
+import asyncio
 import math
 import random
 import time
@@ -9,11 +10,11 @@ from shapely.geometry import box
 from .coordinates import LocalProjection, normalize
 from .field import GeometryError, business_geometry, reconstruct
 from .mesh import Mesh
-from .models import CancelToken, IsochroneResult, RouteObservation
+from .models import CancelToken, IsochroneResult, ProgressSnapshot, RouteObservation
 from .scheduler import Scheduler
 
 
-async def compute_isochrone(request, provider, cancel_token=None, *, clock=None, method="adaptive"):
+async def compute_isochrone(request, provider, cancel_token=None, *, clock=None, method="adaptive", on_progress=None):
     engine_started = time.perf_counter()
     waiting_seconds = 0
     if method not in ("adaptive", "uniform"):
@@ -22,6 +23,18 @@ async def compute_isochrone(request, provider, cancel_token=None, *, clock=None,
         raise ValueError("面采样不能绑定单个目的设施 UID；请用 Scheduler 单独测时")
     token = cancel_token or CancelToken()
     scheduler = Scheduler(request, provider, token, clock)
+    stage = "initializing"
+
+    def report(next_stage=None):
+        nonlocal stage
+        if next_stage:
+            stage = next_stage
+        if on_progress:
+            on_progress(ProgressSnapshot(stage, scheduler.stats.requests, scheduler.stats.network_requests,
+                request.budget, max(0, scheduler.clock.time() - scheduler.started)))
+
+    scheduler.on_progress = report
+    report()
     projection = LocalProjection(scheduler.origin)
     mesh = Mesh(request.extent, request.coarse_size)
     if method == "uniform":
@@ -74,6 +87,7 @@ async def compute_isochrone(request, provider, cancel_token=None, *, clock=None,
     if any(o.duration is None for o in outer):
         warnings.append("range_unknown")
     if expand_needed:
+        report("expanding")
         if request.expand and method == "adaptive" and request.max_extent > mesh.extent:
             old = mesh.extent
             added = [c for c in Mesh.coarse_cells(request.max_extent, request.coarse_size) if not (-old <= c.x and c.x + c.size <= old and -old <= c.y and c.y + c.size <= old)]
@@ -98,6 +112,7 @@ async def compute_isochrone(request, provider, cancel_token=None, *, clock=None,
         observations = [mesh.samples[p] for edge in mesh.edges(cell) for p in edge if p in mesh.active_points]
         return max((abs(o.duration - 900) for o in observations if o.duration is not None), default=0)
     if method == "adaptive":
+        report("exploring")
         # Execute the reserved non-boundary exploration deterministically first.
         reserve = min(int(request.budget * request.exploration_fraction), scheduler.remaining)
         exploration_start = scheduler.stats.requests
@@ -115,6 +130,7 @@ async def compute_isochrone(request, provider, cancel_token=None, *, clock=None,
             await split(cell, reserve - (scheduler.stats.requests - exploration_start))
         scheduler.stats.exploration_requests = scheduler.stats.requests - exploration_start
 
+        report("refining")
         while not scheduler._stopped():
             queue = []
             for cell in mesh.leaves - settled:
@@ -147,8 +163,9 @@ async def compute_isochrone(request, provider, cancel_token=None, *, clock=None,
                 settled.add(cell)
 
     scheduler.close()
+    report("reconstructing")
     try:
-        field = reconstruct(mesh, request.raster_size)
+        field = await asyncio.to_thread(reconstruct, mesh, request.raster_size)
     except (GeometryError, GEOSException):
         # Keep evidence metadata; never silently repair and enlarge the result.
         warnings.append("geometry_error")
@@ -156,6 +173,7 @@ async def compute_isochrone(request, provider, cancel_token=None, *, clock=None,
         extent = box(-mesh.extent, -mesh.extent, mesh.extent, mesh.extent)
         scheduler.stats.unknown_area = extent.area
         scheduler.stats.compute_seconds = max(0, time.perf_counter() - engine_started - waiting_seconds)
+        report("completed")
         return IsochroneResult(None, business_geometry(extent, projection), business_geometry(extent, projection), business_geometry(extent, projection), "insufficient", "geometry_error", scheduler.stats, warnings, request, local_unknown=extent)
     uncertain = []
     unfinished = 0
@@ -182,6 +200,7 @@ async def compute_isochrone(request, provider, cancel_token=None, *, clock=None,
     scheduler.stats.total_seconds = scheduler.clock.time() - scheduler.started
     insufficient = field.support.is_empty
     quality = "insufficient" if insufficient else "partial" if warnings or field.unknown.area > 1e-7 else "usable"
+    report("completed")
     return IsochroneResult(
         None if insufficient else business_geometry(field.geometry, projection),
         business_geometry(union_all(uncertain), projection), business_geometry(field.unknown, projection),

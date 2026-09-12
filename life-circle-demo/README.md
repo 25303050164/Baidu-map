@@ -1,10 +1,18 @@
-# 邻里 · 15 分钟生活圈 Demo
+# 15 分钟生活圈前端
 
 基于需求分析与技术方案实现的可交互前端演示。使用 React、TypeScript、Vite、Ant Design、CSS Modules、ECharts；状态由 Context + useReducer 管理。
 
-**所有街区、道路、设施和分析结果均为本地模拟数据，不调用外部地图 API、不运行真实空间算法，也不需要 API 密钥。**
+默认入口已接入后端自适应网格算法，支持选点、任务进度、取消、质量提示，以及含孔洞和多分量的 BD09LL 几何。设施统计尚未接入。真实步行与社区实验尚未验证，当前验收使用合成 Provider 和离线地图 SDK 替身。
 
-仓库现已新增独立的 [N02 FastAPI 后端](../backend/README.md)，提供健康检查、服务端 AK 配置和百度真实请求验证命令。该后端尚未接入本 Demo 的业务流程，前端继续使用模拟数据。
+先按 [后端 README](../backend/README.md) 启动离线服务，再启动前端。完整接口、命令和验收见 [接入任务报告](../backend/docs/算法前后端接入任务报告.md)。下方“演示操作”及设施场景表仅适用于 `VITE_ANALYSIS_MODE=demo` 的原演示入口。
+
+## 配置与模式
+
+- `VITE_ANALYSIS_MODE=api`：默认，调用后端；`demo`：显式启用原设施模拟演示。
+- `VITE_API_BASE_URL`：默认 `http://127.0.0.1:8000`。
+- `VITE_BAIDU_MAP_AK`：浏览器地图 AK，与后端步行 AK 分开配置。API 模式中地图缺配置或加载失败会显示错误，坐标输入与结果摘要仍可使用。
+- 可复制 `.env.example` 为本地 `.env.local` 并重启 Vite；不要在任何 `VITE_*` 中填写服务端 AK。
+- API 入口支持 200/400/800 次预算，每秒轮询；没有模拟进度动画和预设设施结论。后台忙时稍后重试，任务过期时重新分析。
 
 ## 本地运行
 
@@ -13,13 +21,22 @@
 在文件夹中打开 cmd 或 PowerShell：
 
 ```powershell
-npm ci
+npm ci --cache D:/CodexCaches/npm
 npm run dev
 ```
 
 打开 [本地 Demo](http://127.0.0.1:5173/)。已经安装依赖时只需 `npm run dev`。端口占用时不会自动切换，避免误打开其他项目；可先检查占用程序或指定其他端口启动。
 
-源码、依赖与构建测试产物（`node_modules`、`dist`、`output`、`playwright-report`、`test-results`）均位于本项目目录内。端到端测试使用本机已安装的 Microsoft Edge；其他环境需安装 Edge 或调整 Playwright 的浏览器配置。
+已有 `node_modules` 时直接使用，构建输出仍为 `dist`；下载缓存默认使用上述 D 盘路径。浏览器测试截图、报告与临时文件位于 D 盘，使用本机 Microsoft Edge。首次安装依赖如需将 `node_modules` 也放在 D 盘，见接入任务报告中的目录联接命令。
+
+```powershell
+npm test
+npm run build
+npm run test:integration  # 真实 FastAPI + 合成 Provider + 模拟 SDK，禁止外部网络
+npm run test:e2e          # 原演示入口回归
+```
+
+集成测试启动专用端口 5178/8018，不复用已有服务；默认 Python 为 `D:/CodexCaches/baidu-map-algorithm-venv/Scripts/python.exe`，可用 `ANALYSIS_TEST_PYTHON` 覆盖。产物默认在 `D:/CodexOutputs/isochrone-integration`；`INTEGRATION_OUTPUT_DIR`、`DEMO_OUTPUT_DIR` 可分别覆盖两套测试产物目录。
 
 ## 演示操作
 

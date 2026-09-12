@@ -1,7 +1,8 @@
 from pathlib import Path
 from urllib.parse import urlsplit
+from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -12,6 +13,8 @@ class Settings(BaseSettings):
         env_file=BACKEND_DIR / ".env", env_file_encoding="utf-8", extra="ignore"
     )
     baidu_map_ak: SecretStr = SecretStr("")
+    analysis_provider: Literal["baidu", "synthetic"] = "baidu"
+    analysis_qps: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     cors_origins: list[str] = [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
@@ -23,6 +26,11 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value.strip()
         return value
+
+    @field_validator("analysis_qps", mode="before")
+    @classmethod
+    def empty_qps(cls, value):
+        return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("cors_origins")
     @classmethod
