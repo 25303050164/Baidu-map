@@ -8,7 +8,7 @@ import { analysisResultToReportView } from './report';
 import { ReportPage } from './ReportPage';
 import { AnalysisLoading } from './components/AnalysisLoading';
 import { loadingOutcome } from './components/loadingFlow';
-import { DemoMap, type Focus } from './Map';
+import { MapStage, type Focus } from './Map';
 import { FacilityChart } from './Chart';
 import styles from './styles.module.css';
 const icons: Record<Category, React.ReactNode> = { market: <ShopOutlined/>, pharmacy: <MedicineBoxOutlined/>, school: <ReadOutlined/> };
@@ -40,7 +40,7 @@ export default function App() {
     <Button aria-label={state.status==='failed'?'重试分析':'开始体检'} type="primary" size="large" block icon={state.status==='failed'?<ReloadOutlined/>:<RadarChartOutlined/>} loading={state.status==='loading'} disabled={pending||!state.samples.length||analysisLoading} onClick={()=>{setMobilePanel(null);setAnalysisLoading(true);setAnimationDone(false);void analyze();}}>{state.status==='failed'?'重试分析':'开始体检'}</Button>
     <p className={styles.buttonHint}>无需 API 密钥 · 本地模拟分析</p>
     <div className={styles.layerSection}><h3><BlockOutlined/> 地图图层</h3>{([{key:'circle',label:'15 分钟范围',color:'#168875'},{key:'facilities',label:'民生设施',color:'#397ac6'},{key:'blind',label:'1 公里盲区',color:'#7f8e94'}] as const).map(l=><div className={styles.layerRow} key={l.key}><Checkbox checked={layers[l.key]} onChange={e=>setLayers({...layers,[l.key]:e.target.checked})}>{l.label}</Checkbox><span style={{background:l.color}}/></div>)}</div>
-    <div className={styles.note}><InfoCircleOutlined/><p>这里展示的是产品交互效果。道路、设施与体检结论均为模拟数据。</p></div>
+    <div className={styles.note}><InfoCircleOutlined/><p>这里展示的是产品交互效果。设施与体检结论均为模拟数据。</p></div>
   </>;
   const resultPanel=<>
     <div className={styles.panelHeading}><div><span className={styles.eyebrow}>OVERVIEW</span><h2>生活圈概览</h2></div><Tag variant="filled" color={result?'success':'default'}>{result?'演示结果':'待体检'}</Tag></div>
@@ -68,12 +68,12 @@ export default function App() {
         {state.dirty&&<div className={styles.staleBanner} role="status">条件已修改，需重新分析。下方保留的是「{result?.sample.name} / {result&&scenarioLabels[result.scenario]}」旧结果。</div>}
         {state.error&&<Alert type={state.status==='unavailable'?'warning':'error'} title={state.error} showIcon className={styles.errorBanner}/>}
         <div className={styles.narrowNotice} role="status">窗口过窄，交互空间有限，请加宽窗口或横屏使用。</div>
-        <DemoMap center={state.center} samples={state.samples} result={result} filter={state.filter} layers={layers} focus={focus} onFocus={setFocus} onPick={center=>dispatch({type:'edit',center})} loading={state.status==='loading'}/>
+        <MapStage center={state.center} samples={state.samples} result={result} filter={state.filter} layers={layers} focus={focus} onFocus={setFocus} onPick={center=>dispatch({type:'edit',center})} loading={state.status==='loading'}/>
         <div className={styles.legend}><span><i className={styles.reachLegend}/>15 分钟范围</span><span><i className={styles.blindLegend}/>1 公里服务盲区</span><span><i className={styles.unknownLegend}/>无法判断</span><span className={styles.legendHint}>两套指标独立展示</span></div>
       </section>
       {!phone&&<aside className={styles.rightPanel}>{resultPanel}</aside>}
     </main>
-    <footer className={styles.footer}><span><InfoCircleOutlined/> 本 Demo 仅展示交互效果，未接入真实地图与算法。</span><span>邻里 · 让社区生活触手可及</span></footer>
+    <footer className={styles.footer}><span><InfoCircleOutlined/> 本 Demo 仅展示交互效果，设施点位与体检结论均为演示模拟。</span><span>邻里 · 让社区生活触手可及</span></footer>
     <Drawer title="生活圈概览" open={mobilePanel==='results'} placement="right" onClose={()=>setMobilePanel(null)} size={340}>{resultPanel}</Drawer>
     <Drawer title="生活圈体检报告" open={report} onClose={()=>setReport(false)} size={680} extra={<Tag color="gold">演示数据</Tag>}>
       {reportView
