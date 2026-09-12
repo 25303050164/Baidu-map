@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "life-circle-algorithm"
+version = "0.1.0"
+description = "Budgeted BD09LL walking isochrone reconstruction"
+requires-python = ">=3.11"
+dependencies = ["numpy==2.4.6", "shapely==2.1.2", "contourpy==1.3.3", "httpx==0.28.1"]
+
+[project.optional-dependencies]
+test = ["pytest==9.1.1"]
+
+[project.scripts]
+life-circle = "life_circle.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
