@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** 百度地图 JavaScript API 密钥（浏览器端 AK）。未配置时地图回退为本地示意地图。 */
+  /** 浏览器端 AK。API 模式缺少地图配置时只展示错误和结果摘要。 */
   readonly VITE_BAIDU_MAP_AK?: string;
+  readonly VITE_ANALYSIS_MODE?: 'api' | 'demo';
+  readonly VITE_API_BASE_URL?: string;
 }

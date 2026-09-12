@@ -1,23 +1,33 @@
-# N02 · FastAPI 与百度地图连接验证
+# FastAPI · 等时圈任务服务
 
-本后端提供健康检查，以及手动执行一次百度地点检索的命令。前端 Demo 仍使用模拟数据。N02 通过不代表 FR-02 等时圈算法或 FR-03 完整设施业务已经实现。
+本后端已接入自适应网格算法，提供创建分析、查询进度、读取结果和取消任务的接口。前端默认使用该服务；设施统计尚未接入。真实步行接口及社区实验尚未验证。完整接口和验收结果见 [接入任务报告](docs/算法前后端接入任务报告.md)。原 N02 健康检查和地点检索验证命令继续保留。
 
 ## 1. 安装与启动（Windows PowerShell）
 
-使用 Python 3.12，在仓库的 `backend` 目录执行。已创建 `.venv` 时跳过创建步骤，无需激活环境：
+使用已安装的 Python 3.11，在仓库的 `backend` 目录执行。环境、下载和测试缓存使用 D 盘：
 
 ```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
+New-Item -ItemType Directory -Force D:/CodexTemp,D:/CodexCaches | Out-Null
+$env:TEMP = 'D:/CodexTemp'
+$env:TMP = 'D:/CodexTemp'
+$env:PYTHONPYCACHEPREFIX = 'D:/CodexCaches/baidu-pycache'
+$env:UV_CACHE_DIR = 'D:/CodexCaches/uv'
+# 已有该环境时跳过创建；也可以用已安装 Python 的完整路径代替 py -3.11。
+if (-not (Test-Path D:/CodexCaches/baidu-map-algorithm-venv/Scripts/python.exe)) { py -3.11 -m venv D:/CodexCaches/baidu-map-algorithm-venv }
+$analysisPython = 'D:/CodexCaches/baidu-map-algorithm-venv/Scripts/python.exe'
+uv pip install --python $analysisPython -r requirements.lock.txt -e ../life-circle-algorithm
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+$env:ANALYSIS_PROVIDER = 'synthetic'  # 首次联调使用离线合成场景
+& $analysisPython -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --no-access-log
 ```
 
 打开 <http://127.0.0.1:8000/health>；接口文档在 <http://127.0.0.1:8000/docs>。用 Ctrl+C 停止服务。默认仅监听本机，不部署公网。
 
-本次开发环境使用应用自带 Python 3.12.14，项目 `.venv` 已创建。若 `py` 不可用，可使用已安装 Python 3.12 的完整路径创建环境。依赖锁文件包含本次验证的直接和传递依赖；测试依赖也包含其中。
+本轮已验证 Python 3.11.15 和锁定依赖兼容性。必须安装本地算法包，不能仅安装后端 requirements。任务仅保存在当前进程，最多一个任务运行；终态保留 30 分钟、最多 20 条，重启后清空。不要启用多个 worker 或开发热重载来运行正式实验。
 
-## 2. 配置服务端 AK
+`ANALYSIS_PROVIDER` 默认 `baidu`；真实模式必须显式配置 `BAIDU_MAP_AK` 和正数 `ANALYSIS_QPS`。空 QPS 表示未配置，创建任务返回 503；离线模式忽略 QPS，使用匀速平面。真实模式不会自动回退合成数据。请在下一阶段核验步行权限后再启用真实调用。
+
+## 2. 原 N02 地点检索验证配置
 
 1. 登录[百度地图控制台](https://lbsyun.baidu.com/apiconsole/key)，在“应用管理 / 我的应用”找到现有 AK。确认应用类型为“服务端”，请求校验方式为“IP 白名单”。
 2. 确认该应用开通“地点检索”能力，包含地点检索 3.0，且配额可用。权限名称以控制台当前页面为准。
@@ -36,7 +46,7 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 在 `backend` 中运行；不必先启动 FastAPI：
 
 ```powershell
-.\.venv\Scripts\python.exe -m app.smoke
+& $analysisPython -m app.smoke
 $LASTEXITCODE
 ```
 
@@ -67,7 +77,7 @@ $LASTEXITCODE
 CORS_ORIGINS=["http://127.0.0.1:5173","http://localhost:5173"]
 ```
 
-允许 GET 和预检需要的 Content-Type，不允许凭据，不使用 `*`。非白名单来源无法通过浏览器读取响应；CORS 是浏览器策略，不是身份认证，普通 HTTP 客户端仍可访问健康检查。未来部署时替换为真实前端的完整来源（协议、域名及端口），重启服务；反向代理应禁用或脱敏可能带密钥的 URL 日志。
+允许 GET、POST 和预检需要的 Content-Type，不允许凭据，不使用 `*`。非白名单来源无法通过浏览器读取响应；CORS 是浏览器策略，不是身份认证。当前服务仅面向本机联调；未来部署时需另行设计身份认证和共享任务管理。
 
 使用实际 Vite 前端来源验收：从 `backend` 执行以下命令复制测试页到已忽略的前端 `output` 目录，然后按前端 README 启动 Vite：
 
@@ -83,8 +93,8 @@ Copy-Item tools\browser-health.html ..\life-circle-demo\output\n02-health.html
 ## 5. 自动检查与团队复核
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip check
-.\.venv\Scripts\python.exe -m pytest -q
+uv pip check --python $analysisPython
+& $analysisPython -m pytest -q -o cache_dir=D:/CodexCaches/backend-pytest --basetemp=D:/CodexCaches/backend-tests
 git check-ignore .env .venv/pyvenv.cfg logs/baidu-smoke.jsonl
 ```
 

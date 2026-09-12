@@ -128,6 +128,15 @@ class Statistics:
     exploration_requests: int = 0
 
 
+@dataclass(frozen=True)
+class ProgressSnapshot:
+    stage: str
+    requests: int
+    network_requests: int
+    budget: int
+    elapsed_seconds: float
+
+
 @dataclass
 class IsochroneResult:
     geometry: dict | None

@@ -1,10 +1,10 @@
 # 15 分钟生活圈算法
 
-独立 Python 模块，实现自适应四叉树采样、步行测时调度、带未知区域的时间场重建及 900 秒可达几何。包含均匀网格、32 方向扇形基线和离线实验入口。现有 React Demo 没有接入这个模块。
+独立 Python 模块，实现自适应四叉树采样、步行测时调度、带未知区域的时间场重建及 900 秒可达几何。包含均匀网格、32 方向扇形基线和离线实验入口。现已接入仓库内 FastAPI 和 React 的等时圈链路。
 
-实现依据是仓库根目录《15分钟生活圈_自适应网格算法与测试方案》。本算法模块的真实百度 API 与社区验证、设施统计、FastAPI 分析任务和地图接入仍未执行。
+实现依据是仓库根目录《15分钟生活圈_自适应网格算法与测试方案》。真实百度步行 API 与社区实验、设施统计尚未执行；前后端接入已通过离线验收。
 
-推送准备阶段同步了远端 N02 后端基础服务（`278ec69`），其中已提供 `/health`。算法尚未接入该服务；后续应在现有后端上增加分析任务能力，而不是另建重复服务。
+本轮在已有 N02 服务上增加任务接口，详见 [前后端接入任务报告](../backend/docs/算法前后端接入任务报告.md)。`TASK_COMPLETION.md` 和 `TEST_REPORT.md` 保留为算法首轮交付记录。
 
 ## 安装与运行（PowerShell）
 
@@ -59,7 +59,8 @@ payload = result.to_dict()
 
 - `IsochroneRequest`：中心点、显式坐标系、预算、相对任务截止秒数、采样参数及配置版本。阈值固定 900 秒；不支持的坐标系和不足以初始化的配置会在调用 Provider 前被拒绝。
 - `RouteObservation`：实际请求起终点、有效秒数或未知原因、采集时间、尝试次数、可获得的道路端点及是否核验。`reachable` 为 `True / False / None`，900 秒可达，900.1 秒超时。
-- `compute_isochrone(request, provider, cancel_token, *, clock=None, method="adaptive")`：自适应算法或 `uniform` 基线；扇形基线使用 `compute_radial`。
+- `compute_isochrone(request, provider, cancel_token, *, clock=None, method="adaptive", on_progress=None)`：自适应算法或 `uniform` 基线；扇形基线使用 `compute_radial`。可选同步回调接收不可变的 `ProgressSnapshot(stage, requests, network_requests, budget, elapsed_seconds)`，应快速返回且不抛异常；不提供回调时用法不变。
+- 进度阶段为 `initializing / expanding / exploring / refining / reconstructing / completed`；采样中更新真实调用计数，不估算完成百分比。几何重建通过 `asyncio.to_thread` 运行，后端仍可响应查询和取消；已运行的线程不能强行中断，取消后其结果由任务服务丢弃。
 - `CancelToken.cancel()`：停止新请求；已结束结果不接收迟到数据。Provider 应实现可取消的异步 I/O；拒绝取消的 Provider 会停止后续调度，其迟到返回只被丢弃。
 - Provider 契约为 `async query_walking_time(origin, destination, deadline)`，`deadline` 为单调时钟的绝对截止时间；另声明固定 `identity` 与 `network`。任务内 Provider 身份和路线选项不可变。
 
