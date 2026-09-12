@@ -3,9 +3,11 @@ import { Button, Tooltip } from 'antd';
 import { AimOutlined, PlusOutlined, MinusOutlined, CloseOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import { categoryMeta, type AnalysisResult, type Center, type Facility, type Filter, type Point, type Sample } from './types';
 import { centerToPoint, filterFacilities, pointToCenter } from './domain';
+import { useBaiduMap } from './map/useBaiduMap';
+import { BaiduMapView } from './map/BaiduMapView';
 import styles from './styles.module.css';
 export type Focus = Point & { id: string; name: string; detail: string; nonce?: number };
-type Props = { center: Center; samples: Sample[]; result?: AnalysisResult; filter: Filter; layers: { circle: boolean; facilities: boolean; blind: boolean }; focus?: Focus; onFocus: (focus?: Focus) => void; onPick: (center: Center) => void; loading: boolean };
+export type Props = { center: Center; samples: Sample[]; result?: AnalysisResult; filter: Filter; layers: { circle: boolean; facilities: boolean; blind: boolean }; focus?: Focus; onFocus: (focus?: Focus) => void; onPick: (center: Center) => void; loading: boolean };
 const points = (p: Point[]) => p.map(a => `${a.x},${a.y}`).join(' ');
 export function DemoMap({ center, samples, result, filter, layers, focus, onFocus, onPick, loading }: Props) {
   const svg = useRef<SVGSVGElement>(null);
@@ -56,4 +58,17 @@ export function DemoMap({ center, samples, result, filter, layers, focus, onFocu
     {!visibleCenter && <div className={styles.mapNotice}>所选坐标超出示意地图，请在地图范围内选点。</div>}
     <div className={styles.mapFoot}><span>拖动平移 · 点击选点 · A / B / C 为预设点</span><span>示意地图 / 非真实地理数据</span></div>
   </div>;
+}
+
+/** 地图舞台：配置 VITE_BAIDU_MAP_AK 后渲染百度地图实景；未配置、加载失败或初始化失败时回退本地示意地图（DemoMap）。 */
+export function MapStage(props: Props) {
+  const { mode, api } = useBaiduMap();
+  const [mapInitFailed, setMapInitFailed] = useState(false);
+  if (mode === 'real' && api && !mapInitFailed) return <BaiduMapView api={api} onInitError={() => setMapInitFailed(true)} {...props}/>;
+  if (mode === 'loading' && !mapInitFailed) return <div className={styles.mapSurface}>
+    <div className={styles.mapHeading}><span className={styles.liveDot}/><span>街区空间视图</span><span className={styles.smallMuted}>百度地图</span></div>
+    <div className={styles.mapLoading} role="status"><span className={styles.pulse}/>正在加载百度地图…</div>
+    <div className={styles.mapFoot}><span>拖动平移 · 点击选点</span><span>百度地图实景</span></div>
+  </div>;
+  return <DemoMap {...props}/>;
 }

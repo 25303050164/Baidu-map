@@ -6,6 +6,9 @@ life-circle-demo/test-results/
 life-circle-demo/playwright-report/
 life-circle-demo/*.tsbuildinfo
 life-circle-demo/*.log
+life-circle-demo/.env
+life-circle-demo/.env.local
+life-circle-demo/.env.*.local
 
 # Local editor and OS files
 .idea/
