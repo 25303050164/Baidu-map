@@ -22,3 +22,8 @@ backend/.venv/
 **/__pycache__/
 **/.pytest_cache/
 backend/logs/
+
+# Python algorithm artifacts (environments and large outputs live on D:)
+*.egg-info/
+life-circle-algorithm/.venv/
+life-circle-algorithm/build/
