@@ -23,7 +23,7 @@ export function AnalysisReport({ result, stale, lastAttemptFailed }: {
     </dl>
     <h2>01 / 步行等时圈</h2>
     <p>{view.geometrySummary}；证据质量：{view.qualityLabel}。步行阈值为 900 秒。</p>
-    <p>Provider 调用 {view.statistics.requests} 次，网络调用 {view.statistics.network_requests} 次，重试 {view.statistics.retries} 次。</p>
+    <p>Provider 调用 {view.statistics.requests} 次，网络尝试预留 {view.statistics.network_requests} 次，重试 {view.statistics.retries} 次。预留计数不等于实际发送或计费次数。</p>
     <p>未知面积 {(view.statistics.unknown_area / 1e6).toFixed(3)} 平方公里，未完成边界格 {view.statistics.unfinished_boundary} 个。</p>
     <h2>02 / 设施与服务盲区</h2>
     <table className={styles.reportTable} data-testid="analysis-facility-stats">

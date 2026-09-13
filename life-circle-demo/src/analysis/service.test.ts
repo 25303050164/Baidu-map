@@ -50,5 +50,29 @@ it('cancels by idempotency key without creating a replacement task', async () =>
 
 it('does not expose raw server or transport errors', async () => {
   const api = createApiService('', async () => new Response('sensitive upstream text', { status: 503 }));
-  await expect(api.create({ center: { lng: 0, lat: 0 }, budget: 400, clientRequestId: 'test' })).rejects.toThrow('后端');
+  await expect(api.create({ center: { lng: 0, lat: 0 }, budget: 400, clientRequestId: 'test' })).rejects.toThrow('分析服务当前不可用');
+});
+
+it('distinguishes a missing creation endpoint from a missing existing task', async () => {
+  const api = createApiService('', async () => new Response('private error details', { status: 404 }));
+  await expect(api.create({ center: { lng: 0, lat: 0 }, budget: 400, clientRequestId: 'test' })).rejects.toThrow('分析 API 地址或服务配置异常');
+  await expect(api.status('one')).rejects.toThrow('任务不存在或已过期');
+  await expect(api.result('one')).rejects.toThrow('任务不存在或已过期');
+});
+
+it.each([
+  [422, '分析参数无效，请检查中心坐标和调用预算'],
+  [503, '分析服务当前不可用，请联系管理员检查步行服务配置'],
+  [500, '分析服务异常，请稍后重试'],
+  [502, '分析服务异常，请稍后重试'],
+])('maps HTTP %s without exposing its response body', async (status, message) => {
+  const api = createApiService('', async () => new Response('private upstream stack', { status }));
+  await expect(api.status('one')).rejects.toThrow(message);
+});
+
+it('sanitizes transport failure and keeps user abort distinct from network failure', async () => {
+  const api = createApiService('', async () => { throw new Error('private transport details'); });
+  await expect(api.status('one')).rejects.toThrow('无法连接分析服务或请求超时，请检查网络和服务地址后重试');
+  const signal = AbortSignal.abort();
+  await expect(api.status('one', signal)).rejects.toMatchObject({ name: 'AbortError' });
 });
