@@ -3,16 +3,20 @@ import { resultFixture } from '../src/analysis/testFixtures';
 
 /** Contract-only browser tests. All external requests are blocked; no backend/AK is used. */
 async function setup(page: Page, options: { failOnce?: boolean; unavailable?: boolean; mismatch?: boolean;
-  createGate?: Promise<void>; resultGate?: Promise<void>; running?: boolean; createError?: number; statusError?: number; failed?: boolean } = {}) {
+  createGate?: Promise<void>; resultGate?: Promise<void>; running?: boolean; createError?: number; statusError?: number; failed?: boolean;
+  withFacilities?: boolean } = {}) {
   let submitted: { center: { lng: number; lat: number }; budget: number };
   let count = 0;
   await page.addInitScript(() => {
     const audit = { creations: 0, active: 0, paths: [] as string[][],
+      polylines: [] as { lng: number; lat: number }[][],
       markers: [] as { point: Point; options: { title: string } }[], click: undefined as undefined | ((e: unknown) => void) };
     class Overlay { addEventListener() {} removeEventListener() {} }
     class Point { constructor(public lng: number, public lat: number) {} }
     class Marker extends Overlay { constructor(public point: Point, public options: { title: string }) { super(); } }
     class Polygon extends Overlay { constructor(public rings: string[]) { super(); } }
+    class Label extends Overlay { setStyle() {} }
+    class Polyline extends Overlay { constructor(public points: Point[]) { super(); audit.polylines.push(points.map(p => ({ lng: p.lng, lat: p.lat }))); } }
     class Map {
       constructor(el: HTMLElement) {
         audit.creations++; audit.active++;
@@ -24,10 +28,10 @@ async function setup(page: Page, options: { failOnce?: boolean; unavailable?: bo
         if (overlay instanceof Polygon) audit.paths.push(overlay.rings);
         if (overlay instanceof Marker) audit.markers.push(overlay);
       }
-      clearOverlays() { audit.paths = []; audit.markers = []; }
+      clearOverlays() { audit.paths = []; audit.markers = []; audit.polylines = []; }
       destroy() { audit.active--; }
     }
-    Object.assign(window, { BMapGL: { Map, Point, Polygon, Marker }, __mapAudit: audit });
+    Object.assign(window, { BMapGL: { Map, Point, Polygon, Marker, Label, Polyline }, __mapAudit: audit });
   });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
@@ -51,6 +55,25 @@ async function setup(page: Page, options: { failOnce?: boolean; unavailable?: bo
       if (options.mismatch) {
         result.center.lng = 120;
         result.isochrone.config.origin[0] = 120;
+      }
+      if (options.withFacilities) {
+        result.facilitiesStatus = 'partial';
+        result.data = { ...result.data, report: '离线契约样例：1 处设施，未知不判为盲区。',
+          facilities: [{ id: 'pharmacy-fixture', name: '离线测试药房', category: 'pharmacy', minor_category: 'pharmacy',
+            major_category: 'medical', location: { ...submitted.center }, in_circle: true }] };
+        result.facilityAnalysis = {
+          status: 'partial',
+          queries: [{ category: 'pharmacy', query: '药店', status: 'truncated', pages: 2, returned: 1, excluded: 0, invalid: 0, total: 150, reason: 'page_limit' }],
+          assessments: [{ location: { ...submitted.center }, duration_s: 500, categories: [
+            { category: 'shopping', status: 'unknown', facility_id: null, distance_m: null, reason: 'incomplete' },
+            { category: 'medical', status: 'covered', facility_id: 'pharmacy-fixture', distance_m: 600, reason: 'walking' },
+            { category: 'education', status: 'unknown', facility_id: null, distance_m: null, reason: 'incomplete' },
+          ] }],
+          candidate_points: 2, assessed_points: 1, unassessed_points: 1, network_requests: 0, elapsed_seconds: 0, search_radius_m: 3500,
+          routes: {},
+          serviceBlindRegions: {},
+          warnings: ['离线样例，未测点不计入盲区。'],
+        };
       }
       return route.fulfill({ json: result });
     }
@@ -207,4 +230,33 @@ test('a structurally valid response for different input is rejected before rende
   await expect(page.getByText('分析结果与提交条件不一致，请检查服务版本', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '查看分析报告', exact: true })).toBeDisabled();
   await expect(page.getByTestId('analysis-report')).not.toBeVisible();
+});
+
+test('facility route requests stay on the same origin and draw the returned path', async ({ page }) => {
+  await setup(page, { withFacilities: true });
+  const savedRoute = { distance_m: 600, duration_s: 500, endpoint_verified: true, reason: null,
+    path: [[116.404, 39.915], [116.405, 39.916]] };
+  const routeRequests: string[] = [];
+  await page.route('**/api/analyses/*/routes/*', route => {
+    routeRequests.push(route.request().url());
+    return route.fulfill({ json: savedRoute });
+  });
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await page.getByRole('button', { name: '开始分析', exact: true }).click();
+  await expect(page.getByTestId('analysis-report')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('设施与基础报告', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /离线测试药房/ }).click();
+  await page.getByRole('button', { name: '查看中心到设施的步行路线' }).click();
+  await expect(page.getByText('600 米 · 500 秒 · 端点已核验')).toBeVisible();
+  // The api base is unconfigured here, so the route POST must go to the page origin,
+  // never to a hardcoded backend port.
+  expect(routeRequests).toHaveLength(1);
+  expect(routeRequests[0]).toMatch(/^http:\/\/127\.0\.0\.1:5179\/api\/analyses\/task-1\/routes\/pharmacy-fixture$/);
+  const audit = await page.evaluate(() => (window as any).__mapAudit);
+  expect(audit.polylines).toEqual([savedRoute.path.map(([lng, lat]) => ({ lng, lat }))]);
+  expect(audit.markers.map((marker: any) => marker.options.title)).toContain('离线测试药房');
+  expect(errors).toEqual([]);
 });
