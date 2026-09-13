@@ -28,6 +28,10 @@ export interface AnalysisService {
   cancelByRequest(clientRequestId: string): Promise<TaskStatus>;
 }
 export type AnalysisState = {
-  phase: 'idle' | 'submitting' | 'running' | 'cancelling' | 'completed' | 'cancelled' | 'error';
+  phase: 'idle' | 'submitting' | 'running' | 'fetching' | 'cancelling' | 'completed' | 'cancelled' | 'error';
   task?: TaskStatus; result?: AnalysisResult; error?: string;
 };
+
+export function isAnalysisBusy(state: AnalysisState) {
+  return ['submitting', 'running', 'fetching', 'cancelling'].includes(state.phase);
+}
