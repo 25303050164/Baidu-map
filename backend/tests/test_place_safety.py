@@ -20,6 +20,15 @@ def test_short_page_continues_and_repeated_page_stops():
     assert state.consume(page([1], 5), 8) == "pagination_anomaly"
 
 
+def test_overlapping_pages_do_not_fill_total_with_duplicate_uids():
+    state = Pagination()
+    assert state.consume(page(range(20), 30), 8) is None
+    assert state.consume(page(range(10, 20), 30), 8) == "pagination_anomaly"
+    assert state.returned == 30
+    assert state.seen_uids == {str(uid) for uid in range(20)}
+    assert "pagination_anomaly" in state.warnings
+
+
 @pytest.mark.parametrize("pages,expected", [
     ([page([1], 2), page([], 2)], "pagination_uncertain"),
     ([page([1], 2), page([2], 3), page([3], 3)], "pagination_uncertain"),
