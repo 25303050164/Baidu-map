@@ -176,7 +176,13 @@ test('cancels the server task and clears old state when center changes', async (
   await expect(page.getByText('任务已取消', { exact: true })).toBeVisible();
   const status = await (await request.get(`http://127.0.0.1:8018/api/analyses/${id}`)).json();
   expect(status.status).toBe('cancelled');
-  expect(status.requests).toBeLessThanOrEqual(4);
+  expect(status.requests).toBeLessThan(status.budget);
+  // Browser scheduling changes the count before the click; cancellation must stop growth.
+  await page.waitForTimeout(500);
+  const settled = await (await request.get(`http://127.0.0.1:8018/api/analyses/${id}`)).json();
+  expect(settled.status).toBe('cancelled');
+  expect(settled.requests).toBe(status.requests);
+  expect((await request.get(`http://127.0.0.1:8018/api/analyses/${id}/result`)).status()).toBe(409);
   await page.getByRole('spinbutton', { name: '纬度', exact: true }).fill('39.916');
   await expect(page.getByText('任务已取消', { exact: true })).not.toBeVisible();
 });
@@ -194,7 +200,7 @@ test('network failure is explicit and can resume the same analysis request', asy
   await page.route('**/api/analyses', route => route.abort(), { times: 1 });
   await page.goto('/');
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
-  await expect(page.getByText('无法连接后端或请求超时，请检查服务后重试', { exact: true })).toBeVisible();
+  await expect(page.getByText('无法连接分析服务或请求超时，请检查网络和服务地址后重试', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '重试', exact: true }).click();
   await expect(page.getByText('分析完成', { exact: true })).toBeVisible();
   await expect(page.getByTestId('analysis-report')).toBeVisible();
@@ -222,7 +228,7 @@ test('reports retain their original conditions after edits, unavailable results 
   await page.getByRole('spinbutton', { name: '经度', exact: true }).fill('116.406');
   await page.route('**/api/analyses', route => route.fulfill({ status: 503, body: '{}' }), { times: 1 });
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
-  await expect(page.getByText('后端步行服务未就绪，请检查 AK 和 QPS 配置', { exact: true })).toBeVisible();
+  await expect(page.getByText('分析服务当前不可用，请联系管理员检查步行服务配置', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '查看分析报告', exact: true }).click();
   await expect(report).toContainText('116.404000, 39.915000');
   await expect(report).toContainText('最近一次分析未成功');
@@ -245,7 +251,7 @@ test('lost create response can be cancelled by request key after editing center'
   await page.goto('/');
   await page.getByRole('spinbutton', { name: '经度', exact: true }).fill('116.409');
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
-  await expect(page.getByText('无法连接后端或请求超时，请检查服务后重试', { exact: true })).toBeVisible();
+  await expect(page.getByText('无法连接分析服务或请求超时，请检查网络和服务地址后重试', { exact: true })).toBeVisible();
   const cancelled = page.waitForResponse(r => r.url().includes('/by-request/') && r.status() === 202);
   await page.getByRole('spinbutton', { name: '经度', exact: true }).fill('116.404');
   await cancelled;

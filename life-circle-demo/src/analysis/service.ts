@@ -18,13 +18,17 @@ export function createApiService(base = import.meta.env.VITE_API_BASE_URL?.trim(
       });
     } catch {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      throw new Error('无法连接后端或请求超时，请检查服务后重试');
+      throw new Error('无法连接分析服务或请求超时，请检查网络和服务地址后重试');
     }
     if (!response.ok) {
-      const messages: Record<number, string> = { 404: '任务不存在或已过期，请重新分析',
+      const messages: Record<number, string> = { 404: path === ''
+        ? '分析 API 地址或服务配置异常，请检查服务地址'
+        : '任务不存在或已过期，请重新分析',
         409: '任务状态冲突，服务可能仍在运行其他分析，请稍后重试',
-        422: '中心坐标或预算不符合要求', 503: '后端步行服务未就绪，请检查 AK 和 QPS 配置' };
-      throw new ApiError(messages[response.status] || '后端请求失败，请稍后重试', response.status);
+        422: '分析参数无效，请检查中心坐标和调用预算',
+        503: '分析服务当前不可用，请联系管理员检查步行服务配置' };
+      throw new ApiError(messages[response.status] || (response.status >= 500
+        ? '分析服务异常，请稍后重试' : '分析请求未成功，请检查服务配置后重试'), response.status);
     }
     try {
       const body: unknown = await response.json();

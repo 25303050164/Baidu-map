@@ -15,6 +15,67 @@ function service(): AnalysisService {
 afterEach(() => vi.useRealTimers());
 
 describe('analysis lifecycle', () => {
+  it('ignores repeated start and retry while creation is in flight', async () => {
+    const api = service();
+    let finish!: (value: TaskStatus) => void;
+    api.create = vi.fn(() => new Promise<TaskStatus>(resolve => { finish = resolve; }));
+    const controller = new AnalysisController(api, () => {});
+    const work = controller.start(input);
+    expect(controller.state.phase).toBe('submitting');
+    await Promise.all([controller.start(input), controller.retry()]);
+    expect(api.create).toHaveBeenCalledTimes(1);
+    finish(status());
+    await work;
+    expect(controller.state.phase).toBe('completed');
+  });
+  it('ignores duplicate starts in the reset gap after a completed run', async () => {
+    const api = service();
+    const controller = new AnalysisController(api, () => {});
+    await controller.start(input);
+    await Promise.all([controller.start(input), controller.start(input)]);
+    expect(api.create).toHaveBeenCalledTimes(2);
+  });
+  it('shows fetching until the result arrives and cancellation ignores a late result', async () => {
+    const api = service();
+    let finish!: (value: AnalysisResult) => void;
+    api.result = vi.fn(() => new Promise<AnalysisResult>(resolve => { finish = resolve; }));
+    const controller = new AnalysisController(api, () => {});
+    const work = controller.start(input);
+    await vi.waitFor(() => expect(controller.state.phase).toBe('fetching'));
+    await controller.start(input);
+    expect(api.create).toHaveBeenCalledTimes(1);
+    await controller.cancel();
+    expect(controller.state.phase).toBe('cancelled');
+    finish(result);
+    await work;
+    expect(controller.state.phase).toBe('cancelled');
+    expect(controller.state.result).toBeUndefined();
+  });
+  it('keeps an explicit cancelled state while recovering a late creation response', async () => {
+    const api = service();
+    let finish!: (value: TaskStatus) => void;
+    api.create = vi.fn(() => new Promise<TaskStatus>(resolve => { finish = resolve; }));
+    const controller = new AnalysisController(api, () => {});
+    const work = controller.start(input);
+    await controller.cancel();
+    expect(controller.state.phase).toBe('cancelled');
+    finish(status());
+    await work;
+    expect(api.cancel).toHaveBeenCalledWith('one');
+    expect(api.result).not.toHaveBeenCalled();
+    expect(controller.state.phase).toBe('cancelled');
+  });
+  it('cancelling after a failed result fetch does not fetch again or reopen a report', async () => {
+    const api = service();
+    vi.mocked(api.result).mockRejectedValueOnce(new Error('result connection lost'));
+    const controller = new AnalysisController(api, () => {});
+    await controller.start(input);
+    expect(controller.state.phase).toBe('error');
+    await controller.cancel();
+    expect(controller.state.phase).toBe('cancelled');
+    expect(api.result).toHaveBeenCalledTimes(1);
+    expect(api.cancel).not.toHaveBeenCalled();
+  });
   it('rejects completed results for a different center, budget, source or task', async () => {
     for (const wrong of [
       { ...result, center: { lng: 120, lat: 39 } },
