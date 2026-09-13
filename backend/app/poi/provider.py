@@ -34,16 +34,28 @@ def sanitize(value, secret=''):
 
 
 def whitelist(payload, secret=''):
-    result = {k: payload[k] for k in ('status', 'total', 'result_type') if k in payload}
+    result = {k: payload[k] if type(payload[k]) in (int, str, type(None)) else None
+              for k in ('status', 'total', 'result_type') if k in payload}
+    def point(value):
+        if not isinstance(value, dict):
+            return None
+        return {k: value[k] if type(value[k]) in (int, float, str, bool) else None
+                for k in ('lng', 'lat') if k in value}
     result['results'] = []
     for row in payload['results']:
         if not isinstance(row, dict):
             result['results'].append({'invalidType': type(row).__name__})
             continue
-        item = {k: deepcopy(row[k]) for k in ('uid', 'name', 'address', 'location') if k in row}
+        item = {k: row[k] if isinstance(row[k], str) else None
+                for k in ('uid', 'name', 'address') if k in row}
+        if 'location' in row:
+            item['location'] = point(row['location'])
         details = row.get('detail_info')
         if isinstance(details, dict):
-            item['detail_info'] = {k: deepcopy(details[k]) for k in ('classified_poi_tag', 'navi_location', 'parent_id') if k in details}
+            item['detail_info'] = {k: details[k] if isinstance(details[k], str) else None
+                                  for k in ('classified_poi_tag', 'parent_id') if k in details}
+            if 'navi_location' in details:
+                item['detail_info']['navi_location'] = point(details['navi_location'])
         result['results'].append(item)
     return sanitize(result, secret)
 

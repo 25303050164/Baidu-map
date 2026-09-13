@@ -22,7 +22,8 @@ async def collect_pois(request, provider, runtime) -> PoiCollectionResult:
     runtime.used = True
     sequences = plan['sequences']
     coverage = [{**s, 'status': 'pending', 'pages': 0, 'returned': 0, 'total': None,
-                 'warnings': [], 'stopReason': None} for s in sequences]
+                 'warnings': [], 'stopReason': None, 'requestedPages': [], 'successfulPages': [],
+                 'reportedTotals': [], 'pageErrors': []} for s in sequences]
     pagination = [Pagination() for _ in sequences]
     records, quarantine = [], []
     source = 'baidu_place' if runtime.live else 'synthetic'
@@ -39,14 +40,18 @@ async def collect_pois(request, provider, runtime) -> PoiCollectionResult:
                     if reason != 'category_budget':
                         runtime.stop_reason = reason
                 if payload is None:
+                    meta['pageErrors'].append({'pageNum': page, 'reason': reason})
                     meta.update(status='partial' if meta['pages'] else 'failed', stopReason=reason)
                     continue
                 state = pagination[index]
                 reason = state.consume(payload, plan['maxPages'])
+                meta['successfulPages'].append(page)
+                meta['reportedTotals'].append({'pageNum': page, 'total': state.total})
                 meta.update(pages=state.pages, returned=state.returned, total=state.total,
                             warnings=sorted(set(state.warnings)), status='running')
                 for row_index, row in enumerate(payload['results']):
-                    provenance = {'tileId': sequence['tileId'], 'query': sequence['query'], 'pageNum': page}
+                    provenance = {'tileId': sequence['tileId'], 'category': sequence['category'],
+                                  'sequenceId': sequence['sequenceId'], 'query': sequence['query'], 'pageNum': page}
                     try:
                         records.append(normalize(row, provenance, source))
                     except ValueError as exc:
@@ -63,6 +68,8 @@ async def collect_pois(request, provider, runtime) -> PoiCollectionResult:
     if runtime.token.cancelled:
         runtime.stop_reason = 'cancelled'
     for meta in coverage:
+        meta['requestedPages'] = sorted({e['pageNum'] for e in runtime.events
+                                        if e['sequenceId'] == meta['sequenceId']})
         if meta['status'] in ('pending', 'running'):
             meta.update(status='partial' if meta['pages'] else 'failed', stopReason=runtime.stop_reason or 'unfinished')
     accepted, review, excluded, outside, merged = merge_entities(records, request, plan)

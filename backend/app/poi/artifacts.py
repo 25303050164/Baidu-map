@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import re
+from tempfile import TemporaryDirectory
 
 from app.persistence import atomic_dump
 from app.request_control import RequestStopped
@@ -46,6 +47,11 @@ def export_artifacts(output, config, plan, result, runtime, *, secret=''):
         'querySequences': len(payload['queryCoverage']),
         'completedSequences': sum(q['status'] == 'completed' for q in payload['queryCoverage']),
         'sampleMethod': 'sort-by-sha256-id-first-15-per-category-v1', 'manualReviewCompleted': False}
+    metrics['coverageByCategory'] = {c: {
+        'planned': sum(q['category'] == c for q in payload['queryCoverage']),
+        **{status: sum(q['category'] == c and q['status'] == status for q in payload['queryCoverage'])
+           for status in ('completed', 'partial', 'failed')}
+    } for c in CATEGORIES}
     objects = {'config-sanitized.json': config.model_dump(mode='json', by_alias=True), 'query-plan.json': plan,
         'poi-result.json': payload, 'query-coverage.json': payload['queryCoverage'], 'metrics.json': metrics,
         'ledger-final.json': ledger}
@@ -73,8 +79,15 @@ ledger-final.json 是审计快照，不可作为新额度或续跑来源；在�
         raise RequestStopped('sensitive_output')
     if output.exists():
         raise RequestStopped('output_already_exists')
-    output.mkdir(parents=True)
-    for name, value in files.items():
-        (output / name).write_text(value, encoding='utf-8', newline='')
-    atomic_dump(output / 'security-check.json', {'passed': True, 'filesChecked': sorted(files),
-        'exactCredentialChecked': bool(secret), 'rawTransportCaptured': False, 'csvFormulaEscaping': True})
+    output.parent.mkdir(parents=True, exist_ok=True)
+    # Publish a complete directory on the same filesystem only after every write succeeds.
+    with TemporaryDirectory(prefix='.poi-export-', dir=output.parent) as staging_root:
+        staging = Path(staging_root) / 'result'
+        staging.mkdir()
+        for name, value in files.items():
+            (staging / name).write_text(value, encoding='utf-8', newline='')
+        atomic_dump(staging / 'security-check.json', {'passed': True, 'filesChecked': sorted(files),
+            'exactCredentialChecked': bool(secret), 'rawTransportCaptured': False, 'csvFormulaEscaping': True})
+        if output.exists():
+            raise RequestStopped('output_already_exists')
+        staging.rename(output)

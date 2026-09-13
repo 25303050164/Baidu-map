@@ -35,16 +35,22 @@ def text(value):
 def classify(name, tags):
     evidence = []
     full = name + ' ' + ' '.join(tags)
-    excluded = [w for w in RULES['excluded'] if w in full]
+    tag_parts = {part.strip() for tag in tags for part in re.split(r'[;；,，|>]', tag) if part.strip()}
+    business_tags = tag_parts.difference(RULES['nonBusinessParentTags'])
+    excluded = [w for w in RULES['excluded'] if w in name or any(w in tag for tag in business_tags)]
+    if re.search(r'\d+号门', name):
+        excluded.append('numbered_gate')
     if excluded:
         return None, 'excluded', ['excluded:' + w for w in excluded]
     disputed = [w for w in RULES['review'] if w in full]
     if disputed:
         return None, 'needs_review', ['policy_unconfirmed:' + w for w in disputed]
     names = {c for c, words in RULES['queries'].items() if any(w in name for w in words)}
-    tagged = {c for c, words in RULES['supportedTags'].items() if any(w in ' '.join(tags) for w in words)}
+    tagged = {c for c, words in RULES['supportedTags'].items() if tag_parts.intersection(words)}
     evidence.extend('name:' + c for c in sorted(names))
     evidence.extend('tag:' + c for c in sorted(tagged))
+    if tag_parts.intersection(RULES['conflictingTags']):
+        return None, 'needs_review', evidence + ['conflicting_non_target_tags']
     if len(names | tagged) > 1:
         return None, 'needs_review', evidence + ['conflicting_categories']
     if len(tagged) == 1:
@@ -106,11 +112,17 @@ def merge_entities(records, request, plan):
         conflicts = []
         if len({tuple(r['location'].values()) for r in values}) > 1:
             conflicts.append('uid_location_conflict')
+        for field, reason in (('name', 'uid_name_conflict'), ('address', 'uid_address_conflict'),
+                              ('parentUid', 'uid_parent_conflict')):
+            if len({canonical(r[field]) for r in values if r[field]}) > 1:
+                conflicts.append(reason)
         verdicts = {r['classificationStatus'] for r in values}
         if 'excluded' in verdicts and len(verdicts) > 1:
             conflicts.append('uid_classification_conflict')
         if conflicts:
             category, status = None, 'needs_review'
+        if status == 'accepted' and category not in request.categories:
+            category, status, evidence = None, 'excluded', ['category_not_requested']
         item.update(category=category, classificationStatus=status,
                     classificationEvidence=sorted(set(evidence + conflicts)), conflicts=conflicts)
         {'accepted': accepted, 'needs_review': review, 'excluded': excluded}[status].append(item)

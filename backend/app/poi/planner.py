@@ -50,5 +50,5 @@ def build_plan(request, config):
 
 def parameters(sequence, page):
     lng, lat = sequence['center']
-    return {'query': sequence['query'], 'location': f'{lat:.8f},{lng:.8f}', 'radius': sequence['radius'],
+    return {'query': sequence['query'], 'location': f'{lat:.6f},{lng:.6f}', 'radius': sequence['radius'],
             'coord_type': 3, 'radius_limit': 'true', 'scope': 2, 'page_size': 20, 'page_num': page, 'output': 'json'}
