@@ -6,17 +6,10 @@ import { geometryMessage } from './geometry';
 /** Task API → geographic frontend AnalysisResult. Never use the legacy demo projection. */
 export function decodeAnalysisResult(value: unknown): AnalysisResult {
   if (!validResult(value)) throw new Error('后端返回格式异常，请检查服务版本');
-  const r = value.isochrone;
-  return structuredClone({
-    taskId: value.taskId, dataSource: value.dataSource, center: value.center,
-    generatedAt: value.generatedAt, facilitiesStatus: value.facilitiesStatus,
-    isochrone: {
-      coordinateSystem: r.coordinateSystem, geometry: r.geometry,
-      uncertainRegion: r.uncertainRegion, unknownRegion: r.unknownRegion,
-      computationExtent: r.computationExtent, quality: r.quality,
-      stopReason: r.stopReason, warnings: r.warnings, statistics: r.statistics, config: r.config,
-    },
-  });
+  const keys = ['schema_version', 'responseType', 'taskId', 'taskStatus', 'status', 'businessStatus',
+    'dataSource', 'center', 'generatedAt', 'facilitiesStatus', 'facilityAnalysis', 'coordinateSystem',
+    'coordinateOrder', 'units', 'rules', 'data', 'algorithm', 'warnings', 'errors', 'isochrone'] as const;
+  return structuredClone(Object.fromEntries(keys.filter(k => k in value).map(k => [k, value[k]]))) as AnalysisResult;
 }
 
 export function matchesAnalysisInput(result: AnalysisResult, input: AnalysisInput) {
@@ -44,7 +37,12 @@ export function analysisReportView(result: AnalysisResult) {
     statistics: result.isochrone.statistics,
     warnings: result.isochrone.warnings,
     // not_integrated is unknown, never zero facilities or zero blind zones.
-    facilityStats: categories.map(category => ({ category, label: categoryMeta[category].label, count: null })),
+    facilityStats: categories.map(category => {
+      const entry = result.data.categories.find(c => c.category === category);
+      return { category, label: categoryMeta[category].label,
+        count: result.facilityAnalysis ? entry?.count_in_circle ?? null : null,
+        state: result.facilityAnalysis ? '检索记录 · 估算圈内' : '尚未接入' };
+    }),
     blindZoneCount: null,
   };
 }

@@ -89,7 +89,9 @@ async function mockMap(page: Page, location: LocationFixture = {}) {
         setTimeout(() => callback(fixture.geocode ?? null), 0);
       }
     }
-    Object.assign(window, { BMapGL: { Map, Point, Polygon, Marker: Overlay, Geolocation, LocalSearch, Bounds, Geocoder } });
+    class Label extends Overlay { setStyle() {} }
+    class Polyline extends Overlay {}
+    Object.assign(window, { BMapGL: { Map, Point, Polygon, Marker: Overlay, Label, Polyline, Geolocation, LocalSearch, Bounds, Geocoder } });
   }, location);
 }
 
@@ -159,7 +161,7 @@ test('local unknown remains a separate layer', async ({ page }) => {
   expect(result.isochrone.unknownRegion.coordinates.length).toBeGreaterThan(0);
   const unknown = await page.evaluate(() => (window as any).__polygons.filter((p: any) => p.options.fillColor === '#64748b'));
   expect(unknown.length).toBe(result.isochrone.unknownRegion.coordinates.length);
-  await page.getByRole('checkbox', { name: '未知区域' }).uncheck();
+  await page.getByRole('checkbox', { name: '不可达/未核验区域（灰色）' }).uncheck();
   expect(await page.evaluate(() => (window as any).__polygons.filter((p: any) => p.options.fillColor === '#64748b').length)).toBe(0);
 });
 
@@ -189,7 +191,7 @@ test('SDK failure keeps coordinate analysis and summary usable without demo fall
   await page.goto('/');
   await expect(page.getByText('地图不可用', { exact: true })).toBeVisible();
   await analyze(page);
-  await expect(page.getByText(/^已重建 \d+ 个可达分量$/)).toBeVisible();
+  await expect(page.getByRole('region', { name: '分析结果', exact: true }).getByText(/已重建 \d+ 个可达分量/)).toBeVisible();
   await expect(page.getByText('演示数据', { exact: true })).not.toBeVisible();
 });
 
@@ -356,4 +358,53 @@ test('POI search resolves a nationwide administrative name through address fallb
   await expect(page.getByText('地址定位', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /苍南县/ }).click();
   await expect(page.getByRole('spinbutton', { name: '经度', exact: true })).toHaveValue(/120\.43/);
+});
+
+test('facility report, category filtering, route and time layers share one analysis', async ({ page }, info) => {
+  await mockMap(page);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const location = { lng: 116.405, lat: 39.915 };
+  const savedRoute = { distance_m: 600, duration_s: 500, endpoint_verified: true, reason: null, path: [[116.404, 39.915], [116.405, 39.915]] };
+  await page.route('**/api/analyses/*/result', async route => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.facilitiesStatus = 'partial';
+    data.data.facilities = [{ id: 'pharmacy-fixture', name: '离线测试药房', category: 'pharmacy', minor_category: 'pharmacy', major_category: 'medical', location, in_circle: true }];
+    data.data.report = '离线业务样例：1处设施，未知不当盲区。';
+    data.facilityAnalysis = {
+      status: 'partial',
+      queries: [{ category: 'pharmacy', query: '药店', status: 'truncated', pages: 2, returned: 1, excluded: 0, invalid: 0, total: 150, reason: 'page_limit' }],
+      assessments: [{ location, duration_s: 500, categories: [
+        { category: 'shopping', status: 'unknown', facility_id: null, distance_m: null, reason: 'incomplete' },
+        { category: 'medical', status: 'covered', facility_id: 'pharmacy-fixture', distance_m: 600, reason: 'walking' },
+        { category: 'education', status: 'unknown', facility_id: null, distance_m: null, reason: 'incomplete' },
+      ] }],
+      candidate_points: 2, assessed_points: 1, unassessed_points: 1, network_requests: 0, elapsed_seconds: 0, search_radius_m: 3500,
+      routes: { 'pharmacy-fixture': savedRoute },
+      serviceBlindRegions: {
+        shopping: { type: 'MultiPolygon', coordinateSystem: 'bd09ll', coordinates: [] },
+        medical: { type: 'MultiPolygon', coordinateSystem: 'bd09ll', coordinates: [] },
+        education: { type: 'MultiPolygon', coordinateSystem: 'bd09ll', coordinates: [] },
+      },
+      warnings: ['离线样例，未测点不计入盲区。'],
+    };
+    await route.fulfill({ response, json: data });
+  });
+  await page.route('**/api/analyses/*/routes/*', route => route.fulfill({ json: savedRoute }));
+  await page.goto('/');
+  await analyze(page);
+  await expect(page.getByText('设施与基础报告', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /离线测试药房/ }).click();
+  await page.getByRole('button', { name: '查看中心到设施的步行路线' }).click();
+  await expect(page.getByText('600 米 · 500 秒 · 端点已核验')).toBeVisible();
+  await page.getByRole('combobox', { name: '步行时间层' }).click();
+  await page.getByTitle('5 分钟', { exact: true }).click();
+  await expect(page.getByText('离线业务样例：1处设施，未知不当盲区。', { exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('facilities-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText('设施与基础报告', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath('facilities-mobile.png'), fullPage: true });
+  expect(errors).toEqual([]);
 });

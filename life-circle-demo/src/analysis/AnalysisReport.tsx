@@ -13,7 +13,7 @@ export function AnalysisReport({ result, stale, lastAttemptFailed }: {
     <div className={styles.eyebrow}>COMMUNITY CHECKUP / ANALYSIS</div>
     <h1>15 分钟生活圈分析报告</h1>
     {reportWarnings({ stale, lastAttemptFailed }).map(w => <Alert key={w.kind} type="warning" title={w.message} showIcon />)}
-    <Alert type="warning" title="部分体检结果：设施与服务盲区尚未接入" showIcon />
+    <Alert type="warning" title={result.facilityAnalysis ? "部分体检结果：设施为有限检索，盲区面积尚未验证" : "部分体检结果：设施与服务盲区尚未接入"} showIcon />
     <dl>
       <div><dt>分析中心点</dt><dd>{view.center.lng.toFixed(6)}, {view.center.lat.toFixed(6)}</dd></div>
       <div><dt>分析时间</dt><dd>{new Date(view.generatedAt).toLocaleString('zh-CN', { hour12: false })}</dd></div>
@@ -28,9 +28,9 @@ export function AnalysisReport({ result, stale, lastAttemptFailed }: {
     <h2>02 / 设施与服务盲区</h2>
     <table className={styles.reportTable} data-testid="analysis-facility-stats">
       <thead><tr><th>设施类别</th><th>圈内数量</th><th>数据状态</th></tr></thead>
-      <tbody>{view.facilityStats.map(s => <tr key={s.category}><td>{s.label}</td><td>{s.count ?? '无法确定'}</td><td>尚未接入</td></tr>)}</tbody>
+      <tbody>{view.facilityStats.map(s => <tr key={s.category}><td>{s.label}</td><td>{s.count ?? '无法确定'}</td><td>{s.state}</td></tr>)}</tbody>
     </table>
-    <p>设施盲区数量：{view.blindZoneCount ?? '无法确定'}。后端未执行设施检索和 1 公里服务评估，不能判断设施缺失或服务充分。</p>
+    <p>设施盲区数量：{view.blindZoneCount ?? '无法确定'}。{result.facilityAnalysis ? result.data.report : '后端未执行设施检索和 1 公里服务评估，不能判断设施缺失或服务充分。'}</p>
     <h2>03 / 结果适用边界</h2>
     <p>未知区域表示缺少步行证据，不代表不可达或设施盲区；不确定区域表示边界尚待核实。可达区域为空与无法确定可达区域含义不同。</p>
     {result.dataSource === 'synthetic' && <p>本次使用合成 Provider，仅供流程和算法验收，不代表真实社区。</p>}

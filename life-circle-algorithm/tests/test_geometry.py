@@ -16,6 +16,21 @@ from life_circle.coordinates import LocalProjection
 ORIGIN = (116.4, 39.9)
 
 
+def test_time_bands_are_nested_and_reuse_the_same_observations():
+    from shapely.geometry import shape
+    provider = AnalyticProvider(ORIGIN, lambda x,y: np.hypot(x,y)/1.2)
+    result = asyncio.run(compute_isochrone(IsochroneRequest(ORIGIN,"bd09ll",budget=200),provider))
+    bands = result.to_dict()["timeBands"]
+    assert [b["minutes"] for b in bands] == [5,10,15]
+    geometries = [shape(b["geometry"]) for b in bands]
+    assert geometries[0].area > 0
+    assert geometries[0].difference(geometries[1]).area < 1e-12
+    assert geometries[1].difference(geometries[2]).area < 1e-12
+    assert bands[-1]["geometry"] == result.geometry
+    assert result.to_dict()["unreachableRegion"] is not None
+    assert provider.calls == result.statistics.requests <= 200
+
+
 def sample(mesh, function):
     for point in mesh.required_points():
         mesh.samples[point] = RouteObservation(point, function(*point))

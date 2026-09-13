@@ -3,16 +3,43 @@ from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .rules import DistanceRule
 
-Category = Literal["market", "pharmacy", "school"]
+MajorCategory = Literal["shopping", "medical", "education"]
+MinorCategory = Literal["market", "supermarket", "pharmacy", "hospital_pharmacy", "school"]
+# Kept as a public alias for older N04/N05 callers.
+Category = MinorCategory
 Status = Literal["complete", "partial", "failed", "empty"]
+AsyncStatus = Literal["running", "cancelling", "completed", "cancelled", "failed"]
+
+MINOR_TO_MAJOR: dict[str, str] = {
+    "market": "shopping", "supermarket": "shopping",
+    "pharmacy": "medical", "hospital_pharmacy": "medical",
+    "school": "education",
+}
+
+
+def map_business_status(*, quality: str, facilities_status: str,
+                        facilities: list | None = None) -> Status:
+    """Map module evidence to the four business result states.
+
+    A successful async transport is only ``partial`` while a module is not
+    integrated. ``empty`` means an integrated module ran and returned no
+    facilities; it is never used for missing or unknown evidence.
+    """
+    if quality in ("insufficient", "failed"):
+        return "failed"
+    if quality != "usable":
+        return "partial"
+    if facilities_status == "complete" and facilities is not None:
+        return "empty" if facilities == [] else "complete"
+    return "partial"
 
 
 class WireModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, populate_by_name=True)
 
 
 class Origin(WireModel):
@@ -23,7 +50,11 @@ class Origin(WireModel):
 class Geometry(WireModel):
     type: Literal["Polygon", "MultiPolygon"]
     coordinates: list
-    coordinate_system: Literal["bd09ll"] = Field(default="bd09ll", validation_alias=AliasChoices("coordinate_system", "coordinateSystem"))
+    coordinate_system: Literal["bd09ll"] = Field(
+        default="bd09ll",
+        alias="coordinateSystem",
+        validation_alias=AliasChoices("coordinate_system", "coordinateSystem"),
+    )
 
 
 class Issue(WireModel):
@@ -33,26 +64,129 @@ class Issue(WireModel):
     severity: Literal["warning", "error", "pending"] = "warning"
 
 
-class Facility(WireModel):
+class CategoryLevels(WireModel):
+    category: Category
+    major_category: MajorCategory
+    minor_category: MinorCategory
+
+    @model_validator(mode="after")
+    def consistent_categories(self):
+        if self.category != self.minor_category or self.major_category != MINOR_TO_MAJOR[self.minor_category]:
+            raise ValueError("Category fields must describe the same facility category")
+        return self
+
+
+class Facility(CategoryLevels):
     id: str
     name: str
     category: Category
+    major_category: MajorCategory
+    minor_category: MinorCategory
     location: Origin
     in_circle: bool | None
 
+    @model_validator(mode="before")
+    @classmethod
+    def fill_category_levels(cls, value):
+        if isinstance(value, dict):
+            value = dict(value)
+            minor = value.get("minor_category") or value.get("minorCategory") or value.get("category")
+            if minor:
+                value.setdefault("category", minor)
+                value.setdefault("minor_category", minor)
+                value.setdefault("major_category", MINOR_TO_MAJOR.get(minor))
+        return value
 
-class CategoryResult(WireModel):
+
+class CategoryResult(CategoryLevels):
     category: Category
+    major_category: MajorCategory
+    minor_category: MinorCategory
     query_status: Literal["complete", "unknown", "failed"]
     count_in_circle: int | None = Field(ge=0)
     service_status: Literal["covered", "blind", "unknown"]
 
+    @model_validator(mode="before")
+    @classmethod
+    def fill_category_levels(cls, value):
+        if isinstance(value, dict):
+            value = dict(value)
+            minor = value.get("minor_category") or value.get("minorCategory") or value.get("category")
+            if minor:
+                value.setdefault("category", minor)
+                value.setdefault("minor_category", minor)
+                value.setdefault("major_category", MINOR_TO_MAJOR.get(minor))
+        return value
 
-class BlindPoint(WireModel):
+
+class BlindPoint(CategoryLevels):
     location: Origin
     category: Category
+    major_category: MajorCategory
+    minor_category: MinorCategory
     status: Literal["covered", "blind", "unknown"]
     evidence: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_category_levels(cls, value):
+        if isinstance(value, dict):
+            value = dict(value)
+            minor = value.get("minor_category") or value.get("minorCategory") or value.get("category")
+            if minor:
+                value.setdefault("category", minor)
+                value.setdefault("minor_category", minor)
+                value.setdefault("major_category", MINOR_TO_MAJOR.get(minor))
+        return value
+
+
+class CoverageEvidence(WireModel):
+    category: MajorCategory
+    status: Literal["covered", "blind", "unknown"]
+    facility_id: str | None = None
+    distance_m: float | None = None
+    reason: str
+
+
+class AssessmentPoint(WireModel):
+    location: Origin
+    duration_s: float
+    categories: list[CoverageEvidence]
+
+
+class QueryEvidence(WireModel):
+    category: MinorCategory
+    query: str
+    status: Literal["complete", "partial", "failed", "truncated"]
+    pages: int
+    returned: int
+    excluded: int
+    invalid: int
+    total: int | None
+    reason: str | None
+
+
+class RouteEvidence(WireModel):
+    distance_m: float | None
+    duration_s: float | None
+    endpoint_verified: bool
+    reason: str | None
+    path: list[list[float]]
+
+
+class FacilityAnalysis(WireModel):
+    status: Literal["complete", "partial", "failed"]
+    queries: list[QueryEvidence]
+    assessments: list[AssessmentPoint]
+    candidate_points: int
+    assessed_points: int
+    unassessed_points: int
+    network_requests: int
+    elapsed_seconds: float
+    search_radius_m: int
+    routes: dict[str, RouteEvidence] = Field(default_factory=dict)
+    service_blind_regions: dict[MajorCategory, Geometry] = Field(default_factory=dict, alias="serviceBlindRegions")
+    warnings: list[str]
 
 
 class Data(WireModel):
@@ -62,7 +196,8 @@ class Data(WireModel):
     computation_extent: Geometry | None = None
     facilities: list[Facility] | None = None
     categories: list[CategoryResult] = Field(default_factory=lambda: [
-        CategoryResult(category=c, query_status="unknown", count_in_circle=None, service_status="unknown")
+        CategoryResult(category=c, major_category=MINOR_TO_MAJOR[c], minor_category=c,
+                       query_status="unknown", count_in_circle=None, service_status="unknown")
         for c in ("market", "pharmacy", "school")
     ])
     blind_points: list[BlindPoint] | None = None
@@ -104,3 +239,44 @@ class SyntheticRequest(WireModel):
     scenario: Literal["plane", "local_failure", "global_failure"] = "plane"
     budget: int = Field(default=400, ge=144, le=800, strict=True)
     distance_rule: DistanceRule = Field(default_factory=DistanceRule)
+
+
+class TaskStatusResponse(WireModel):
+    """统一异步任务响应；business_status 是业务结果，status 是传输任务状态。"""
+    schema_version: Literal["1.0"] = "1.0"
+    response_type: Literal["task"] = Field(default="task", alias="responseType")
+    task_id: str = Field(alias="taskId")
+    status: AsyncStatus
+    business_status: Status | None = Field(default=None, alias="businessStatus")
+    stage: str
+    requests: int = Field(ge=0)
+    network_requests: int = Field(ge=0, alias="networkRequests")
+    budget: Literal[200, 400, 800]
+    elapsed_seconds: float = Field(ge=0, alias="elapsedSeconds")
+    data_source: Literal["synthetic", "baidu_walking"] = Field(alias="dataSource")
+    error: str | None = None
+
+
+class TaskResultResponse(WireModel):
+    """异步结果与旧地理分析契约共享坐标、单位和数据语义。"""
+    schema_version: Literal["1.0"] = "1.0"
+    response_type: Literal["result"] = Field(default="result", alias="responseType")
+    task_id: str = Field(alias="taskId")
+    task_status: Literal["completed"] = Field(alias="taskStatus")
+    status: Status
+    business_status: Status = Field(alias="businessStatus")
+    data_source: Literal["synthetic", "baidu_walking"] = Field(alias="dataSource")
+    center: Origin
+    generated_at: float = Field(alias="generatedAt", gt=0)
+    facilities_status: Literal["not_integrated", "complete", "partial", "failed"] = Field(alias="facilitiesStatus")
+    facility_analysis: FacilityAnalysis | None = Field(default=None, alias="facilityAnalysis")
+    coordinate_system: Literal["bd09ll"] = Field(default="bd09ll", alias="coordinateSystem")
+    coordinate_order: Literal["longitude,latitude"] = Field(default="longitude,latitude", alias="coordinateOrder")
+    units: dict[str, str] = Field(default_factory=lambda: {"distance": "m", "duration": "s", "area": "m2"})
+    rules: Rules = Field(default_factory=Rules)
+    data: Data = Field(default_factory=Data)
+    algorithm: dict | None = None
+    warnings: list[Issue] = Field(default_factory=list)
+    errors: list[Issue] = Field(default_factory=list)
+    # Compatibility payload consumed by the current async browser client.
+    isochrone: dict

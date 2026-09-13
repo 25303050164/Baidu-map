@@ -8,7 +8,7 @@ from shapely.errors import GEOSException
 from shapely.geometry import box
 
 from .coordinates import LocalProjection, normalize
-from .field import GeometryError, business_geometry, reconstruct
+from .field import GeometryError, business_geometry, reconstruct, contour_field
 from .mesh import Mesh
 from .models import CancelToken, IsochroneResult, ProgressSnapshot, RouteObservation
 from .scheduler import Scheduler
@@ -166,6 +166,10 @@ async def compute_isochrone(request, provider, cancel_token=None, *, clock=None,
     report("reconstructing")
     try:
         field = await asyncio.to_thread(reconstruct, mesh, request.raster_size)
+        bands = []
+        for minutes in (5, 10, 15):
+            geometry = field.geometry if minutes == 15 else await asyncio.to_thread(contour_field, field.x, field.x, field.z, field.support, minutes * 60)
+            bands.append({"minutes": minutes, "geometry": None if field.support.is_empty else business_geometry(geometry, projection)})
     except (GeometryError, GEOSException):
         # Keep evidence metadata; never silently repair and enlarge the result.
         warnings.append("geometry_error")
@@ -207,4 +211,6 @@ async def compute_isochrone(request, provider, cancel_token=None, *, clock=None,
         business_geometry(box(-mesh.extent, -mesh.extent, mesh.extent, mesh.extent), projection), quality,
         scheduler.stop_reason or ("budget" if budget_blocked else "maximum_range" if "range_truncated" in warnings and mesh.extent == request.max_extent else "resolution_limit"), scheduler.stats, sorted(set(warnings)), request,
         None if insufficient else field.geometry, field.unknown,
+        time_bands=bands, sample_observations=list(scheduler.cache.values()),
+        unreachable_region=None if insufficient else business_geometry(field.support.difference(field.geometry), projection),
     )

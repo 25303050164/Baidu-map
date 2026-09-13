@@ -69,6 +69,14 @@ def test_ut16_snapped_endpoint_and_echo_are_distinguished():
     assert query(response([route(500, end=(116.411, 39.901)), route(800)])).duration == 800
 
 
+def test_baidu_numeric_string_endpoints_are_verified_without_accepting_bad_values():
+    r = route(557, start=tuple(map(str, ORIGIN)), end=tuple(map(str, DEST)))
+    assert query(response([r])).endpoint_verified
+    assert query(response([route(557, end=("116.411", "39.901"))])).reason == "endpoint_offset"
+    for value in ("nan", "inf", "invalid", True, None):
+        assert not query(response([route(557, start=(value, "39.9"))])).endpoint_verified
+
+
 def test_real_qps_required_and_retry_uses_budget():
     async def run():
         count = 0

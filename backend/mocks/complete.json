@@ -27,9 +27,9 @@
       "metric": "walking_route",
       "threshold_m": 1000.0,
       "inclusive": true,
-      "tolerance_m": 0.0,
-      "assessment_scope": "sample",
-      "category_policy": "per_category"
+      "tolerance_m": 100.0,
+      "assessment_scope": "isochrone",
+      "category_policy": "major_minor"
     }
   },
   "data": {
@@ -101,9 +101,11 @@
     },
     "facilities": [
       {
+        "category": "market",
+        "major_category": "shopping",
+        "minor_category": "market",
         "id": "mock-market",
         "name": "虚构market",
-        "category": "market",
         "location": {
           "lng": 116.4,
           "lat": 39.9
@@ -111,9 +113,11 @@
         "in_circle": true
       },
       {
+        "category": "pharmacy",
+        "major_category": "medical",
+        "minor_category": "pharmacy",
         "id": "mock-pharmacy",
         "name": "虚构pharmacy",
-        "category": "pharmacy",
         "location": {
           "lng": 116.4,
           "lat": 39.9
@@ -121,9 +125,11 @@
         "in_circle": true
       },
       {
+        "category": "school",
+        "major_category": "education",
+        "minor_category": "school",
         "id": "mock-school",
         "name": "虚构school",
-        "category": "school",
         "location": {
           "lng": 116.4,
           "lat": 39.9
@@ -134,18 +140,24 @@
     "categories": [
       {
         "category": "market",
+        "major_category": "shopping",
+        "minor_category": "market",
         "query_status": "complete",
         "count_in_circle": 1,
         "service_status": "covered"
       },
       {
         "category": "pharmacy",
+        "major_category": "medical",
+        "minor_category": "pharmacy",
         "query_status": "complete",
         "count_in_circle": 1,
         "service_status": "covered"
       },
       {
         "category": "school",
+        "major_category": "education",
+        "minor_category": "school",
         "query_status": "complete",
         "count_in_circle": 1,
         "service_status": "covered"
@@ -153,29 +165,35 @@
     ],
     "blind_points": [
       {
-        "location": {
-          "lng": 116.4,
-          "lat": 39.9
-        },
         "category": "market",
-        "status": "covered",
-        "evidence": "合成规则：该类虚构设施位于评估点，步行距离0m。"
-      },
-      {
+        "major_category": "shopping",
+        "minor_category": "market",
         "location": {
           "lng": 116.4,
           "lat": 39.9
         },
+        "status": "covered",
+        "evidence": "合成规则：该类虚构设施位于评估点，步行距离0m。"
+      },
+      {
         "category": "pharmacy",
-        "status": "covered",
-        "evidence": "合成规则：该类虚构设施位于评估点，步行距离0m。"
-      },
-      {
+        "major_category": "medical",
+        "minor_category": "pharmacy",
         "location": {
           "lng": 116.4,
           "lat": 39.9
         },
+        "status": "covered",
+        "evidence": "合成规则：该类虚构设施位于评估点，步行距离0m。"
+      },
+      {
         "category": "school",
+        "major_category": "education",
+        "minor_category": "school",
+        "location": {
+          "lng": 116.4,
+          "lat": 39.9
+        },
         "status": "covered",
         "evidence": "合成规则：该类虚构设施位于评估点，步行距离0m。"
       }

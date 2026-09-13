@@ -5,7 +5,7 @@ import type { AnalysisService, TaskStatus, AnalysisResult } from './types';
 import { resultFixture } from './testFixtures';
 
 const input = { center: { lng: 116.404, lat: 39.915 }, budget: 200 as const };
-const status = (state = 'running'): TaskStatus => ({ taskId: 'one', status: state as TaskStatus['status'], stage: 'initializing', requests: 2, networkRequests: 0, budget: 200, elapsedSeconds: 1, dataSource: 'synthetic', error: null });
+const status = (state = 'running'): TaskStatus => ({ schema_version: '1.0', responseType: 'task', taskId: 'one', status: state as TaskStatus['status'], businessStatus: state === 'failed' ? 'failed' : null, stage: 'initializing', requests: 2, networkRequests: 0, budget: 200, elapsedSeconds: 1, dataSource: 'synthetic', error: null });
 const result = resultFixture();
 function service(): AnalysisService {
   return { create: vi.fn(async () => status()), status: vi.fn(async () => status('completed')),

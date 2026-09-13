@@ -3,17 +3,39 @@
     "BlindPoint": {
       "additionalProperties": false,
       "properties": {
-        "location": {
-          "$ref": "#/$defs/Origin"
-        },
         "category": {
           "enum": [
             "market",
+            "supermarket",
             "pharmacy",
+            "hospital_pharmacy",
             "school"
           ],
           "title": "Category",
           "type": "string"
+        },
+        "major_category": {
+          "enum": [
+            "shopping",
+            "medical",
+            "education"
+          ],
+          "title": "Major Category",
+          "type": "string"
+        },
+        "minor_category": {
+          "enum": [
+            "market",
+            "supermarket",
+            "pharmacy",
+            "hospital_pharmacy",
+            "school"
+          ],
+          "title": "Minor Category",
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/Origin"
         },
         "status": {
           "enum": [
@@ -30,8 +52,10 @@
         }
       },
       "required": [
-        "location",
         "category",
+        "major_category",
+        "minor_category",
+        "location",
         "status",
         "evidence"
       ],
@@ -44,10 +68,32 @@
         "category": {
           "enum": [
             "market",
+            "supermarket",
             "pharmacy",
+            "hospital_pharmacy",
             "school"
           ],
           "title": "Category",
+          "type": "string"
+        },
+        "major_category": {
+          "enum": [
+            "shopping",
+            "medical",
+            "education"
+          ],
+          "title": "Major Category",
+          "type": "string"
+        },
+        "minor_category": {
+          "enum": [
+            "market",
+            "supermarket",
+            "pharmacy",
+            "hospital_pharmacy",
+            "school"
+          ],
+          "title": "Minor Category",
           "type": "string"
         },
         "query_status": {
@@ -83,6 +129,8 @@
       },
       "required": [
         "category",
+        "major_category",
+        "minor_category",
         "query_status",
         "count_in_circle",
         "service_status"
@@ -260,7 +308,8 @@
           "default": "unconfirmed",
           "enum": [
             "unconfirmed",
-            "per_category"
+            "per_category",
+            "major_minor"
           ],
           "title": "Category Policy",
           "type": "string"
@@ -272,21 +321,43 @@
     "Facility": {
       "additionalProperties": false,
       "properties": {
+        "category": {
+          "enum": [
+            "market",
+            "supermarket",
+            "pharmacy",
+            "hospital_pharmacy",
+            "school"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "major_category": {
+          "enum": [
+            "shopping",
+            "medical",
+            "education"
+          ],
+          "title": "Major Category",
+          "type": "string"
+        },
+        "minor_category": {
+          "enum": [
+            "market",
+            "supermarket",
+            "pharmacy",
+            "hospital_pharmacy",
+            "school"
+          ],
+          "title": "Minor Category",
+          "type": "string"
+        },
         "id": {
           "title": "Id",
           "type": "string"
         },
         "name": {
           "title": "Name",
-          "type": "string"
-        },
-        "category": {
-          "enum": [
-            "market",
-            "pharmacy",
-            "school"
-          ],
-          "title": "Category",
           "type": "string"
         },
         "location": {
@@ -305,9 +376,11 @@
         }
       },
       "required": [
+        "category",
+        "major_category",
+        "minor_category",
         "id",
         "name",
-        "category",
         "location",
         "in_circle"
       ],

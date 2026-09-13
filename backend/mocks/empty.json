@@ -27,9 +27,9 @@
       "metric": "walking_route",
       "threshold_m": 1000.0,
       "inclusive": true,
-      "tolerance_m": 0.0,
-      "assessment_scope": "sample",
-      "category_policy": "per_category"
+      "tolerance_m": 100.0,
+      "assessment_scope": "isochrone",
+      "category_policy": "major_minor"
     }
   },
   "data": {
@@ -103,18 +103,24 @@
     "categories": [
       {
         "category": "market",
+        "major_category": "shopping",
+        "minor_category": "market",
         "query_status": "complete",
         "count_in_circle": 0,
         "service_status": "unknown"
       },
       {
         "category": "pharmacy",
+        "major_category": "medical",
+        "minor_category": "pharmacy",
         "query_status": "complete",
         "count_in_circle": 0,
         "service_status": "unknown"
       },
       {
         "category": "school",
+        "major_category": "education",
+        "minor_category": "school",
         "query_status": "complete",
         "count_in_circle": 0,
         "service_status": "unknown"

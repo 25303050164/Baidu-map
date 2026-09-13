@@ -12,7 +12,9 @@ class DistanceRule(BaseModel):
     inclusive: bool | None = None
     tolerance_m: float | None = Field(default=None, ge=0)
     assessment_scope: Literal["unconfirmed", "isochrone", "community", "sample"] = "unconfirmed"
-    category_policy: Literal["unconfirmed", "per_category"] = "unconfirmed"
+    # ``per_category`` is retained as a compatibility value; new payloads use
+    # ``major_minor`` to make the shopping/medical/education hierarchy explicit.
+    category_policy: Literal["unconfirmed", "per_category", "major_minor"] = "unconfirmed"
 
 
 def distance_within(value: float | None, measured_metric: str, rule: DistanceRule) -> bool | None:

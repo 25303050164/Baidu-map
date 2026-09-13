@@ -23,12 +23,12 @@ def multipolygon(geometry):
     return MultiPolygon()
 
 
-def contour_field(x, y, z, support):
+def contour_field(x, y, z, support, threshold=900):
     generator = contourpy.contour_generator(
         x=x, y=y, z=np.ma.masked_invalid(z), name="serial", corner_mask=False,
         quad_as_tri=True, fill_type="OuterOffset", z_interp="Linear", chunk_count=(1, 1),
     )
-    points, offsets = generator.filled(-1, 900)
+    points, offsets = generator.filled(-1, threshold)
     polygons = []
     for coordinates, boundaries in zip(points, offsets):
         rings = [coordinates[a:b] for a, b in zip(boundaries, boundaries[1:])]

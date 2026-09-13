@@ -57,7 +57,8 @@ async function setup(page: Page, options: { failOnce?: boolean; unavailable?: bo
     if (route.request().method() === 'GET' && options.statusError) return route.fulfill({ status: options.statusError, json: {} });
     const status = url.pathname.endsWith('/cancel') ? 'cancelled' : options.failed ? 'failed' : options.running ? 'running' : 'completed';
     return route.fulfill({ status: route.request().method() === 'POST' ? 202 : 200,
-      json: { taskId, status, stage: status === 'running' ? 'refining' : status, requests: 200, networkRequests: 0,
+      json: { schema_version: '1.0', responseType: 'task', businessStatus: status === 'completed' ? 'partial' : status === 'failed' ? 'failed' : null,
+        taskId, status, stage: status === 'running' ? 'refining' : status, requests: 200, networkRequests: 0,
         budget: submitted.budget, elapsedSeconds: 1, dataSource: 'synthetic', error: null } });
   });
   return { creations: () => count };

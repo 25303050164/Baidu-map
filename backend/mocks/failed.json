@@ -41,18 +41,24 @@
     "categories": [
       {
         "category": "market",
+        "major_category": "shopping",
+        "minor_category": "market",
         "query_status": "unknown",
         "count_in_circle": null,
         "service_status": "unknown"
       },
       {
         "category": "pharmacy",
+        "major_category": "medical",
+        "minor_category": "pharmacy",
         "query_status": "unknown",
         "count_in_circle": null,
         "service_status": "unknown"
       },
       {
         "category": "school",
+        "major_category": "education",
+        "minor_category": "school",
         "query_status": "unknown",
         "count_in_circle": null,
         "service_status": "unknown"

@@ -17,6 +17,9 @@ from life_circle.models import CancelToken, IsochroneRequest, ProgressSnapshot, 
 from life_circle.providers import AnalyticProvider, BaiduProvider
 
 from .baidu import silence_transport_logs
+from .contracts import Data, Issue, Rules, TaskResultResponse, TaskStatusResponse, RouteEvidence, map_business_status
+from .rules import DistanceRule
+from .facilities import analyze_facilities
 
 
 class Center(BaseModel):
@@ -59,15 +62,27 @@ class Job:
     error: str | None = None
     finished_at: float | None = None
     task: asyncio.Task | None = None
+    route_clicks: int = 0
+    route_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    def business_status(self):
+        if self.status == "failed":
+            return "failed"
+        if self.status != "completed" or not self.result:
+            return None
+        return self.result.get("businessStatus", "partial")
 
     def view(self):
-        return {"taskId": self.task_id, "status": self.status,
-                "stage": self.status if self.status in TERMINAL or self.status == "cancelling" else self.progress.stage if self.progress else "initializing",
-                "requests": self.progress.requests if self.progress else 0,
-                "networkRequests": self.progress.network_requests if self.progress else 0,
-                "budget": self.payload.budget,
-                "elapsedSeconds": max(0, (self.finished_at or time.monotonic()) - self.started),
-                "dataSource": self.data_source, "error": self.error}
+        return TaskStatusResponse(
+            task_id=self.task_id, status=self.status, business_status=self.business_status(),
+            stage=self.status if self.status in TERMINAL or self.status == "cancelling"
+            else self.progress.stage if self.progress else "initializing",
+            requests=self.progress.requests if self.progress else 0,
+            network_requests=self.progress.network_requests if self.progress else 0,
+            budget=self.payload.budget,
+            elapsed_seconds=max(0, (self.finished_at or time.monotonic()) - self.started),
+            data_source=self.data_source, error=self.error,
+        ).model_dump(by_alias=True)
 
 
 class RateGate:
@@ -172,6 +187,7 @@ class AnalysisManager:
 
     async def run(self, job):
         try:
+            business = None
             async with AsyncExitStack() as stack:
                 origin, budget = job.payload.fingerprint()
                 if self.provider_factory:
@@ -187,15 +203,46 @@ class AnalysisManager:
                 request = IsochroneRequest(origin, "bd09ll", budget=budget,
                     qps=self.settings.analysis_qps if provider.network else None)
                 result = await compute_isochrone(request, provider, job.token, on_progress=lambda p: self.update(job, p))
+                if not self.provider_factory and provider.network and result.quality != "insufficient" and not job.token.cancelled:
+                    self.update(job, ProgressSnapshot("facilities", result.statistics.requests, result.statistics.network_requests, budget, time.monotonic()-job.started))
+                    business = await analyze_facilities(result, client, self.settings.baidu_map_ak.get_secret_value(), self.gate, job.token,
+                        deadline=job.started + 600)
             # Commit only after transport cleanup; cancellation during cleanup wins.
             if job.token.cancelled:
                 job.status = "cancelled"
             elif result.stop_reason == "geometry_error":
                 job.status, job.error = "failed", "几何重建失败，请重试或检查采样证据"
             else:
-                job.result = {"taskId": job.task_id, "dataSource": job.data_source,
-                    "center": {"lng": origin[0], "lat": origin[1]}, "generatedAt": time.time(),
-                    "facilitiesStatus": "not_integrated", "isochrone": result.to_dict()}
+                payload = result.to_dict()
+                # The current algorithm only supplies the isochrone.  The
+                # normalized business status therefore remains partial until
+                # facility/report modules are connected.  Insufficient evidence
+                # is a failed business result even though the async task ran.
+                business_status = map_business_status(quality=payload["quality"],
+                    facilities_status=business[2].status if business else "not_integrated",
+                    facilities=business[0] if business else None)
+                warnings = [Issue(code="ALGORITHM_WARNING", message=message,
+                                   scope="isochrone") for message in payload["warnings"]]
+                errors = ([Issue(code="INSUFFICIENT_EVIDENCE",
+                                 message="没有足够步行证据生成等时圈。", scope="isochrone", severity="error")]
+                           if business_status == "failed" else [])
+                job.result = TaskResultResponse(
+                    task_id=job.task_id, task_status="completed", status=business_status,
+                    business_status=business_status,
+                    data_source=job.data_source, center={"lng": origin[0], "lat": origin[1]},
+                    generated_at=time.time(), facilities_status=business[2].status if business else "not_integrated",
+                    facility_analysis=business[2] if business else None,
+                    rules=Rules(distance=DistanceRule(metric="walking_route", threshold_m=1000,
+                        inclusive=True, tolerance_m=100, assessment_scope="isochrone",
+                        category_policy="major_minor")),
+                    data=Data(geometry=payload["geometry"], uncertain_region=payload["uncertainRegion"],
+                              unknown_region=payload["unknownRegion"], computation_extent=payload["computationExtent"]),
+                    algorithm=payload, warnings=warnings, errors=errors, isochrone=payload,
+                ).model_dump(by_alias=True)
+                if business:
+                    facilities, categories, evidence, report = business
+                    job.result["data"].update(facilities=[f.model_dump() for f in facilities], categories=[c.model_dump() for c in categories], report=report)
+                    job.result["warnings"].extend(Issue(code="FACILITY_LIMITATION", message=message, scope="facilities").model_dump() for message in evidence.warnings)
                 job.status = "completed"
         except asyncio.CancelledError:
             job.token.cancel()
@@ -229,15 +276,42 @@ class AnalysisManager:
 def analysis_router(manager):
     router = APIRouter(prefix="/api/analyses", tags=["analyses"])
 
-    @router.post("", status_code=202)
+    @router.post("/{task_id}/routes/{facility_id}", response_model=RouteEvidence)
+    async def facility_route(task_id: str, facility_id: str):
+        job = manager.get(task_id)
+        if job.status != "completed" or not job.result or not job.result.get("facilityAnalysis"):
+            raise HTTPException(409, "设施结果尚未就绪")
+        async with job.route_lock:
+            evidence = job.result["facilityAnalysis"]
+            if facility_id in evidence["routes"]:
+                return evidence["routes"][facility_id]
+            item = next((f for f in job.result["data"]["facilities"] if f["id"] == facility_id), None)
+            if item is None:
+                raise HTTPException(404, "设施不属于本次分析")
+            if job.route_clicks >= 3:
+                raise HTTPException(429, "本次分析的新增路线查询已达3次，请使用已有路线或重新分析")
+            job.route_clicks += 1
+            deadline = time.monotonic()+20
+            origin = job.payload.fingerprint()[0]
+            silence_transport_logs()
+            async with httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
+                provider = BaiduProvider(manager.settings.baidu_map_ak.get_secret_value(),client=client,destination_uid=facility_id,route_metric="distance")
+                observed = await LimitedProvider(provider, manager.gate).query_walking_time(origin,(item["location"]["lng"],item["location"]["lat"]),deadline)
+            value = RouteEvidence(distance_m=observed.distance_m,duration_s=observed.duration,endpoint_verified=observed.endpoint_verified,
+                                  reason=observed.reason,path=observed.route_path if observed.endpoint_verified else []).model_dump()
+            evidence["routes"][facility_id] = value
+            evidence["network_requests"] += 1
+            return value
+
+    @router.post("", status_code=202, response_model=TaskStatusResponse)
     async def create(payload: AnalysisInput):
         return manager.create(payload).view()
 
-    @router.get("/{task_id}")
+    @router.get("/{task_id}", response_model=TaskStatusResponse)
     async def status(task_id: str):
         return manager.get(task_id).view()
 
-    @router.post("/by-request/{client_request_id}/cancel", status_code=202)
+    @router.post("/by-request/{client_request_id}/cancel", status_code=202, response_model=TaskStatusResponse)
     async def cancel_by_request(client_request_id: str):
         # Recover a lost create response without replaying POST and starting new work.
         manager.prune()
@@ -246,14 +320,14 @@ def analysis_router(manager):
                 return manager.cancel(job).view()
         raise HTTPException(404, "任务不存在或已过期")
 
-    @router.get("/{task_id}/result")
+    @router.get("/{task_id}/result", response_model=TaskResultResponse)
     async def result(task_id: str):
         job = manager.get(task_id)
         if job.status != "completed":
             raise HTTPException(409, "任务尚未完成或没有可用结果")
         return job.result
 
-    @router.post("/{task_id}/cancel", status_code=202)
+    @router.post("/{task_id}/cancel", status_code=202, response_model=TaskStatusResponse)
     async def cancel(task_id: str):
         return manager.cancel(manager.get(task_id)).view()
 

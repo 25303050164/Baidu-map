@@ -2,8 +2,9 @@ import { expect, it, vi } from 'vitest';
 import { createApiService } from './service';
 import { resultFixture } from './testFixtures';
 
-const task = { taskId: 'one', status: 'completed', stage: 'completed', requests: 200,
-  networkRequests: 0, budget: 200, elapsedSeconds: 1, dataSource: 'synthetic', error: null };
+const task = { schema_version: '1.0', responseType: 'task', taskId: 'one', status: 'completed',
+  businessStatus: 'partial', stage: 'completed', requests: 200, networkRequests: 0, budget: 200,
+  elapsedSeconds: 1, dataSource: 'synthetic', error: null };
 
 it('adapts valid HTTP results and strips unknown top-level fields', async () => {
   const body = { ...resultFixture(), extra: 'not part of the frontend contract' };

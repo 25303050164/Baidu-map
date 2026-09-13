@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from life_circle.models import RouteObservation
 
 from app.config import Settings
+from app.contracts import TaskResultResponse, TaskStatusResponse, map_business_status
 from app.main import create_app
 
 
@@ -42,6 +43,9 @@ def test_real_algorithm_result_and_idempotency():
         assert state["status"] == "completed"
         assert 144 <= state["requests"] <= 200
         result = client.get(f"/api/analyses/{task}/result").json()
+        TaskResultResponse.model_validate(result)
+        assert result["responseType"] == "result"
+        assert result["businessStatus"] == "partial"
         assert result["dataSource"] == "synthetic"
         assert result["facilitiesStatus"] == "not_integrated"
         assert result["isochrone"]["geometry"]["type"] == "MultiPolygon"
@@ -49,6 +53,35 @@ def test_real_algorithm_result_and_idempotency():
         assert result["isochrone"]["statistics"]["network_requests"] == 0
         assert client.post(f"/api/analyses/{task}/cancel").json()["status"] == "completed"
         assert client.post("/api/analyses", json=body(budget=400)).status_code == 409
+
+
+def test_n05_task_models_are_explicit_and_openapi_is_typed():
+    with TestClient(create_app(config())) as client:
+        created = client.post("/api/analyses", json=body("contract")).json()
+        TaskStatusResponse.model_validate(created)
+        assert created["responseType"] == "task"
+        assert created["businessStatus"] is None
+        state = finished(client, created["taskId"])
+        TaskStatusResponse.model_validate(state)
+        assert state["status"] == "completed" and state["businessStatus"] == "partial"
+        spec = client.get("/openapi.json").json()
+        paths = spec["paths"]
+        assert paths["/api/analyses"]["post"]["responses"]["202"]["content"]["application/json"]["schema"]["$ref"].endswith("TaskStatusResponse")
+        assert paths["/api/analyses/{task_id}/result"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("TaskResultResponse")
+
+
+@pytest.mark.parametrize("quality,facilities_status,facilities,expected", [
+    ("usable", "complete", [{"id": "1"}], "complete"),
+    ("usable", "complete", [], "empty"),
+    ("usable", "complete", None, "partial"),
+    ("partial", "not_integrated", None, "partial"),
+    ("partial", "complete", [{"id": "1"}], "partial"),
+    ("partial", "complete", [], "partial"),
+    ("insufficient", "not_integrated", None, "failed"),
+])
+def test_business_status_mapping(quality, facilities_status, facilities, expected):
+    assert map_business_status(quality=quality, facilities_status=facilities_status,
+                               facilities=facilities) == expected
 
 
 @pytest.mark.parametrize("change", [{"budget": 1}, {"budget": True}, {"coordinateSystem": "wgs84"},
@@ -123,7 +156,8 @@ def test_insufficient_is_completed_not_empty():
 
     with TestClient(create_app(config(), provider_factory=lambda _: Unknown())) as client:
         task = client.post("/api/analyses", json=body()).json()["taskId"]
-        assert finished(client, task)["status"] == "completed"
+        state = finished(client, task)
+        assert state["status"] == "completed" and state["businessStatus"] == "failed"
         result = client.get(f"/api/analyses/{task}/result").json()["isochrone"]
         assert result["geometry"] is None
         assert result["quality"] == "insufficient"

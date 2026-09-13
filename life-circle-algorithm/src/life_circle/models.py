@@ -77,6 +77,8 @@ class RouteObservation:
     route_origin: Point | None = None
     route_destination: Point | None = None
     request_origin: Point | None = None
+    distance_m: float | None = None
+    route_path: list = field(default_factory=list)
 
     def __post_init__(self):
         if type(self.duration) not in (int, float) or not math.isfinite(self.duration) or self.duration < 0:
@@ -151,12 +153,17 @@ class IsochroneResult:
     # Local Shapely objects support offline evaluation, excluded from the wire format.
     local_geometry: object = field(repr=False, default=None)
     local_unknown: object = field(repr=False, default=None)
+    time_bands: list = field(default_factory=list)
+    sample_observations: list = field(default_factory=list, repr=False)
+    unreachable_region: dict | None = None
 
     def to_dict(self):
         return {
             "coordinateSystem": "bd09ll", "geometry": self.geometry,
             "uncertainRegion": self.uncertain_region, "unknownRegion": self.unknown_region,
+            "unreachableRegion": self.unreachable_region,
             "computationExtent": self.computation_extent, "quality": self.quality,
             "stopReason": self.stop_reason, "statistics": asdict(self.statistics),
             "warnings": self.warnings, "config": asdict(self.config),
+            "timeBands": self.time_bands,
         }

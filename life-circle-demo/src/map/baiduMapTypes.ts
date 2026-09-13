@@ -156,6 +156,7 @@ export interface BaiduMapApi {
   Point: new (lng: number, lat: number) => BMapPoint;
   Size: new (width: number, height: number) => BMapSize;
   Polygon: new (points: BMapPoint[] | string[], options?: BMapPolygonOptions) => BMapOverlay;
+  Polyline?: new (points: BMapPoint[], options?: BMapPolygonOptions) => BMapOverlay;
   Label: new (content: string, options?: BMapLabelOptions) => BMapOverlay & BMapLabel;
   Marker: new (point: BMapPoint, options?: BMapMarkerOptions) => BMapOverlay;
   Icon: new (url: string, size: BMapSize, options?: BMapIconOptions) => BMapIcon;
