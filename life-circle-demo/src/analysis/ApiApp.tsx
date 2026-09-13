@@ -4,19 +4,18 @@ import type { Center } from '../types';
 import { createApiService } from './service';
 import { AnalysisController } from './controller';
 import type { AnalysisResult, AnalysisState, Budget, Isochrone } from './types';
+import { isAnalysisBusy } from './types';
 import { ApiMap, type Layers } from './ApiMap';
 import { LocationControls } from './LocationControls';
 import { geometryMessage } from './geometry';
 import { analysisAvailability } from './adapter';
 import { AnalysisReport } from './AnalysisReport';
+import { AnalysisProgress } from './AnalysisProgress';
 import './api.css';
 import { FacilityPanel } from './FacilityPanel';
 
-const stages: Record<string, string> = { initializing: '初始化采样', expanding: '检查并扩展范围', exploring: '探索采样', refining: '边界细化与补测', reconstructing: '重建时间场与几何', completed: '分析完成', cancelled: '已取消', cancelling: '正在取消', failed: '分析失败' };
 const reasons: Record<string, string> = { budget: '达到调用预算', deadline: '达到截止时间', resolution_limit: '达到网格分辨率或完成边界检查', maximum_range: '达到最大范围', permission: '步行接口权限异常', quota: '服务配额不足', invalid_parameter: '上游参数被拒绝', upstream_failure: '连续上游故障', geometry_error: '几何重建失败' };
 const warnings: Record<string, string> = { range_unknown: '外缘存在未知样本，范围尚未核实', range_truncated: '可达边界可能被计算范围截断', unfinished_boundary: '部分边界尚未完成细化', endpoints_unverified: '部分路线端点尚未核验', geometry_error: '几何重建失败' };
-
-stages.facilities = '检索设施与核对步行距离';
 
 function ResultSummary({ result }: { result: Isochrone }) {
   return <>
@@ -24,7 +23,7 @@ function ResultSummary({ result }: { result: Isochrone }) {
     <dl className="api-statistics">
       <dt>停止原因</dt><dd>{reasons[result.stopReason] || result.stopReason}</dd>
       <dt>Provider 调用</dt><dd>{result.statistics.requests} 次</dd>
-      <dt>真实网络调用</dt><dd>{result.statistics.network_requests} 次</dd>
+      <dt>网络尝试预留</dt><dd>{result.statistics.network_requests} 次</dd>
       <dt>重试</dt><dd>{result.statistics.retries} 次</dd>
       <dt>未知面积</dt><dd>{(result.statistics.unknown_area / 1e6).toFixed(3)} 平方公里</dd>
       <dt>未完成边界格</dt><dd>{result.statistics.unfinished_boundary}</dd>
@@ -62,10 +61,10 @@ export default function ApiApp() {
     setDirty(false);
     setReportOpen(true);
   }, [state.phase, state.result]);
-  const displayedResult = state.result ?? lastResult;
+  const displayedResult = lastResult;
   const unavailable = !!state.result && analysisAvailability(state.result) === 'unavailable';
   const lastAttemptFailed = state.phase === 'error' || unavailable;
-  const busy = ['submitting', 'running', 'cancelling'].includes(state.phase);
+  const busy = isAnalysisBusy(state);
   const valid = lng !== null && lat !== null && Number.isFinite(lng) && Number.isFinite(lat) && lng >= -180 && lng <= 180 && lat > -85 && lat < 85;
   function choose(next: Center) {
     setDirty(true);
@@ -78,7 +77,7 @@ export default function ApiApp() {
     if (axis === 'lng') setLng(value); else setLat(value);
   }
   function analyze() {
-    if (!valid) return;
+    if (!valid || busy) return;
     const next = { lng: +lng!.toFixed(6), lat: +lat!.toFixed(6) };
     setCenter(next); setLng(next.lng); setLat(next.lat);
     void controller.current?.start({ center: next, budget });
@@ -94,27 +93,42 @@ export default function ApiApp() {
           <label className="api-label">等时圈采样预算<Select aria-label="调用预算" value={budget} onChange={value => { setDirty(true); void controller.current?.reset(); setBudget(value); }} options={[200, 400, 800].map(value => ({ value, label: `${value} 次` }))} /></label>
           <p className="api-muted">步行阈值 900 秒 · 坐标系 BD09LL</p>
           {!valid && <Alert type="error" title="请输入有效坐标：经度 −180～180，纬度大于 −85 且小于 85" />}
-          <Space wrap><Button type="primary" onClick={analyze} disabled={!valid || busy}>开始分析</Button>
+          <Space wrap><Button aria-label="开始分析" type="primary" onClick={analyze} disabled={!valid || busy} loading={busy}>开始分析</Button>
             {(busy || (state.phase === 'error' && state.task)) && <Button onClick={() => void controller.current?.cancel()} disabled={state.phase === 'cancelling'}>取消任务</Button>}</Space>
         </Card>
         <Card title="地图图层"><div className="api-layer-list">{([['reachable', '可达区域'], ['unknown', '不可达/未核验区域（灰色）'], ['serviceBlind', '设施服务盲区（灰色）'], ['uncertain', '不确定区域'], ['extent', '计算范围']] as const).map(([key, label]) => <Checkbox key={key} checked={layers[key]} onChange={event => setLayers({ ...layers, [key]: event.target.checked })}><i className={`api-swatch ${key}`} />{label}</Checkbox>)}</div></Card>
         <label className="api-label">步行时间层<Select aria-label="步行时间层" value={minutes} onChange={setMinutes} options={[5,10,15].map(value=>({value,label:`${value} 分钟`}))}/></label>
         <Checkbox checked={showFacilities} onChange={e=>setShowFacilities(e.target.checked)}>设施标记</Checkbox>
         <Checkbox checked={showAssessments} onChange={e=>setShowAssessments(e.target.checked)}>点位三态</Checkbox>
-        {!state.result?.facilityAnalysis && <Alert type="info" title="设施统计尚未接入" description="真实步行分析结束后将继续检索设施并核对抽样点；合成模式只验证等时圈。" />}
+        {!displayedResult?.facilityAnalysis && <Alert type="info" title="设施统计尚未接入" description="真实步行分析结束后将继续检索设施并核对抽样点；合成模式只验证等时圈。" />}
       </section>
-      <section className="api-map-section">{lastResult && dirty && <Alert type="warning" title="条件已修改，需重新分析。旧结果仍属于原中心点和预算。" showIcon />}<ApiMap center={center} result={state.result?.isochrone} layers={layers} onPick={choose} minutes={minutes} facilities={showFacilities?(state.result?.data.facilities||[]).filter(f=>group==='all'||f.major_category===group):[]} assessments={showAssessments?(state.result?.facilityAnalysis?.assessments||[]).map(p=>({...p,categories:p.categories.filter(c=>group==='all'||c.category===group)})):[]} blindRegions={state.result?.facilityAnalysis?.serviceBlindRegions||{}} onFacility={id=>{setSelected(id);setRoute(null);}} route={route?.taskId===state.result?.taskId?route?.points:[]} /></section>
+      <section className="api-map-section">
+        {lastResult && dirty && <Alert type="warning" title="条件已修改，需重新分析。旧结果仍属于原中心点和预算。" showIcon />}
+        <ApiMap
+          center={center}
+          result={displayedResult?.isochrone}
+          resultCenter={displayedResult?.center}
+          layers={layers}
+          onPick={choose}
+          minutes={minutes}
+          facilities={showFacilities ? (displayedResult?.data.facilities ?? []).filter(f => group === 'all' || f.major_category === group) : []}
+          assessments={showAssessments ? (displayedResult?.facilityAnalysis?.assessments ?? []).map(p => ({ ...p, categories: p.categories.filter(c => group === 'all' || c.category === group) })) : []}
+          blindRegions={displayedResult?.facilityAnalysis?.serviceBlindRegions ?? {}}
+          onFacility={id => { setSelected(id); setRoute(null); }}
+          route={route && route.taskId === displayedResult?.taskId ? route.points : []}
+        />
+      </section>
       <section className="api-results" aria-label="分析结果"><Card title="分析结果">
         {state.phase === 'idle' && <p className="api-muted">选择中心后开始分析。结果将展示可达区域及证据质量。</p>}
-        {state.phase === 'submitting' && <p role="status">正在提交任务…</p>}
-        {state.task && <div className="api-progress" role="status"><Tag color={state.task.dataSource === 'synthetic' ? 'orange' : 'green'}>{state.task.dataSource === 'synthetic' ? '合成数据 · 离线验收' : '百度步行数据'}</Tag><p>{stages[state.task.stage] || state.task.stage}</p><strong>{state.task.requests} / {state.task.budget} 次调用</strong><p>已用时 {state.task.elapsedSeconds.toFixed(1)} 秒</p></div>}
-        {state.phase === 'cancelled' && <Alert title="任务已取消" type="info" />}
+        <AnalysisProgress state={state} />
+        {state.phase === 'cancelled' && <Alert title={state.task ? '任务已取消' : '已取消本次分析等待'} description={!state.task ? '不会采用本次结果；仍在创建的任务将在收到响应后取消。' : undefined} type="info" />}
         {state.error && <Alert type="error" title={state.error} action={<Button aria-label="重试" size="small" onClick={() => void controller.current?.retry()}>重试</Button>} />}
         {lastResult && lastAttemptFailed && <Alert type="warning" title="本次分析未获得可用结果，仍可查看上一次报告。" />}
         {unavailable && <Alert type="warning" title="本次步行证据不足，未生成新的体检报告。" />}
+        {unavailable && !lastResult && state.result && <ResultSummary result={state.result.isochrone} />}
         {displayedResult && <><ResultSummary result={displayedResult.isochrone} /><p className="api-muted">结果来源：{displayedResult.dataSource === 'synthetic' ? '合成时间场' : '百度步行数据'}<br />结果中心：{displayedResult.center.lng.toFixed(6)}, {displayedResult.center.lat.toFixed(6)}<br />{new Date(displayedResult.generatedAt * 1000).toLocaleString('zh-CN')}</p><details><summary>查看机器可读结果</summary><pre>{JSON.stringify(displayedResult, null, 2)}</pre></details></>}
         <Button block disabled={!lastResult} onClick={() => setReportOpen(true)}>查看分析报告</Button>
-      </Card>{state.result?.facilityAnalysis && <FacilityPanel key={state.result.taskId} result={state.result} group={group} onGroup={setGroup} selected={selected} onSelect={setSelected} onRoute={points=>setRoute({taskId:state.result!.taskId,points})}/>}</section>
+       </Card>{displayedResult?.facilityAnalysis && <FacilityPanel key={displayedResult.taskId} result={displayedResult} group={group} onGroup={setGroup} selected={selected} onSelect={setSelected} onRoute={points=>setRoute({ taskId: displayedResult!.taskId, points })}/>}</section>
     </main>
     <footer className="api-footer">质量提示随采样证据展示；未知区域不代表不可达。设施判断仅代表有证据的采样点，不推断盲区面积。</footer>
     <Drawer title="生活圈分析报告" open={reportOpen} onClose={() => setReportOpen(false)} size={680}>
