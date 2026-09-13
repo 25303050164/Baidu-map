@@ -22,7 +22,7 @@
 
 获得可用或部分等时圈后自动打开分析报告；关闭后可通过“查看分析报告”重新打开。修改坐标或预算后，旧结果与报告保留并显示原条件提示；失败、服务不可用或证据不足不会覆盖上一份可用结果。地图图层、摘要与报告共用成功快照，待分析选点与已分析中心分别标注。报告不受图层开关影响。API 入口使用真实任务进度；原 Demo 的 Loading、Report MVP 与 DemoMap fallback 保持原流程。
 
-当前后端固定返回 `facilitiesStatus: "not_integrated"`，设施检索、设施计数和 1 公里服务盲区尚未接入。整份体检只能标为部分结果，三类设施数量和盲区数量均为“无法确定”；不能把算法未知区域当成设施盲区，也不会从 Demo 补数据。报告来源明确区分 `synthetic` 和 `baidu_walking`。`/api/v1/analysis/mock/*` 和 `/synthetic` 是另一套契约验收接口，不作为任务 API 的备用数据源。
+`synthetic` Provider 固定返回 `facilitiesStatus: "not_integrated"`，三类设施数量和盲区数量均为“无法确定”；真实 `baidu_walking` Provider 会在等时圈计算后执行有限设施检索与采样点核验，返回 `facilityAnalysis`（设施列表、`in_circle` 三态、查询证据、采样点三态与步行路线接口）。设施计数是“检索记录 · 估算圈内”，不代表全量目录；`serviceBlindRegions` 当前为空几何，不展示面积盲区结论；不能把算法未知区域当成设施盲区，也不会从 Demo 补数据。报告来源明确区分 `synthetic` 和 `baidu_walking`。`/api/v1/analysis/mock/*` 和 `/synthetic` 是另一套契约验收接口，不作为任务 API 的备用数据源。
 
 ## 本地运行
 
