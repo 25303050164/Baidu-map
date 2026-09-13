@@ -1,0 +1,23 @@
+{
+  "request": {
+    "schemaVersion": "poi-v1",
+    "center": {"lng": 121.513926, "lat": 31.313077},
+    "coordinateSystem": "bd09ll",
+    "analysisHalfWidthMeters": 1600,
+    "searchMarginMeters": 1000,
+    "categories": ["market", "pharmacy", "primary_school"],
+    "queryProfileVersion": "guodingyi-poi-v1"
+  },
+  "runtime": {
+    "runId": "guodingyi-poi-offline-v1",
+    "phase": "collect",
+    "totalBudget": 300,
+    "categoryBudgets": {"market": 100, "pharmacy": 100, "primary_school": 100},
+    "deadlineSeconds": 600,
+    "qps": null,
+    "authorized": false,
+    "approvedConfigHash": null,
+    "windowStart": null,
+    "windowEnd": null
+  }
+}

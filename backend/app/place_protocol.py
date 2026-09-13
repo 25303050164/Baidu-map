@@ -42,18 +42,26 @@ class Pagination:
     returned: int = 0
     total: int | None = None
     fingerprints: set = field(default_factory=set)
+    seen_uids: set = field(default_factory=set)
     warnings: list = field(default_factory=list)
 
     def consume(self, payload, max_pages):
         """Return a stop reason, or None to schedule the next page."""
         rows = payload["results"]
         total = payload.get("total")
+        if total is not None and (type(total) is not int or total < 0):
+            self.warnings.append("pagination_uncertain")
         total = total if type(total) is int and total >= 0 else None
-        fingerprint = hashlib.sha256(json.dumps(rows, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        identities = [str(row['uid']) if isinstance(row, dict) and isinstance(row.get('uid'), str)
+                      else json.dumps(row, sort_keys=True, ensure_ascii=False) for row in rows]
+        fingerprint = hashlib.sha256(json.dumps(sorted(identities), ensure_ascii=False).encode()).hexdigest()
+        page_uids = {row['uid'] for row in rows
+                     if isinstance(row, dict) and isinstance(row.get('uid'), str) and row['uid']}
+        overlapping_uids = page_uids & self.seen_uids
         self.pages += 1
         self.returned += len(rows)
-        if rows and fingerprint in self.fingerprints:
-            return "pagination_anomaly"
+        self.seen_uids.update(page_uids)
+        repeated_page = bool(rows and fingerprint in self.fingerprints)
         self.fingerprints.add(fingerprint)
         if self.pages > 1 and self.total != total:
             self.warnings.append("pagination_uncertain")
@@ -62,6 +70,11 @@ class Pagination:
             self.warnings.append("possible_truncation")
         if total is not None and (self.returned > total or (not rows and self.returned < total)):
             self.warnings.append("pagination_uncertain")
+        if overlapping_uids or repeated_page:
+            # A provider can repeat only part of a previous page. Counting those
+            # rows toward ``total`` would make an incomplete query look complete.
+            self.warnings.append("pagination_anomaly")
+            return "pagination_anomaly"
         if not rows or (total is not None and total < 150 and self.returned >= total):
             return self.warnings[-1] if self.warnings else "completed"
         if self.pages >= max_pages:

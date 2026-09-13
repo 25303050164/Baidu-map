@@ -19,6 +19,7 @@ import httpx
 from dotenv import dotenv_values
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from app.persistence import atomic_dump, lock_file, unlock_file
 from app.baidu import silence_transport_logs
 from app.analyses import LimitedProvider, RateGate
 from app.config import Settings
@@ -67,13 +68,7 @@ class LiveGuardError(httpx.RequestError):
 
 
 def dump(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + '.tmp')
-    with temporary.open('w', encoding='utf-8') as f:
-        json.dump(value, f, ensure_ascii=False, allow_nan=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(temporary, path)
+    atomic_dump(path, value)
 
 
 class Ledger:
@@ -89,16 +84,7 @@ class Ledger:
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock_file = (self.root / 'ledger.lock').open('a+b')
         try:
-            if os.fstat(self.lock_file.fileno()).st_size == 0:
-                self.lock_file.write(b'0')
-                self.lock_file.flush()
-            self.lock_file.seek(0)
-            if os.name == 'nt':
-                import msvcrt
-                msvcrt.locking(self.lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_file(self.lock_file)
         except OSError:
             self.lock_file.close()
             self.lock_file = None
@@ -124,13 +110,7 @@ class Ledger:
 
     def __exit__(self, *args):
         if self.lock_file:
-            self.lock_file.seek(0)
-            if os.name == 'nt':
-                import msvcrt
-                msvcrt.locking(self.lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_UN)
+            unlock_file(self.lock_file)
             self.lock_file.close()
             self.lock_file = None
 
