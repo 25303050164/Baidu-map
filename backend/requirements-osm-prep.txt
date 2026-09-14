@@ -1,0 +1,3 @@
+# Optional offline preparation environment; do not add these packages to the
+# runtime backend lockfile. Pyrosm 0.13.x supports CPython 3.10-3.14 wheels.
+pyrosm==0.13.1

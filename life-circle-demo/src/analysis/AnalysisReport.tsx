@@ -23,15 +23,22 @@ export function AnalysisReport({ result, stale, lastAttemptFailed }: {
     </dl>
     <h2>01 / 步行等时圈</h2>
     <p>{view.geometrySummary}；证据质量：{view.qualityLabel}。步行阈值为 900 秒。</p>
-    <p>Provider 调用 {view.statistics.requests} 次，网络尝试预留 {view.statistics.network_requests} 次，重试 {view.statistics.retries} 次。预留计数不等于实际发送或计费次数。</p>
+     <p>{result.dataSource === 'osm_offline' ? `离线路网评估 ${view.statistics.requests} 次，不产生百度网络调用。` : `Provider 调用 ${view.statistics.requests} 次，网络尝试预留 ${view.statistics.network_requests} 次，重试 ${view.statistics.retries} 次。预留计数不等于实际发送或计费次数。`}</p>
     <p>未知面积 {(view.statistics.unknown_area / 1e6).toFixed(3)} 平方公里，未完成边界格 {view.statistics.unfinished_boundary} 个。</p>
     <h2>02 / 设施与服务盲区</h2>
     <table className={styles.reportTable} data-testid="analysis-facility-stats">
       <thead><tr><th>设施类别</th><th>圈内数量</th><th>数据状态</th></tr></thead>
       <tbody>{view.facilityStats.map(s => <tr key={s.category}><td>{s.label}</td><td>{s.count ?? '无法确定'}</td><td>{s.state}</td></tr>)}</tbody>
     </table>
-    <p>设施盲区数量：{view.blindZoneCount ?? '无法确定'}。{result.facilityAnalysis ? result.data.report : '后端未执行设施检索和 1 公里服务评估，不能判断设施缺失或服务充分。'}</p>
-    <h2>03 / 结果适用边界</h2>
+     <p>设施盲区数量：{view.blindZoneCount ?? '无法确定'}。{result.facilityAnalysis ? result.data.report : '后端未执行设施检索和 1 公里服务评估，不能判断设施缺失或服务充分。'}</p>
+     {view.osmProvenance && <><h2>03 / 数据来源与适用范围</h2><dl>
+       <div><dt>OSM 可用性</dt><dd>{view.osmProvenance.availability}</dd></div>
+       <div><dt>覆盖城市</dt><dd>{view.osmProvenance.coverageCity || '无法确定'}</dd></div>
+       <div><dt>数据日期</dt><dd>{view.osmProvenance.dataDate || '无法确定'}</dd></div>
+       <div><dt>快照版本</dt><dd>{view.osmProvenance.dataVersion || '无法确定'}</dd></div>
+       <div><dt>许可与署名</dt><dd>{view.osmProvenance.attribution} · {view.osmProvenance.license}</dd></div>
+     </dl><ul>{view.osmProvenance.limitations.map(item => <li key={item}>{item}</li>)}</ul>{view.hybridStrategy && <p>混合策略：{view.hybridStrategy}。百度参与：{result.hybridResult?.baidu.participated ? '是' : '否'}；OSM 参与：{result.hybridResult?.osm.participated ? '是' : '否'}。两套几何仅用于并行对比，不直接合并。</p>}</>}
+     <h2>{view.osmProvenance ? '04' : '03'} / 结果适用边界</h2>
     <p>未知区域表示缺少步行证据，不代表不可达或设施盲区；不确定区域表示边界尚待核实。可达区域为空与无法确定可达区域含义不同。</p>
     {result.dataSource === 'synthetic' && <p>本次使用合成 Provider，仅供流程和算法验收，不代表真实社区。</p>}
     <p>结果对应上述中心点和采样预算，不代表全社区人口覆盖率、设施容量、质量或使用资格。</p>

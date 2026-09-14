@@ -3,7 +3,7 @@ import { Alert, Button, Card, Checkbox, Drawer, InputNumber, Select, Space, Tag 
 import type { Center } from '../types';
 import { createApiService } from './service';
 import { AnalysisController } from './controller';
-import type { AnalysisResult, AnalysisState, Budget, Isochrone } from './types';
+import type { AnalysisCapabilities, AnalysisMode, AnalysisResult, AnalysisState, Budget, Isochrone } from './types';
 import { isAnalysisBusy } from './types';
 import { ApiMap, type Layers } from './ApiMap';
 import { LocationControls } from './LocationControls';
@@ -11,19 +11,32 @@ import { geometryMessage } from './geometry';
 import { analysisAvailability } from './adapter';
 import { AnalysisReport } from './AnalysisReport';
 import { AnalysisProgress } from './AnalysisProgress';
+import { ApiLoadingOverlay } from './ApiLoadingOverlay';
 import './api.css';
 import { FacilityPanel } from './FacilityPanel';
 
 const reasons: Record<string, string> = { budget: '达到调用预算', deadline: '达到截止时间', resolution_limit: '达到网格分辨率或完成边界检查', maximum_range: '达到最大范围', permission: '步行接口权限异常', quota: '服务配额不足', invalid_parameter: '上游参数被拒绝', upstream_failure: '连续上游故障', geometry_error: '几何重建失败' };
-const warnings: Record<string, string> = { range_unknown: '外缘存在未知样本，范围尚未核实', range_truncated: '可达边界可能被计算范围截断', unfinished_boundary: '部分边界尚未完成细化', endpoints_unverified: '部分路线端点尚未核验', geometry_error: '几何重建失败' };
+const warnings: Record<string, string> = { range_unknown: '外缘存在未知样本，范围尚未核实', range_truncated: '可达边界可能被计算范围截断', unfinished_boundary: '部分边界尚未完成细化', endpoints_unverified: '部分路线端点尚未核验', coverage_boundary: '分析中心接近 OSM 覆盖边界，结果可能是部分范围', geometry_error: '几何重建失败' };
+const capabilityReasons: Record<string, string> = { not_configured: '未配置 OSM 离线缓存', cache_missing: 'OSM 缓存不存在', cache_invalid: 'OSM 缓存无法加载', coverage_missing: 'OSM 缓存缺少覆盖边界', graph_missing: 'OSM 缓存缺少可用路网', unsupported_crs: 'OSM 缓存坐标系不受支持', version_mismatch: 'OSM 缓存版本不匹配', dependency_unavailable: '百度在线和 OSM 离线依赖未同时就绪', baidu_not_configured: '百度在线服务未配置' };
 
-function ResultSummary({ result }: { result: Isochrone }) {
+function storedDeveloperMode(enabled: boolean) {
+  if (!enabled || typeof window === 'undefined') return false;
+  try { return window.localStorage.getItem('life-circle-developer-mode') === 'true'; }
+  catch { return false; }
+}
+
+function persistDeveloperMode(value: boolean) {
+  try { window.localStorage.setItem('life-circle-developer-mode', String(value)); }
+  catch { /* Local storage may be disabled by the browser. */ }
+}
+
+function ResultSummary({ result, offline = false }: { result: Isochrone; offline?: boolean }) {
   return <>
     <Alert type={result.quality === 'usable' ? 'success' : 'warning'} title={geometryMessage(result.geometry)} description={`质量：${{ usable: '可用', partial: '部分结果', insufficient: '证据不足' }[result.quality]}`} showIcon />
     <dl className="api-statistics">
       <dt>停止原因</dt><dd>{reasons[result.stopReason] || result.stopReason}</dd>
-      <dt>Provider 调用</dt><dd>{result.statistics.requests} 次</dd>
-      <dt>网络尝试预留</dt><dd>{result.statistics.network_requests} 次</dd>
+       <dt>{offline ? '离线路网评估' : 'Provider 调用'}</dt><dd>{result.statistics.requests} 次</dd>
+       <dt>{offline ? '百度网络调用' : '网络尝试预留'}</dt><dd>{result.statistics.network_requests} 次</dd>
       <dt>重试</dt><dd>{result.statistics.retries} 次</dd>
       <dt>未知面积</dt><dd>{(result.statistics.unknown_area / 1e6).toFixed(3)} 平方公里</dd>
       <dt>未完成边界格</dt><dd>{result.statistics.unfinished_boundary}</dd>
@@ -34,10 +47,15 @@ function ResultSummary({ result }: { result: Isochrone }) {
 }
 
 export default function ApiApp() {
+  const developerFeatureEnabled = import.meta.env.VITE_ENABLE_DEVELOPER_MODE === 'true';
   const [center, setCenter] = useState<Center>({ lng: 116.404, lat: 39.915 });
   const [lng, setLng] = useState<number | null>(116.404);
   const [lat, setLat] = useState<number | null>(39.915);
   const [budget, setBudget] = useState<Budget>(400);
+  const [developerMode, setDeveloperMode] = useState(() => storedDeveloperMode(developerFeatureEnabled));
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('baidu_online');
+  const [capabilities, setCapabilities] = useState<AnalysisCapabilities>();
+  const [capabilityError, setCapabilityError] = useState('');
   const [minutes,setMinutes] = useState(15);
   const [group,setGroup] = useState('all');
   const [selected,setSelected] = useState<string|null>(null);
@@ -55,6 +73,20 @@ export default function ApiApp() {
     controller.current = instance;
     return () => { instance.dispose(); controller.current = null; };
   }, []);
+  useEffect(() => {
+    if (!developerFeatureEnabled || !developerMode) {
+      setCapabilities(undefined);
+      setCapabilityError('');
+      return;
+    }
+    persistDeveloperMode(true);
+    const abort = new AbortController();
+    setCapabilityError('');
+    void createApiService().capabilities?.(abort.signal).then(setCapabilities).catch(error => {
+      if (!abort.signal.aborted) setCapabilityError(error instanceof Error ? error.message : '能力查询失败');
+    });
+    return () => abort.abort();
+  }, [developerFeatureEnabled, developerMode]);
   useEffect(() => {
     if (state.phase !== 'completed' || !state.result || analysisAvailability(state.result) === 'unavailable') return;
     setLastResult(state.result);
@@ -77,24 +109,29 @@ export default function ApiApp() {
     if (axis === 'lng') setLng(value); else setLat(value);
   }
   function analyze() {
-    if (!valid || busy) return;
+    if (!valid || busy || (developerMode && capabilities && !capabilities.modes[analysisMode]?.available)) return;
     const next = { lng: +lng!.toFixed(6), lat: +lat!.toFixed(6) };
     setCenter(next); setLng(next.lng); setLat(next.lat);
-    void controller.current?.start({ center: next, budget });
+    void controller.current?.start({ center: next, budget, analysisMode });
   }
   return <div className="api-app">
-    <header className="api-header"><div><span className="api-brand">15</span><div><h1>15 分钟生活圈</h1><p>自适应网格 · 步行等时圈分析</p></div></div><Tag color="teal">后端算法入口</Tag></header>
+     <header className="api-header"><div><span className="api-brand">15</span><div><h1>15 分钟生活圈</h1><p>自适应网格 · 步行等时圈分析</p></div></div><Space wrap>{developerFeatureEnabled && <Checkbox aria-label="开发者模式" checked={developerMode} onChange={event => { const enabled = event.target.checked; setDeveloperMode(enabled); persistDeveloperMode(enabled); if (!enabled) setAnalysisMode('baidu_online'); }}>开发者模式</Checkbox>}<Tag color="teal">后端算法入口</Tag></Space></header>
     <main className="api-layout">
       <section className="api-controls" aria-label="分析条件">
         <Card title="选择分析中心"><p className="api-muted">在地图上选点、获取当前位置或搜索地点，也可输入百度坐标。默认坐标仅用于选点起始位置，尚未进行社区实验验证。</p>
           <LocationControls center={center} onPick={choose} />
           <label className="api-label">经度<InputNumber aria-label="经度" value={lng} onChange={value => edit('lng', value)} precision={6} /></label>
-          <label className="api-label">纬度<InputNumber aria-label="纬度" value={lat} onChange={value => edit('lat', value)} precision={6} /></label>
-          <label className="api-label">等时圈采样预算<Select aria-label="调用预算" value={budget} onChange={value => { setDirty(true); void controller.current?.reset(); setBudget(value); }} options={[200, 400, 800].map(value => ({ value, label: `${value} 次` }))} /></label>
-          <p className="api-muted">步行阈值 900 秒 · 坐标系 BD09LL</p>
+           <label className="api-label">纬度<InputNumber aria-label="纬度" value={lat} onChange={value => edit('lat', value)} precision={6} /></label>
+           <label className="api-label">等时圈采样预算<Select aria-label="调用预算" value={budget} onChange={value => { setDirty(true); void controller.current?.reset(); setBudget(value); }} options={[200, 400, 800].map(value => ({ value, label: `${value} 次` }))} /></label>
+           {developerMode && <div className="api-developer-controls"><label className="api-label">分析模式<Select aria-label="分析模式" value={analysisMode} onChange={value => { setDirty(true); void controller.current?.reset(); setAnalysisMode(value); }} options={[['baidu_online', '百度在线'], ['osm_offline', 'OSM 离线'], ['hybrid', '混合对比']].map(([value, label]) => { const capability = capabilities?.modes[value as AnalysisMode]; const unavailable = capability ? !capability.available : value !== 'baidu_online'; return { value, label: unavailable ? `${label}（不可用）` : label, disabled: unavailable }; })} /></label>
+             {capabilityError && <Alert type="warning" title={capabilityError} />}
+             {capabilities && !capabilities.modes[analysisMode]?.available && <Alert type="info" title={capabilityReasons[capabilities.modes[analysisMode]?.reason || ''] || '当前分析模式不可用'} />}
+             {capabilities?.modes.osm_offline?.available && capabilities.modes.osm_offline.coverageCity && <p className="api-muted">OSM 覆盖：{capabilities.modes.osm_offline.coverageCity} · 数据日期：{capabilities.modes.osm_offline.dataDate || '无法确定'}</p>}
+           </div>}
+           <p className="api-muted">步行阈值 900 秒 · 坐标系 BD09LL</p>
           {!valid && <Alert type="error" title="请输入有效坐标：经度 −180～180，纬度大于 −85 且小于 85" />}
-          <Space wrap><Button aria-label="开始分析" type="primary" onClick={analyze} disabled={!valid || busy} loading={busy}>开始分析</Button>
-            {(busy || (state.phase === 'error' && state.task)) && <Button onClick={() => void controller.current?.cancel()} disabled={state.phase === 'cancelling'}>取消任务</Button>}</Space>
+           <Space wrap><Button aria-label="开始分析" type="primary" onClick={analyze} disabled={!valid || busy || (!!developerMode && !!capabilities && !capabilities.modes[analysisMode]?.available)} loading={busy}>开始分析</Button>
+             {state.phase === 'error' && state.task && <Button onClick={() => void controller.current?.cancel()}>取消任务</Button>}</Space>
         </Card>
         <Card title="地图图层"><div className="api-layer-list">{([['reachable', '可达区域'], ['unknown', '不可达/未核验区域（灰色）'], ['serviceBlind', '设施服务盲区（灰色）'], ['uncertain', '不确定区域'], ['extent', '计算范围']] as const).map(([key, label]) => <Checkbox key={key} checked={layers[key]} onChange={event => setLayers({ ...layers, [key]: event.target.checked })}><i className={`api-swatch ${key}`} />{label}</Checkbox>)}</div></Card>
         <label className="api-label">步行时间层<Select aria-label="步行时间层" value={minutes} onChange={setMinutes} options={[5,10,15].map(value=>({value,label:`${value} 分钟`}))}/></label>
@@ -125,14 +162,15 @@ export default function ApiApp() {
         {state.error && <Alert type="error" title={state.error} action={<Button aria-label="重试" size="small" onClick={() => void controller.current?.retry()}>重试</Button>} />}
         {lastResult && lastAttemptFailed && <Alert type="warning" title="本次分析未获得可用结果，仍可查看上一次报告。" />}
         {unavailable && <Alert type="warning" title="本次步行证据不足，未生成新的体检报告。" />}
-        {unavailable && !lastResult && state.result && <ResultSummary result={state.result.isochrone} />}
-        {displayedResult && <><ResultSummary result={displayedResult.isochrone} /><p className="api-muted">结果来源：{displayedResult.dataSource === 'synthetic' ? '合成时间场' : '百度步行数据'}<br />结果中心：{displayedResult.center.lng.toFixed(6)}, {displayedResult.center.lat.toFixed(6)}<br />{new Date(displayedResult.generatedAt * 1000).toLocaleString('zh-CN')}</p><details><summary>查看机器可读结果</summary><pre>{JSON.stringify(displayedResult, null, 2)}</pre></details></>}
+         {unavailable && !lastResult && state.result && <ResultSummary result={state.result.isochrone} offline={state.result.dataSource === 'osm_offline'} />}
+         {displayedResult && <><ResultSummary result={displayedResult.isochrone} offline={displayedResult.dataSource === 'osm_offline'} /><p className="api-muted">结果来源：{displayedResult.dataSource === 'synthetic' ? '合成时间场' : displayedResult.dataSource === 'osm_offline' ? 'OSM 离线路网' : displayedResult.dataSource === 'hybrid' ? '百度在线 + OSM 离线（并行对比）' : '百度步行数据'}<br />结果中心：{displayedResult.center.lng.toFixed(6)}, {displayedResult.center.lat.toFixed(6)}<br />{new Date(displayedResult.generatedAt * 1000).toLocaleString('zh-CN')}</p><details><summary>查看机器可读结果</summary><pre>{JSON.stringify(displayedResult, null, 2)}</pre></details></>}
         <Button block disabled={!lastResult} onClick={() => setReportOpen(true)}>查看分析报告</Button>
        </Card>{displayedResult?.facilityAnalysis && <FacilityPanel key={displayedResult.taskId} result={displayedResult} group={group} onGroup={setGroup} selected={selected} onSelect={setSelected} onRoute={points=>setRoute({ taskId: displayedResult!.taskId, points })}/>}</section>
     </main>
     <footer className="api-footer">质量提示随采样证据展示；未知区域不代表不可达。设施判断仅代表有证据的采样点，不推断盲区面积。</footer>
-    <Drawer title="生活圈分析报告" open={reportOpen} onClose={() => setReportOpen(false)} size={680}>
-      {lastResult && <AnalysisReport result={lastResult} stale={dirty} lastAttemptFailed={lastAttemptFailed} />}
-    </Drawer>
-  </div>;
+     <Drawer title="生活圈分析报告" open={reportOpen} onClose={() => setReportOpen(false)} size={680}>
+       {lastResult && <AnalysisReport result={lastResult} stale={dirty} lastAttemptFailed={lastAttemptFailed} />}
+     </Drawer>
+     <ApiLoadingOverlay state={state} onCancel={() => void controller.current?.cancel()} />
+   </div>;
 }

@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from app.contracts import (AnalysisResponse, CategoryResult, Data, Facility, Geometry, Issue,
+from app.contracts import (AnalysisCapabilitiesResponse, AnalysisResponse, CategoryResult, Data, Facility, Geometry, Issue,
                            Origin, Rules, TaskResultResponse, TaskStatusResponse)
 from app.main import app
 from app.rules import DistanceRule
@@ -86,7 +86,7 @@ def export():
     openapi = app.openapi()
     (ROOT / "docs" / "openapi.json").write_text(json.dumps(openapi, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (ROOT.parent / "life-circle-demo/src/api-contract.ts").write_text(
-        typescript([AnalysisResponse, TaskStatusResponse, TaskResultResponse]), encoding="utf-8")
+        typescript([AnalysisResponse, AnalysisCapabilitiesResponse, TaskStatusResponse, TaskResultResponse]), encoding="utf-8")
 
 
 if __name__ == "__main__":

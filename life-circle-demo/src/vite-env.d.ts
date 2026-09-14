@@ -5,4 +5,5 @@ interface ImportMetaEnv {
   readonly VITE_BAIDU_MAP_AK?: string;
   readonly VITE_ANALYSIS_MODE?: 'api' | 'demo';
   readonly VITE_API_BASE_URL?: string;
+  readonly VITE_ENABLE_DEVELOPER_MODE?: 'true' | 'false';
 }

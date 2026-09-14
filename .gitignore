@@ -24,10 +24,16 @@ Thumbs.db
 **/.env.*
 !**/.env.example
 backend/.venv/
+backend/venv-osm-prep/
 **/__pycache__/
 **/.pytest_cache/
 backend/logs/
 backend/.poi-ledgers/
+**/*.pbf
+**/*.poly
+**/*.osm-cache/
+*.osm-cache
+**/osm-cache/
 
 # Python algorithm artifacts (environments and large outputs live on D:)
 *.egg-info/

@@ -97,6 +97,27 @@
         }
       }
     },
+    "/api/analyses/capabilities": {
+      "get": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "Capabilities",
+        "operationId": "capabilities_api_analyses_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisCapabilitiesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analyses/{task_id}": {
       "get": {
         "tags": [
@@ -323,6 +344,58 @@
         }
       }
     },
+    "/api/v1/analysis/osm_offline": {
+      "post": {
+        "tags": [
+          "N04/N05"
+        ],
+        "summary": "Osm Offline Analysis",
+        "description": "Synchronous cache diagnostic; normal clients use the task API instead.",
+        "operationId": "osm_offline_analysis_api_v1_analysis_osm_offline_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OsmOfflineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/analysis/synthetic": {
       "post": {
         "tags": [
@@ -395,6 +468,23 @@
   },
   "components": {
     "schemas": {
+      "AnalysisCapabilitiesResponse": {
+        "properties": {
+          "modes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ModeCapability"
+            },
+            "type": "object",
+            "title": "Modes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "modes"
+        ],
+        "title": "AnalysisCapabilitiesResponse"
+      },
       "AnalysisInput": {
         "properties": {
           "center": {
@@ -409,6 +499,10 @@
             "type": "integer",
             "title": "Budget",
             "default": 400
+          },
+          "analysisMode": {
+            "$ref": "#/components/schemas/AnalysisMode",
+            "default": "baidu_online"
           },
           "clientRequestId": {
             "type": "string",
@@ -426,6 +520,16 @@
           "clientRequestId"
         ],
         "title": "AnalysisInput"
+      },
+      "AnalysisMode": {
+        "type": "string",
+        "enum": [
+          "baidu_online",
+          "osm_offline",
+          "hybrid"
+        ],
+        "title": "AnalysisMode",
+        "description": "Public engine selection; independent from the isochrone algorithm."
       },
       "AnalysisResponse": {
         "properties": {
@@ -459,6 +563,7 @@
             "enum": [
               "mock",
               "synthetic",
+              "osm_offline",
               "system"
             ],
             "title": "Source"
@@ -1193,6 +1298,101 @@
         ],
         "title": "HealthResponse"
       },
+      "HybridBranch": {
+        "properties": {
+          "participated": {
+            "type": "boolean",
+            "title": "Participated"
+          },
+          "dataSource": {
+            "type": "string",
+            "enum": [
+              "synthetic",
+              "baidu_walking",
+              "osm_offline"
+            ],
+            "title": "Datasource"
+          },
+          "businessStatus": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "failed",
+              "empty"
+            ],
+            "title": "Businessstatus"
+          },
+          "isochrone": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Isochrone"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "participated",
+          "dataSource",
+          "businessStatus",
+          "isochrone"
+        ],
+        "title": "HybridBranch"
+      },
+      "HybridComparison": {
+        "properties": {
+          "strategy": {
+            "type": "string",
+            "const": "parallel_comparison",
+            "title": "Strategy",
+            "default": "parallel_comparison"
+          },
+          "geometryMerged": {
+            "type": "boolean",
+            "const": false,
+            "title": "Geometrymerged",
+            "default": false
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HybridComparison"
+      },
+      "HybridResult": {
+        "properties": {
+          "baidu": {
+            "$ref": "#/components/schemas/HybridBranch"
+          },
+          "osm": {
+            "$ref": "#/components/schemas/HybridBranch"
+          },
+          "comparison": {
+            "$ref": "#/components/schemas/HybridComparison"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "baidu",
+          "osm",
+          "comparison"
+        ],
+        "title": "HybridResult"
+      },
       "Issue": {
         "properties": {
           "code": {
@@ -1227,6 +1427,94 @@
         ],
         "title": "Issue"
       },
+      "ModeCapability": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "availability": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ready",
+                  "degraded",
+                  "unavailable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability"
+          },
+          "coverageCity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coveragecity"
+          },
+          "dataVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataversion"
+          },
+          "dataDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datadate"
+          },
+          "dependencies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dependencies"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "ModeCapability"
+      },
       "Origin": {
         "properties": {
           "lng": {
@@ -1249,6 +1537,196 @@
           "lat"
         ],
         "title": "Origin"
+      },
+      "OsmOfflineRequest": {
+        "properties": {
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Origin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "center": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Origin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coordinate_system": {
+            "type": "string",
+            "const": "bd09ll",
+            "title": "Coordinate System",
+            "default": "bd09ll"
+          },
+          "budget": {
+            "type": "integer",
+            "enum": [
+              200,
+              400,
+              800
+            ],
+            "title": "Budget",
+            "default": 400
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "OsmOfflineRequest"
+      },
+      "OsmProvenance": {
+        "properties": {
+          "participated": {
+            "type": "boolean",
+            "title": "Participated"
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "degraded",
+              "unavailable"
+            ],
+            "title": "Availability"
+          },
+          "coverageCity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coveragecity"
+          },
+          "dataVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataversion"
+          },
+          "dataDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datadate"
+          },
+          "downloadedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downloadedat"
+          },
+          "preparedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preparedat"
+          },
+          "coverageCheckAvailable": {
+            "type": "boolean",
+            "title": "Coveragecheckavailable"
+          },
+          "coverageBoundary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Geometry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attribution": {
+            "type": "string",
+            "title": "Attribution",
+            "default": "© OpenStreetMap contributors"
+          },
+          "license": {
+            "type": "string",
+            "title": "License",
+            "default": "ODbL"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "participated",
+          "availability",
+          "coverageCheckAvailable"
+        ],
+        "title": "OsmProvenance"
+      },
+      "Provenance": {
+        "properties": {
+          "osm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OsmProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "baidu": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "single_source",
+              "parallel_comparison"
+            ],
+            "title": "Strategy",
+            "default": "single_source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "Provenance"
       },
       "QueryEvidence": {
         "properties": {
@@ -1433,6 +1911,45 @@
         "type": "object",
         "title": "Rules"
       },
+      "SourceProvenance": {
+        "properties": {
+          "participated": {
+            "type": "boolean",
+            "title": "Participated"
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "degraded",
+              "unavailable"
+            ],
+            "title": "Availability"
+          },
+          "dataSource": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "synthetic",
+                  "baidu_walking"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasource"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "participated",
+          "availability"
+        ],
+        "title": "SourceProvenance"
+      },
       "SyntheticRequest": {
         "properties": {
           "origin": {
@@ -1515,11 +2032,17 @@
             ],
             "title": "Businessstatus"
           },
+          "analysisMode": {
+            "$ref": "#/components/schemas/AnalysisMode",
+            "default": "baidu_online"
+          },
           "dataSource": {
             "type": "string",
             "enum": [
               "synthetic",
-              "baidu_walking"
+              "baidu_walking",
+              "osm_offline",
+              "hybrid"
             ],
             "title": "Datasource"
           },
@@ -1601,6 +2124,26 @@
             },
             "type": "array",
             "title": "Errors"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hybridResult": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HybridResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "isochrone": {
             "additionalProperties": true,
@@ -1698,11 +2241,17 @@
             "minimum": 0.0,
             "title": "Elapsedseconds"
           },
+          "analysisMode": {
+            "$ref": "#/components/schemas/AnalysisMode",
+            "default": "baidu_online"
+          },
           "dataSource": {
             "type": "string",
             "enum": [
               "synthetic",
-              "baidu_walking"
+              "baidu_walking",
+              "osm_offline",
+              "hybrid"
             ],
             "title": "Datasource"
           },

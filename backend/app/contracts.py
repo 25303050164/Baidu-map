@@ -1,5 +1,6 @@
 """Versioned geographic wire contract; separate from the legacy canvas demo."""
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Literal
 from uuid import uuid4
 
@@ -13,6 +14,17 @@ MinorCategory = Literal["market", "supermarket", "pharmacy", "hospital_pharmacy"
 Category = MinorCategory
 Status = Literal["complete", "partial", "failed", "empty"]
 AsyncStatus = Literal["running", "cancelling", "completed", "cancelled", "failed"]
+
+
+class AnalysisMode(str, Enum):
+    """Public engine selection; independent from the isochrone algorithm."""
+
+    BAIDU_ONLINE = "baidu_online"
+    OSM_OFFLINE = "osm_offline"
+    HYBRID = "hybrid"
+
+
+DataSource = Literal["synthetic", "baidu_walking", "osm_offline", "hybrid"]
 
 MINOR_TO_MAJOR: dict[str, str] = {
     "market": "shopping", "supermarket": "shopping",
@@ -62,6 +74,68 @@ class Issue(WireModel):
     message: str
     scope: str
     severity: Literal["warning", "error", "pending"] = "warning"
+
+
+class OsmProvenance(WireModel):
+    participated: bool
+    availability: Literal["ready", "degraded", "unavailable"]
+    coverage_city: str | None = Field(default=None, alias="coverageCity")
+    data_version: str | None = Field(default=None, alias="dataVersion")
+    data_date: str | None = Field(default=None, alias="dataDate")
+    downloaded_at: str | None = Field(default=None, alias="downloadedAt")
+    prepared_at: str | None = Field(default=None, alias="preparedAt")
+    coverage_check_available: bool = Field(alias="coverageCheckAvailable")
+    coverage_boundary: Geometry | None = Field(default=None, alias="coverageBoundary")
+    attribution: str = "© OpenStreetMap contributors"
+    license: str = "ODbL"
+    limitations: list[str] = Field(default_factory=list)
+
+
+class SourceProvenance(WireModel):
+    participated: bool
+    availability: Literal["ready", "degraded", "unavailable"]
+    data_source: Literal["synthetic", "baidu_walking"] | None = Field(default=None, alias="dataSource")
+
+
+class Provenance(WireModel):
+    osm: OsmProvenance | None = None
+    baidu: SourceProvenance | None = None
+    strategy: Literal["single_source", "parallel_comparison"] = "single_source"
+
+
+class HybridBranch(WireModel):
+    participated: bool
+    data_source: Literal["synthetic", "baidu_walking", "osm_offline"] = Field(alias="dataSource")
+    business_status: Status = Field(alias="businessStatus")
+    isochrone: dict
+    warnings: list[str] = Field(default_factory=list)
+
+
+class HybridComparison(WireModel):
+    strategy: Literal["parallel_comparison"] = "parallel_comparison"
+    geometry_merged: Literal[False] = Field(default=False, alias="geometryMerged")
+    notes: list[str] = Field(default_factory=list)
+
+
+class HybridResult(WireModel):
+    baidu: HybridBranch
+    osm: HybridBranch
+    comparison: HybridComparison
+
+
+class ModeCapability(WireModel):
+    available: bool
+    availability: Literal["ready", "degraded", "unavailable"] | None = None
+    coverage_city: str | None = Field(default=None, alias="coverageCity")
+    data_version: str | None = Field(default=None, alias="dataVersion")
+    data_date: str | None = Field(default=None, alias="dataDate")
+    dependencies: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class AnalysisCapabilitiesResponse(WireModel):
+    modes: dict[str, ModeCapability]
 
 
 class CategoryLevels(WireModel):
@@ -219,7 +293,7 @@ class AnalysisResponse(WireModel):
     analysis_id: str = Field(default_factory=lambda: str(uuid4()))
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: Status
-    source: Literal["mock", "synthetic", "system"]
+    source: Literal["mock", "synthetic", "osm_offline", "system"]
     algorithm_version: str | None = None
     data_updated_at: datetime | None = None
     origin: Origin | None = None
@@ -253,7 +327,8 @@ class TaskStatusResponse(WireModel):
     network_requests: int = Field(ge=0, alias="networkRequests")
     budget: Literal[200, 400, 800]
     elapsed_seconds: float = Field(ge=0, alias="elapsedSeconds")
-    data_source: Literal["synthetic", "baidu_walking"] = Field(alias="dataSource")
+    analysis_mode: AnalysisMode = Field(default=AnalysisMode.BAIDU_ONLINE, alias="analysisMode")
+    data_source: DataSource = Field(alias="dataSource")
     error: str | None = None
 
 
@@ -265,7 +340,8 @@ class TaskResultResponse(WireModel):
     task_status: Literal["completed"] = Field(alias="taskStatus")
     status: Status
     business_status: Status = Field(alias="businessStatus")
-    data_source: Literal["synthetic", "baidu_walking"] = Field(alias="dataSource")
+    analysis_mode: AnalysisMode = Field(default=AnalysisMode.BAIDU_ONLINE, alias="analysisMode")
+    data_source: DataSource = Field(alias="dataSource")
     center: Origin
     generated_at: float = Field(alias="generatedAt", gt=0)
     facilities_status: Literal["not_integrated", "complete", "partial", "failed"] = Field(alias="facilitiesStatus")
@@ -278,5 +354,7 @@ class TaskResultResponse(WireModel):
     algorithm: dict | None = None
     warnings: list[Issue] = Field(default_factory=list)
     errors: list[Issue] = Field(default_factory=list)
+    provenance: Provenance | None = None
+    hybrid_result: HybridResult | None = Field(default=None, alias="hybridResult")
     # Compatibility payload consumed by the current async browser client.
     isochrone: dict

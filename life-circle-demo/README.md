@@ -11,6 +11,7 @@
 - `VITE_ANALYSIS_MODE=api`：默认，调用后端；`demo`：显式启用原设施模拟演示。
 - `VITE_API_BASE_URL`：未配置时使用同源 `/api/analyses`；本地前后端分端口运行时，请显式设为 `http://127.0.0.1:8000`。部署地址由环境配置提供。
 - `VITE_BAIDU_MAP_AK`：浏览器地图 AK，与后端步行 AK 分开配置。API 模式中地图缺配置或加载失败会显示错误，坐标输入与结果摘要仍可使用。
+- `VITE_ENABLE_DEVELOPER_MODE=true`：显示并记住本地开发者模式开关，可选择 `baidu_online`、`osm_offline` 和 `hybrid`；默认关闭，不提供权限控制。
 - 浏览器 AK 需在百度控制台开通 JavaScript API GL、「地点检索」与「地理编码」服务，来源白名单需包含实际访问地址（如 `http://127.0.0.1:5173`）。
 - 「获取当前位置」需浏览器授权，仅 HTTPS 或 localhost/127.0.0.1 可用；定位精度不足时界面会提示在地图上核对。地点搜索优先列出分析中心周边 5 公里结果，并附少量较远选项（分组展示；较远选项要求标题严格包含关键词）。附近与全城均无结果时，通过地址解析兜底全国范围的行政区/地址名称（结果标注「地址定位」，如搜索县名）。定位与搜索均返回 BD09LL 坐标，只在用户点击「开始分析」后随中心坐标发送至后端；搜索关键词直接发往百度检索服务。地图不可用时两项控件降级为说明文字。
 - 可复制 `.env.example` 为本地 `.env.local` 并重启 Vite；不要在任何 `VITE_*` 中填写服务端 AK。
@@ -22,7 +23,7 @@
 
 获得可用或部分等时圈后自动打开分析报告；关闭后可通过“查看分析报告”重新打开。修改坐标或预算后，旧结果与报告保留并显示原条件提示；失败、服务不可用或证据不足不会覆盖上一份可用结果。地图图层、摘要与报告共用成功快照，待分析选点与已分析中心分别标注。报告不受图层开关影响。API 入口使用真实任务进度；原 Demo 的 Loading、Report MVP 与 DemoMap fallback 保持原流程。
 
-`synthetic` Provider 固定返回 `facilitiesStatus: "not_integrated"`，三类设施数量和盲区数量均为“无法确定”；真实 `baidu_walking` Provider 会在等时圈计算后执行有限设施检索与采样点核验，返回 `facilityAnalysis`（设施列表、`in_circle` 三态、查询证据、采样点三态与步行路线接口）。设施计数是“检索记录 · 估算圈内”，不代表全量目录；`serviceBlindRegions` 当前为空几何，不展示面积盲区结论；不能把算法未知区域当成设施盲区，也不会从 Demo 补数据。报告来源明确区分 `synthetic` 和 `baidu_walking`。`/api/v1/analysis/mock/*` 和 `/synthetic` 是另一套契约验收接口，不作为任务 API 的备用数据源。
+`synthetic` Provider 固定返回 `facilitiesStatus: "not_integrated"`，三类设施数量和盲区数量均为“无法确定”；真实 `baidu_walking` Provider 会在等时圈计算后执行有限设施检索与采样点核验，返回 `facilityAnalysis`（设施列表、`in_circle` 三态、查询证据、采样点三态与步行路线接口）。`osm_offline` 只读取本地缓存，不产生百度网络调用，设施与设施路线第一阶段未接入；`hybrid` 保留百度和 OSM 两套结果并行对比，不直接合并几何。报告来源明确区分四种 `dataSource`，并展示 OSM 数据日期、快照版本、署名和限制。设施计数是“检索记录 · 估算圈内”，不代表全量目录；`serviceBlindRegions` 当前为空几何，不展示面积盲区结论；不能把算法未知区域当成设施盲区，也不会从 Demo 补数据。`/api/v1/analysis/mock/*` 和 `/synthetic` 是另一套契约验收接口，不作为任务 API 的备用数据源。
 
 ## 本地运行
 

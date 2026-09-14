@@ -17,9 +17,27 @@ from life_circle.models import CancelToken, IsochroneRequest, ProgressSnapshot, 
 from life_circle.providers import AnalyticProvider, BaiduProvider
 
 from .baidu import silence_transport_logs
-from .contracts import Data, Issue, Rules, TaskResultResponse, TaskStatusResponse, RouteEvidence, map_business_status
+from .contracts import (
+    AnalysisCapabilitiesResponse,
+    AnalysisMode,
+    Data,
+    HybridBranch,
+    HybridComparison,
+    HybridResult,
+    Issue,
+    ModeCapability,
+    OsmProvenance,
+    Provenance,
+    RouteEvidence,
+    Rules,
+    SourceProvenance,
+    TaskResultResponse,
+    TaskStatusResponse,
+    map_business_status,
+)
 from .rules import DistanceRule
 from .facilities import analyze_facilities
+from .osm import OsmCache, OsmOfflineEngine
 
 
 class Center(BaseModel):
@@ -33,6 +51,7 @@ class AnalysisInput(BaseModel):
     center: Center
     coordinateSystem: Literal["bd09ll"]
     budget: int = 400
+    analysisMode: AnalysisMode = AnalysisMode.BAIDU_ONLINE
     clientRequestId: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
 
     @field_validator("budget")
@@ -42,8 +61,18 @@ class AnalysisInput(BaseModel):
             raise ValueError("budget must be 200, 400 or 800")
         return value
 
+    @field_validator("analysisMode", mode="before")
+    @classmethod
+    def analysis_modes(cls, value):
+        if isinstance(value, str):
+            try:
+                return AnalysisMode(value)
+            except ValueError:
+                pass
+        return value
+
     def fingerprint(self):
-        return normalize((self.center.lng, self.center.lat)), self.budget
+        return normalize((self.center.lng, self.center.lat)), self.budget, self.analysisMode
 
 
 TERMINAL = {"completed", "cancelled", "failed"}
@@ -54,10 +83,13 @@ class Job:
     task_id: str
     payload: AnalysisInput
     data_source: str
+    analysis_mode: AnalysisMode = AnalysisMode.BAIDU_ONLINE
     started: float = field(default_factory=time.monotonic)
     status: str = "running"
     token: CancelToken = field(default_factory=CancelToken)
     progress: ProgressSnapshot | None = None
+    baidu_progress: ProgressSnapshot | None = None
+    osm_progress: ProgressSnapshot | None = None
     result: dict | None = None
     error: str | None = None
     finished_at: float | None = None
@@ -73,15 +105,21 @@ class Job:
         return self.result.get("businessStatus", "partial")
 
     def view(self):
+        progress = self.baidu_progress if self.analysis_mode == AnalysisMode.HYBRID and self.baidu_progress else self.progress
+        requests = progress.requests if progress else 0
+        network_requests = progress.network_requests if progress else 0
+        if self.analysis_mode == AnalysisMode.OSM_OFFLINE:
+            # Offline samples are evidence, not Baidu API calls.
+            requests = network_requests = 0
         return TaskStatusResponse(
             task_id=self.task_id, status=self.status, business_status=self.business_status(),
             stage=self.status if self.status in TERMINAL or self.status == "cancelling"
             else self.progress.stage if self.progress else "initializing",
-            requests=self.progress.requests if self.progress else 0,
-            network_requests=self.progress.network_requests if self.progress else 0,
+            requests=requests,
+            network_requests=network_requests,
             budget=self.payload.budget,
             elapsed_seconds=max(0, (self.finished_at or time.monotonic()) - self.started),
-            data_source=self.data_source, error=self.error,
+            analysis_mode=self.analysis_mode, data_source=self.data_source, error=self.error,
         ).model_dump(by_alias=True)
 
 
@@ -148,6 +186,59 @@ class AnalysisManager:
         self.settings, self.provider_factory = settings, provider_factory
         self.jobs = {}
         self.gate = RateGate(settings.analysis_qps)
+        self.osm_cache = OsmCache.load(
+            getattr(settings, "osm_cache_location", None),
+            expected_version=getattr(settings, "osm_cache_version", None),
+            speed_mps=getattr(settings, "osm_walk_speed_mps", 1.3),
+        )
+        self.osm_engine = OsmOfflineEngine(self.osm_cache) if self.osm_cache.available else None
+
+    @property
+    def baidu_available(self):
+        return bool(
+            self.provider_factory
+            or self.settings.analysis_provider == "synthetic"
+            or (self.settings.ak_configured and self.settings.analysis_qps is not None)
+        )
+
+    def capabilities(self):
+        osm = self.osm_cache.info
+        baidu = ModeCapability(
+            available=self.baidu_available,
+            availability="ready" if self.baidu_available else "unavailable",
+            reason=None if self.baidu_available else "baidu_not_configured",
+        )
+        osm_capability = ModeCapability(
+            available=self.osm_cache.available,
+            availability=osm.availability,
+            coverage_city=osm.coverage_city,
+            data_version=osm.data_version,
+            data_date=osm.data_date,
+            limitations=list(osm.limitations),
+            reason=osm.reason,
+        )
+        hybrid_available = self.baidu_available and self.osm_cache.available
+        hybrid = ModeCapability(
+            available=hybrid_available,
+            availability="ready" if hybrid_available else "unavailable",
+            dependencies=[AnalysisMode.BAIDU_ONLINE.value, AnalysisMode.OSM_OFFLINE.value],
+            limitations=["百度与 OSM 并行计算，仅做结果对比，不直接合并几何"],
+            reason=None if hybrid_available else "dependency_unavailable",
+        )
+        return AnalysisCapabilitiesResponse(modes={
+            AnalysisMode.BAIDU_ONLINE.value: baidu,
+            AnalysisMode.OSM_OFFLINE.value: osm_capability,
+            AnalysisMode.HYBRID.value: hybrid,
+        }).model_dump(by_alias=True)
+
+    def _ensure_mode_available(self, mode: AnalysisMode, origin):
+        if mode in (AnalysisMode.BAIDU_ONLINE, AnalysisMode.HYBRID) and not self.baidu_available:
+            raise HTTPException(503, "百度在线分析暂未配置")
+        if mode in (AnalysisMode.OSM_OFFLINE, AnalysisMode.HYBRID):
+            if not self.osm_cache.available or self.osm_engine is None:
+                raise HTTPException(503, "OSM 离线缓存不可用")
+            if not self.osm_cache.contains(origin):
+                raise HTTPException(409, "分析中心不在 OSM 覆盖范围内")
 
     def prune(self):
         terminal = sorted((job for job in self.jobs.values() if job.status in TERMINAL and job.finished_at is not None), key=lambda job: job.finished_at)
@@ -170,13 +261,18 @@ class AnalysisManager:
                 return job
         if any(job.task and not job.task.done() for job in self.jobs.values()):
             raise HTTPException(409, "分析服务忙，请等待当前任务完成或取消后重试")
-        if self.settings.analysis_provider == "baidu" and not self.provider_factory:
-            if not self.settings.ak_configured or self.settings.analysis_qps is None:
-                raise HTTPException(503, "请在后端配置步行服务 AK 和 ANALYSIS_QPS")
+        origin = normalize((payload.center.lng, payload.center.lat))
+        self._ensure_mode_available(payload.analysisMode, origin)
+        if payload.analysisMode == AnalysisMode.BAIDU_ONLINE and self.settings.analysis_provider == "baidu" and not self.provider_factory:
             if 143 / self.settings.analysis_qps >= 600:
                 raise HTTPException(503, "配置的 QPS 无法在截止时间内完成初始化")
-        source = "synthetic" if self.settings.analysis_provider == "synthetic" else "baidu_walking"
-        job = Job(str(uuid4()), payload, source)
+        if payload.analysisMode == AnalysisMode.OSM_OFFLINE:
+            source = "osm_offline"
+        elif payload.analysisMode == AnalysisMode.HYBRID:
+            source = "hybrid"
+        else:
+            source = "synthetic" if self.settings.analysis_provider == "synthetic" else "baidu_walking"
+        job = Job(str(uuid4()), payload, source, payload.analysisMode)
         self.jobs[job.task_id] = job
         job.task = asyncio.create_task(self.run(job))
         return job
@@ -184,65 +280,169 @@ class AnalysisManager:
     def update(self, job, progress):
         if job.status == "running":
             job.progress = progress
+            if progress.stage.startswith("baidu_"):
+                job.baidu_progress = progress
+            elif progress.stage.startswith("osm_"):
+                job.osm_progress = progress
+
+    async def _run_baidu(self, job, origin, budget, stack, *, stage_prefix=""):
+        client = None
+        if self.provider_factory:
+            provider = self.provider_factory(origin)
+            if hasattr(provider, "__aenter__"):
+                provider = await stack.enter_async_context(provider)
+        elif self.settings.analysis_provider == "synthetic":
+            provider = AnalyticProvider(origin, lambda x, y: math.hypot(x, y) / 1.2)
+        else:
+            silence_transport_logs()
+            client = await stack.enter_async_context(httpx.AsyncClient(trust_env=False, follow_redirects=False))
+            provider = LimitedProvider(BaiduProvider(self.settings.baidu_map_ak.get_secret_value(), client=client), self.gate)
+
+        def progress(snapshot):
+            stage = f"{stage_prefix}{snapshot.stage}" if stage_prefix else snapshot.stage
+            self.update(job, ProgressSnapshot(stage, snapshot.requests, snapshot.network_requests,
+                                               snapshot.budget, snapshot.elapsed_seconds))
+
+        request = IsochroneRequest(origin, "bd09ll", budget=budget,
+            qps=self.settings.analysis_qps if provider.network else None)
+        result = await compute_isochrone(request, provider, job.token, on_progress=progress)
+        business = None
+        if not self.provider_factory and provider.network and result.quality != "insufficient" and not job.token.cancelled:
+            self.update(job, ProgressSnapshot(f"{stage_prefix}facilities", result.statistics.requests,
+                                               result.statistics.network_requests, budget, time.monotonic()-job.started))
+            business = await analyze_facilities(result, client, self.settings.baidu_map_ak.get_secret_value(), self.gate, job.token,
+                deadline=job.started + 600)
+        return result, business
+
+    async def _run_osm(self, job, origin, budget):
+        if self.osm_engine is None:
+            raise RuntimeError("OSM cache unavailable")
+
+        def progress(snapshot):
+            self.update(job, ProgressSnapshot(f"osm_{snapshot.stage}", snapshot.requests,
+                                               snapshot.network_requests, snapshot.budget, snapshot.elapsed_seconds))
+
+        result = await self.osm_engine.run(origin, budget, job.token, progress)
+        if self.osm_cache.near_boundary(origin) and "coverage_boundary" not in result.warnings:
+            result.warnings.append("coverage_boundary")
+            if result.quality == "usable":
+                result.quality = "partial"
+        return result
+
+    @staticmethod
+    def _branch(result, data_source, business_status):
+        payload = result.to_dict()
+        return HybridBranch(
+            participated=True,
+            data_source=data_source,
+            business_status=business_status,
+            isochrone=payload,
+            warnings=payload["warnings"],
+        )
+
+    def _make_result(self, job, origin, primary, business, *, osm_result=None):
+        payload = primary.to_dict()
+        facilities_status = business[2].status if business else "not_integrated"
+        primary_business_status = map_business_status(
+            quality=payload["quality"],
+            facilities_status=facilities_status,
+            facilities=business[0] if business else None,
+        )
+        business_status = primary_business_status
+        osm_status = None
+        hybrid_result = None
+        if osm_result is not None:
+            osm_payload = osm_result.to_dict()
+            osm_status = map_business_status(quality=osm_payload["quality"], facilities_status="not_integrated")
+            if osm_status == "failed":
+                business_status = "failed"
+            hybrid_result = HybridResult(
+                baidu=self._branch(primary, "synthetic" if self.settings.analysis_provider == "synthetic" else "baidu_walking", primary_business_status),
+                osm=self._branch(osm_result, "osm_offline", osm_status),
+                comparison=HybridComparison(notes=["百度与 OSM 双路计算，仅保留两套结果进行对比，不直接合并几何。"]),
+            )
+
+        if job.analysis_mode == AnalysisMode.OSM_OFFLINE:
+            provenance = Provenance(osm=OsmProvenance(**self.osm_cache.provenance(participated=True)))
+        elif job.analysis_mode == AnalysisMode.HYBRID:
+            provenance = Provenance(
+                osm=OsmProvenance(**self.osm_cache.provenance(participated=True)),
+                baidu=SourceProvenance(
+                    participated=True, availability="ready",
+                    data_source="synthetic" if self.settings.analysis_provider == "synthetic" else "baidu_walking",
+                ),
+                strategy="parallel_comparison",
+            )
+        else:
+            data_source = "synthetic" if self.settings.analysis_provider == "synthetic" else "baidu_walking"
+            provenance = Provenance(baidu=SourceProvenance(participated=True, availability="ready", data_source=data_source))
+
+        warnings = [Issue(code="ALGORITHM_WARNING", message=message, scope="isochrone") for message in payload["warnings"]]
+        if osm_result is not None:
+            warnings.append(Issue(code="HYBRID_COMPARISON", message="百度与 OSM 结果分别保留，未直接合并几何。", scope="hybrid"))
+            warnings.extend(Issue(code="OSM_WARNING", message=message, scope="osm") for message in osm_result.to_dict()["warnings"])
+        errors = ([Issue(code="INSUFFICIENT_EVIDENCE", message="没有足够步行证据生成等时圈。", scope="isochrone", severity="error")]
+                   if business_status == "failed" else [])
+        response = TaskResultResponse(
+            task_id=job.task_id,
+            task_status="completed",
+            status=business_status,
+            business_status=business_status,
+            analysis_mode=job.analysis_mode,
+            data_source=job.data_source,
+            center={"lng": origin[0], "lat": origin[1]},
+            generated_at=time.time(),
+            facilities_status=facilities_status,
+            facility_analysis=business[2] if business else None,
+            rules=Rules(distance=DistanceRule(metric="walking_route", threshold_m=1000,
+                inclusive=True, tolerance_m=100, assessment_scope="isochrone", category_policy="major_minor")),
+            data=Data(geometry=payload["geometry"], uncertain_region=payload["uncertainRegion"],
+                      unknown_region=payload["unknownRegion"], computation_extent=payload["computationExtent"]),
+            algorithm=payload,
+            warnings=warnings,
+            errors=errors,
+            provenance=provenance,
+            hybrid_result=hybrid_result,
+            isochrone=payload,
+        ).model_dump(by_alias=True)
+        if business:
+            facilities, categories, evidence, report = business
+            response["data"].update(
+                facilities=[facility.model_dump() for facility in facilities],
+                categories=[category.model_dump() for category in categories],
+                report=report,
+            )
+            response["warnings"].extend(
+                Issue(code="FACILITY_LIMITATION", message=message, scope="facilities").model_dump()
+                for message in evidence.warnings
+            )
+        return response
 
     async def run(self, job):
         try:
-            business = None
             async with AsyncExitStack() as stack:
-                origin, budget = job.payload.fingerprint()
-                if self.provider_factory:
-                    provider = self.provider_factory(origin)
-                    if hasattr(provider, "__aenter__"):
-                        provider = await stack.enter_async_context(provider)
-                elif self.settings.analysis_provider == "synthetic":
-                    provider = AnalyticProvider(origin, lambda x, y: math.hypot(x, y) / 1.2)
+                origin, budget, _ = job.payload.fingerprint()
+                if job.analysis_mode == AnalysisMode.OSM_OFFLINE:
+                    result = await self._run_osm(job, origin, budget)
+                    business = None
+                    osm_result = None
+                elif job.analysis_mode == AnalysisMode.HYBRID:
+                    baidu_task = asyncio.create_task(self._run_baidu(job, origin, budget, stack, stage_prefix="baidu_"))
+                    osm_task = asyncio.create_task(self._run_osm(job, origin, budget))
+                    outcomes = await asyncio.gather(baidu_task, osm_task, return_exceptions=True)
+                    if any(isinstance(outcome, BaseException) for outcome in outcomes):
+                        raise RuntimeError("hybrid engine failure")
+                    (result, business), osm_result = outcomes
                 else:
-                    silence_transport_logs()
-                    client = await stack.enter_async_context(httpx.AsyncClient(trust_env=False, follow_redirects=False))
-                    provider = LimitedProvider(BaiduProvider(self.settings.baidu_map_ak.get_secret_value(), client=client), self.gate)
-                request = IsochroneRequest(origin, "bd09ll", budget=budget,
-                    qps=self.settings.analysis_qps if provider.network else None)
-                result = await compute_isochrone(request, provider, job.token, on_progress=lambda p: self.update(job, p))
-                if not self.provider_factory and provider.network and result.quality != "insufficient" and not job.token.cancelled:
-                    self.update(job, ProgressSnapshot("facilities", result.statistics.requests, result.statistics.network_requests, budget, time.monotonic()-job.started))
-                    business = await analyze_facilities(result, client, self.settings.baidu_map_ak.get_secret_value(), self.gate, job.token,
-                        deadline=job.started + 600)
+                    result, business = await self._run_baidu(job, origin, budget, stack)
+                    osm_result = None
             # Commit only after transport cleanup; cancellation during cleanup wins.
             if job.token.cancelled:
                 job.status = "cancelled"
-            elif result.stop_reason == "geometry_error":
+            elif result.stop_reason == "geometry_error" or (osm_result is not None and osm_result.stop_reason == "geometry_error"):
                 job.status, job.error = "failed", "几何重建失败，请重试或检查采样证据"
             else:
-                payload = result.to_dict()
-                # The current algorithm only supplies the isochrone.  The
-                # normalized business status therefore remains partial until
-                # facility/report modules are connected.  Insufficient evidence
-                # is a failed business result even though the async task ran.
-                business_status = map_business_status(quality=payload["quality"],
-                    facilities_status=business[2].status if business else "not_integrated",
-                    facilities=business[0] if business else None)
-                warnings = [Issue(code="ALGORITHM_WARNING", message=message,
-                                   scope="isochrone") for message in payload["warnings"]]
-                errors = ([Issue(code="INSUFFICIENT_EVIDENCE",
-                                 message="没有足够步行证据生成等时圈。", scope="isochrone", severity="error")]
-                           if business_status == "failed" else [])
-                job.result = TaskResultResponse(
-                    task_id=job.task_id, task_status="completed", status=business_status,
-                    business_status=business_status,
-                    data_source=job.data_source, center={"lng": origin[0], "lat": origin[1]},
-                    generated_at=time.time(), facilities_status=business[2].status if business else "not_integrated",
-                    facility_analysis=business[2] if business else None,
-                    rules=Rules(distance=DistanceRule(metric="walking_route", threshold_m=1000,
-                        inclusive=True, tolerance_m=100, assessment_scope="isochrone",
-                        category_policy="major_minor")),
-                    data=Data(geometry=payload["geometry"], uncertain_region=payload["uncertainRegion"],
-                              unknown_region=payload["unknownRegion"], computation_extent=payload["computationExtent"]),
-                    algorithm=payload, warnings=warnings, errors=errors, isochrone=payload,
-                ).model_dump(by_alias=True)
-                if business:
-                    facilities, categories, evidence, report = business
-                    job.result["data"].update(facilities=[f.model_dump() for f in facilities], categories=[c.model_dump() for c in categories], report=report)
-                    job.result["warnings"].extend(Issue(code="FACILITY_LIMITATION", message=message, scope="facilities").model_dump() for message in evidence.warnings)
+                job.result = self._make_result(job, origin, result, business, osm_result=osm_result)
                 job.status = "completed"
         except asyncio.CancelledError:
             job.token.cancel()
@@ -279,6 +479,8 @@ def analysis_router(manager):
     @router.post("/{task_id}/routes/{facility_id}", response_model=RouteEvidence)
     async def facility_route(task_id: str, facility_id: str):
         job = manager.get(task_id)
+        if job.analysis_mode == AnalysisMode.OSM_OFFLINE:
+            raise HTTPException(409, "OSM 离线模式暂不支持设施路线")
         if job.status != "completed" or not job.result or not job.result.get("facilityAnalysis"):
             raise HTTPException(409, "设施结果尚未就绪")
         async with job.route_lock:
@@ -306,6 +508,10 @@ def analysis_router(manager):
     @router.post("", status_code=202, response_model=TaskStatusResponse)
     async def create(payload: AnalysisInput):
         return manager.create(payload).view()
+
+    @router.get("/capabilities", response_model=AnalysisCapabilitiesResponse)
+    async def capabilities():
+        return manager.capabilities()
 
     @router.get("/{task_id}", response_model=TaskStatusResponse)
     async def status(task_id: str):

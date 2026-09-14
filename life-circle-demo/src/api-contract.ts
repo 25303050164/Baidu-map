@@ -80,7 +80,7 @@ export type AnalysisResponse = {
   analysis_id: string;
   generated_at: string;
   status: "complete" | "partial" | "failed" | "empty";
-  source: "mock" | "synthetic" | "system";
+  source: "mock" | "synthetic" | "osm_offline" | "system";
   algorithm_version: string | null;
   data_updated_at: string | null;
   origin: Origin | null;
@@ -94,6 +94,23 @@ export type AnalysisResponse = {
   errors: Array<Issue>;
 };
 
+export type ModeCapability = {
+  available: boolean;
+  availability: "ready" | "degraded" | "unavailable" | null;
+  coverageCity: string | null;
+  dataVersion: string | null;
+  dataDate: string | null;
+  dependencies: Array<string>;
+  limitations: Array<string>;
+  reason: string | null;
+};
+
+export type AnalysisCapabilitiesResponse = {
+  modes: Record<string, ModeCapability>;
+};
+
+export type AnalysisMode = "baidu_online" | "osm_offline" | "hybrid";
+
 export type TaskStatusResponse = {
   schema_version: "1.0";
   responseType: "task";
@@ -105,7 +122,8 @@ export type TaskStatusResponse = {
   networkRequests: number;
   budget: 200 | 400 | 800;
   elapsedSeconds: number;
-  dataSource: "synthetic" | "baidu_walking";
+  analysisMode: AnalysisMode;
+  dataSource: "synthetic" | "baidu_walking" | "osm_offline" | "hybrid";
   error: string | null;
 };
 
@@ -138,6 +156,47 @@ export type FacilityAnalysis = {
   warnings: Array<string>;
 };
 
+export type HybridBranch = {
+  participated: boolean;
+  dataSource: "synthetic" | "baidu_walking" | "osm_offline";
+  businessStatus: "complete" | "partial" | "failed" | "empty";
+  isochrone: Record<string, unknown>;
+  warnings: Array<string>;
+};
+
+export type HybridComparison = {
+  strategy: "parallel_comparison";
+  geometryMerged: false;
+  notes: Array<string>;
+};
+
+export type HybridResult = {
+  baidu: HybridBranch;
+  osm: HybridBranch;
+  comparison: HybridComparison;
+};
+
+export type OsmProvenance = {
+  participated: boolean;
+  availability: "ready" | "degraded" | "unavailable";
+  coverageCity: string | null;
+  dataVersion: string | null;
+  dataDate: string | null;
+  downloadedAt: string | null;
+  preparedAt: string | null;
+  coverageCheckAvailable: boolean;
+  coverageBoundary: Geometry | null;
+  attribution: string;
+  license: string;
+  limitations: Array<string>;
+};
+
+export type Provenance = {
+  osm: OsmProvenance | null;
+  baidu: SourceProvenance | null;
+  strategy: "single_source" | "parallel_comparison";
+};
+
 export type QueryEvidence = {
   category: "market" | "supermarket" | "pharmacy" | "hospital_pharmacy" | "school";
   query: string;
@@ -158,6 +217,12 @@ export type RouteEvidence = {
   path: Array<Array<number>>;
 };
 
+export type SourceProvenance = {
+  participated: boolean;
+  availability: "ready" | "degraded" | "unavailable";
+  dataSource: "synthetic" | "baidu_walking" | null;
+};
+
 export type TaskResultResponse = {
   schema_version: "1.0";
   responseType: "result";
@@ -165,7 +230,8 @@ export type TaskResultResponse = {
   taskStatus: "completed";
   status: "complete" | "partial" | "failed" | "empty";
   businessStatus: "complete" | "partial" | "failed" | "empty";
-  dataSource: "synthetic" | "baidu_walking";
+  analysisMode: AnalysisMode;
+  dataSource: "synthetic" | "baidu_walking" | "osm_offline" | "hybrid";
   center: Origin;
   generatedAt: number;
   facilitiesStatus: "not_integrated" | "complete" | "partial" | "failed";
@@ -178,5 +244,7 @@ export type TaskResultResponse = {
   algorithm: Record<string, unknown> | null;
   warnings: Array<Issue>;
   errors: Array<Issue>;
+  provenance: Provenance | null;
+  hybridResult: HybridResult | null;
   isochrone: Record<string, unknown>;
 };

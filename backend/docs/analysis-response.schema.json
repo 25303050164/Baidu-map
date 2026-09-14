@@ -547,6 +547,7 @@
       "enum": [
         "mock",
         "synthetic",
+        "osm_offline",
         "system"
       ],
       "title": "Source",

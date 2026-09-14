@@ -118,3 +118,38 @@ git check-ignore .env .venv/pyvenv.cfg logs/baidu-smoke.jsonl
 从 backend 执行 `python -m tools.export_contract` 可重建四组 Mock、JSON Schema 和 OpenAPI 快照。使用上述 `.venv` Python。
 
 本地核查环境也可继续使用 backend/.venv 的 Python 3.12；不必创建 D 盘环境。两套 API 暂时并存，任务API为 `/api/analyses`，N05契约API为 `/api/v1/analysis`。
+
+## 6. 三种分析模式与 OSM 缓存
+
+任务 API 的 `analysisMode` 支持 `baidu_online`、`osm_offline` 和 `hybrid`；省略该字段时保持百度在线模式。通过 `GET /api/analyses/capabilities` 查看当前百度配置、OSM 缓存覆盖城市、数据日期和可用性。`hybrid` 第一阶段只并行保留百度与 OSM 两套结果并进行对比，不直接合并几何。
+
+OSM 只读取启动时加载的本地缓存，不读取 PBF、不调用百度或其他在线路网服务。缓存位置由 `OSM_CACHE_PATH` 配置；相对路径从 `backend` 目录解析，当前推荐值为 `data/osm-cache`。缓存目录至少包含 `metadata.json` 和 `graph.json`；元数据应包含 `coordinateSystem`、`coverage`（`[west,south,east,north]`）、`coverageCity`、`dataVersion` 和 `dataDate`。PBF、`.poly`、`.osm-cache` 和完整缓存均不提交 Git。OSM 结果的设施与设施路线第一阶段保持未接入，报告会显示 OSM 署名、ODbL 和限制说明。
+
+### OSM 缓存准备环境
+
+不要物理合并运行时虚拟环境。推荐使用同一仓库、独立的 `backend/venv-osm-prep`；它只负责一次性把本地 `.osm.pbf` 转换为运行时 JSON，结果写入 `backend/data/osm-cache`。Pyrosm 0.13.x 支持 CPython 3.10-3.14；当前后端 venv 若只做本机准备，也可以直接安装同一组可选依赖，但不建议把地理处理依赖放进生产运行环境。
+
+本机单环境快捷方式（这不是物理合并 venv，而是向现有环境追加可选依赖）：
+
+```powershell
+& backend/venv/Scripts/python.exe -m pip install -r backend/requirements-osm-prep.txt
+```
+
+PowerShell 示例：
+
+```powershell
+py -3.14 -m venv backend/venv-osm-prep
+& backend/venv-osm-prep/Scripts/python.exe -m pip install -r backend/requirements-osm-prep.txt
+& backend/venv-osm-prep/Scripts/python.exe backend/tools/prepare_osm_cache.py `
+  --pbf backend/data/osm-source/shanghai-latest.osm.pbf `
+  --output backend/data/osm-cache `
+  --city 上海市 `
+  --data-version geofabrik-shanghai-20260914 `
+  --data-date 2026-09-14 `
+  --coverage-bbox 121.45 31.10 121.65 31.40 `
+  --overwrite
+```
+
+准备脚本不联网、不读取百度 AK；PBF 需要先从 Geofabrik 或其他可信 OSM extract 来源下载到本地。脚本会提取 walking network，将 WGS84 节点转换为 BD09LL，并生成 `metadata.json` 与 `graph.json`。准备完成后重启后端，再通过 `/api/analyses/capabilities` 验证 OSM 为 `ready`。
+
+`POST /api/v1/analysis/osm_offline` 仅用于离线 engine 验收；普通前端始终使用 `/api/analyses` 的任务、轮询和取消协议。

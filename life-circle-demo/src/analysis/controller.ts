@@ -34,7 +34,7 @@ export class AnalysisController {
       if (resetting) await resetting;
       if ((this.pendingCancels.size || this.pendingRequestCancels.size) && !await this.clearPending()) return;
       if (revision !== this.revision) return;
-      const run = { input: { ...input, clientRequestId: crypto.randomUUID() }, abort: new AbortController(), revision: ++this.revision };
+       const run = { input: { ...input, analysisMode: input.analysisMode ?? 'baidu_online', clientRequestId: crypto.randomUUID() }, abort: new AbortController(), revision: ++this.revision };
       this.run = run;
       this.pendingStart = undefined;
       await this.execute(run);
@@ -89,7 +89,11 @@ export class AnalysisController {
       this.set({ phase: 'fetching', task });
       const result = await this.api.result(run.id!, run.abort.signal);
       if (!this.current(run) || run.abort.signal.aborted) return true;
-      if (result.taskId !== run.id || result.dataSource !== task.dataSource || !matchesAnalysisInput(result, run.input)) {
+       const expectedMode = run.input.analysisMode ?? 'baidu_online';
+       if (result.taskId !== run.id || result.dataSource !== task.dataSource
+         || (task.analysisMode !== undefined && task.analysisMode !== expectedMode)
+         || (result.analysisMode !== undefined && result.analysisMode !== expectedMode)
+         || !matchesAnalysisInput(result, run.input)) {
         throw new Error('分析结果与提交条件不一致，请检查服务版本');
       }
       if (this.current(run) && !run.abort.signal.aborted) this.set({ phase: 'completed', task, result });
