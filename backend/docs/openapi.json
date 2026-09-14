@@ -374,6 +374,57 @@
         }
       }
     },
+    "/api/v1/analysis/osm_offline": {
+      "post": {
+        "tags": [
+          "OSM Offline"
+        ],
+        "summary": "Offline Analysis",
+        "operationId": "offline_analysis_api_v1_analysis_osm_offline_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OsmOfflineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -1249,6 +1300,37 @@
           "lat"
         ],
         "title": "Origin"
+      },
+      "OsmOfflineRequest": {
+        "properties": {
+          "origin": {
+            "$ref": "#/components/schemas/Origin"
+          },
+          "coordinate_system": {
+            "type": "string",
+            "const": "bd09ll",
+            "title": "Coordinate System"
+          },
+          "algorithm": {
+            "type": "string",
+            "const": "osm_offline",
+            "title": "Algorithm",
+            "default": "osm_offline"
+          },
+          "threshold": {
+            "type": "integer",
+            "const": 900,
+            "title": "Threshold",
+            "default": 900
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "origin",
+          "coordinate_system"
+        ],
+        "title": "OsmOfflineRequest"
       },
       "QueryEvidence": {
         "properties": {

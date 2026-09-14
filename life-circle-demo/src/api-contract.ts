@@ -180,3 +180,10 @@ export type TaskResultResponse = {
   errors: Array<Issue>;
   isochrone: Record<string, unknown>;
 };
+
+export type OsmOfflineRequest = {
+  origin: Origin;
+  coordinate_system: "bd09ll";
+  algorithm?: "osm_offline";
+  threshold?: 900;
+};

@@ -33,3 +33,14 @@ backend/.poi-ledgers/
 *.egg-info/
 life-circle-algorithm/.venv/
 life-circle-algorithm/build/
+
+# Offline OSM source and generated caches (never commit large snapshots)
+*.osm.pbf
+*.graphml
+*.gpickle
+*.pickle
+*.osm-cache
+*.osm-cache.tmp
+data/osm/*.poly
+data/osm/*.geojson
+data/osm/graph_metadata.json
