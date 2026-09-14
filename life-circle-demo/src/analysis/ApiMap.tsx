@@ -1,13 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Center } from '../types';
 import { useBaiduMap } from '../map/useBaiduMap';
-import type { BMapMap } from '../map/baiduMapTypes';
+import type { BMapIcon, BMapMap } from '../map/baiduMapTypes';
+import { createDotIcon } from '../map/mapIcons';
 import type { Isochrone } from './types';
 import { drawGeometry } from './geometry';
 import type { Facility, AssessmentPoint } from '../api-contract';
 
 export type Layers = { reachable: boolean; unknown: boolean; uncertain: boolean; extent: boolean; serviceBlind: boolean };
-export function ApiMap({ center, result, resultCenter, layers, onPick, minutes = 15, facilities = [], assessments = [], blindRegions = {}, route = [], onFacility }: { center: Center; result?: Isochrone; resultCenter?: Center; layers: Layers; onPick: (center: Center) => void; minutes?: number; facilities?: Facility[]; assessments?: AssessmentPoint[]; blindRegions?: Record<string, unknown>; route?: [number, number][]; onFacility?: (id: string) => void }) {
+
+/** 设施大类颜色（与图例、FacilityPanel 分组一致）；符号取小类首字。 */
+const majorColors: Record<string, string> = { shopping: '#168875', medical: '#397ac6', education: '#c78b36' };
+const majorNames: Record<string, string> = { shopping: '购物', medical: '医疗', education: '教育' };
+const minorSymbols: Record<string, string> = { market: '菜', supermarket: '超', pharmacy: '药', hospital_pharmacy: '医', school: '学' };
+
+export function ApiMap({ center, result, resultCenter, layers, onPick, minutes = 15, facilities = [], assessments = [], blindRegions = {}, route = [], selected, onFacility }: { center: Center; result?: Isochrone; resultCenter?: Center; layers: Layers; onPick: (center: Center) => void; minutes?: number; facilities?: Facility[]; assessments?: AssessmentPoint[]; blindRegions?: Record<string, unknown>; route?: [number, number][]; selected?: string | null; onFacility?: (id: string) => void }) {
   const { api, mode, failureReason } = useBaiduMap();
   const container = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<BMapMap | null>(null);
@@ -16,6 +23,16 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
   const initialCenter = useRef(center);
   initialCenter.current = center;
   const [error, setError] = useState(false);
+  // 每个小类一枚图标；选中态用实心变体突出。canvas 不可用时回退默认 Marker。
+  const icons = useMemo(() => {
+    if (!api) return null;
+    const build = (filled: boolean) => Object.fromEntries(Object.entries(minorSymbols).map(([minor, symbol]) => {
+      const major = minor === 'market' || minor === 'supermarket' ? 'shopping'
+        : minor === 'school' ? 'education' : 'medical';
+      return [minor, createDotIcon(api, { color: majorColors[major], text: symbol, filled })];
+    })) as Record<string, BMapIcon | undefined>;
+    return { normal: build(false), selected: build(true) };
+  }, [api]);
   useEffect(() => {
     if (!api || !container.current) return;
     let instance: BMapMap | undefined;
@@ -48,7 +65,8 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
         if (layers.uncertain) drawGeometry(instance, api, result.uncertainRegion, { strokeColor: '#ca8a04', fillColor: '#facc15', fillOpacity: .15, strokeWeight: 1 });
       }
       for (const facility of facilities.slice(0,100)) {
-        const marker = new api.Marker(new api.Point(facility.location.lng,facility.location.lat), {title:facility.name});
+        const icon = facility.id === selected ? icons?.selected[facility.category] : icons?.normal[facility.category];
+        const marker = new api.Marker(new api.Point(facility.location.lng,facility.location.lat), {title:facility.name, ...(icon ? { icon } : {})});
         marker.addEventListener('click', ()=>onFacility?.(facility.id));
         instance.addOverlay(marker);
       }
@@ -65,7 +83,7 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
         instance.addOverlay(new api.Marker(new api.Point(center.lng, center.lat), { title: '待分析选点（BD09LL）' }));
       }
     } catch { setError(true); }
-  }, [api, map, center, result, resultCenter, layers, minutes, facilities, assessments, blindRegions, route, onFacility]);
+  }, [api, map, center, result, resultCenter, layers, minutes, facilities, assessments, blindRegions, route, selected, icons, onFacility]);
   const unavailable = error || mode === 'fallback';
   const failureMessage = failureReason === 'missing-key'
     ? '尚未配置浏览器地图密钥，请联系项目管理员完成地图配置。仍可输入坐标、执行分析和查看结果摘要。'
@@ -81,5 +99,11 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
     <div className="api-map-caption">百度坐标 BD09LL · 点击地图选点
       {resultCenter && <><br />图层与报告中心：{resultCenter.lng.toFixed(6)}, {resultCenter.lat.toFixed(6)}</>}
     </div>
+    {facilities.length > 0 && <div className="api-map-legend" data-testid="map-legend" aria-label="地图图例">
+      <span className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors.shopping }} />{majorNames.shopping}（菜/超）</span>
+      <span className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors.medical }} />{majorNames.medical}（药/医）</span>
+      <span className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors.education }} />{majorNames.education}（学）</span>
+      {route.length > 1 && <span className="api-legend-item"><i className="api-legend-line" />步行路线</span>}
+    </div>}
   </div>;
 }

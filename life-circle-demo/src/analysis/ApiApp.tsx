@@ -114,6 +114,7 @@ export default function ApiApp() {
           facilities={showFacilities ? (displayedResult?.data.facilities ?? []).filter(f => group === 'all' || f.major_category === group) : []}
           assessments={showAssessments ? (displayedResult?.facilityAnalysis?.assessments ?? []).map(p => ({ ...p, categories: p.categories.filter(c => group === 'all' || c.category === group) })) : []}
           blindRegions={displayedResult?.facilityAnalysis?.serviceBlindRegions ?? {}}
+          selected={selected}
           onFacility={id => { setSelected(id); setRoute(null); }}
           route={route && route.taskId === displayedResult?.taskId ? route.points : []}
         />

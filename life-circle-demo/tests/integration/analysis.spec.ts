@@ -15,6 +15,8 @@ async function mockMap(page: Page, location: LocationFixture = {}) {
     storage.__polygons = [];
     class Overlay { addEventListener() {} removeEventListener() {} }
     class Point { constructor(public lng: number, public lat: number) {} }
+    class Size { constructor(public width: number, public height: number) {} }
+    class Icon { constructor(public url: string, public size: Size, public options: { anchor?: Size }) {} }
     class Map {
       private center = new Point(116.404, 39.915);
       private svg: SVGSVGElement;
@@ -91,7 +93,7 @@ async function mockMap(page: Page, location: LocationFixture = {}) {
     }
     class Label extends Overlay { setStyle() {} }
     class Polyline extends Overlay {}
-    Object.assign(window, { BMapGL: { Map, Point, Polygon, Marker: Overlay, Label, Polyline, Geolocation, LocalSearch, Bounds, Geocoder } });
+    Object.assign(window, { BMapGL: { Map, Point, Size, Icon, Polygon, Marker: Overlay, Label, Polyline, Geolocation, LocalSearch, Bounds, Geocoder } });
   }, location);
 }
 

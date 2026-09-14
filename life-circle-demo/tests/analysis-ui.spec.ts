@@ -10,10 +10,17 @@ async function setup(page: Page, options: { failOnce?: boolean; unavailable?: bo
   await page.addInitScript(() => {
     const audit = { creations: 0, active: 0, paths: [] as string[][],
       polylines: [] as { lng: number; lat: number }[][],
-      markers: [] as { point: Point; options: { title: string } }[], click: undefined as undefined | ((e: unknown) => void) };
-    class Overlay { addEventListener() {} removeEventListener() {} }
+      markers: [] as Marker[], click: undefined as undefined | ((e: unknown) => void) };
+    let iconSeq = 0;
+    class Overlay {
+      handlers: Record<string, () => void> = {};
+      addEventListener(type: string, handler: () => void) { this.handlers[type] = handler; }
+      removeEventListener() {}
+    }
     class Point { constructor(public lng: number, public lat: number) {} }
-    class Marker extends Overlay { constructor(public point: Point, public options: { title: string }) { super(); } }
+    class Size { constructor(public width: number, public height: number) {} }
+    class Icon { seq = ++iconSeq; constructor(public url: string, public size: Size, public options: { anchor?: Size }) {} }
+    class Marker extends Overlay { constructor(public point: Point, public options: { title: string; icon?: Icon }) { super(); } }
     class Polygon extends Overlay { constructor(public rings: string[]) { super(); } }
     class Label extends Overlay { setStyle() {} }
     class Polyline extends Overlay { constructor(public points: Point[]) { super(); audit.polylines.push(points.map(p => ({ lng: p.lng, lat: p.lat }))); } }
@@ -31,7 +38,7 @@ async function setup(page: Page, options: { failOnce?: boolean; unavailable?: bo
       clearOverlays() { audit.paths = []; audit.markers = []; audit.polylines = []; }
       destroy() { audit.active--; }
     }
-    Object.assign(window, { BMapGL: { Map, Point, Polygon, Marker, Label, Polyline }, __mapAudit: audit });
+    Object.assign(window, { BMapGL: { Map, Point, Size, Icon, Polygon, Marker, Label, Polyline }, __mapAudit: audit });
   });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
@@ -98,6 +105,8 @@ test('validated partial result drives map and automatic report, preserving holes
   await expect(report).toContainText('部分体检结果');
   await expect(report).toContainText('证据质量：部分结果');
   await expect(page.getByTestId('analysis-facility-stats').getByRole('cell', { name: '无法确定', exact: true })).toHaveCount(3);
+  // No facilities in this scenario, so the map legend must stay hidden.
+  await expect(page.getByTestId('map-legend')).not.toBeVisible();
   const audit = await page.evaluate(() => (window as any).__mapAudit);
   expect(audit.active).toBe(1);
   expect(audit.creations).toBe(1);
@@ -248,9 +257,26 @@ test('facility route requests stay on the same origin and draw the returned path
   await expect(page.getByTestId('analysis-report')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByText('设施与基础报告', { exact: true })).toBeVisible();
+  // Legend lists the three facility categories; the route entry appears only after a route is drawn.
+  const legend = page.getByTestId('map-legend');
+  await expect(legend).toBeVisible();
+  await expect(legend).toContainText('购物（菜/超）');
+  await expect(legend).toContainText('医疗（药/医）');
+  await expect(legend).toContainText('教育（学）');
+  await expect(legend).not.toContainText('步行路线');
+  // Facility markers carry a categorized canvas icon; center markers keep the default icon.
+  const facilityIconSeq = () => page.evaluate(() => {
+    const markers = (window as any).__mapAudit.markers as { options: { title: string; icon?: { seq: number } } }[];
+    return markers.find(marker => marker.options.title === '离线测试药房')?.options.icon?.seq;
+  });
+  await expect.poll(facilityIconSeq).toBeTruthy();
+  const normalIconSeq = await facilityIconSeq();
+  // Selecting the facility in the list swaps in the filled (selected) marker variant.
   await page.getByRole('button', { name: /离线测试药房/ }).click();
+  await expect.poll(facilityIconSeq).not.toBe(normalIconSeq);
   await page.getByRole('button', { name: '查看中心到设施的步行路线' }).click();
   await expect(page.getByText('600 米 · 500 秒 · 端点已核验')).toBeVisible();
+  await expect(legend).toContainText('步行路线');
   // The api base is unconfigured here, so the route POST must go to the page origin,
   // never to a hardcoded backend port.
   expect(routeRequests).toHaveLength(1);
@@ -258,5 +284,53 @@ test('facility route requests stay on the same origin and draw the returned path
   const audit = await page.evaluate(() => (window as any).__mapAudit);
   expect(audit.polylines).toEqual([savedRoute.path.map(([lng, lat]) => ({ lng, lat }))]);
   expect(audit.markers.map((marker: any) => marker.options.title)).toContain('离线测试药房');
+  // Clicking the facility marker on the map re-selects it and clears the drawn route.
+  await page.evaluate(() => {
+    const markers = (window as any).__mapAudit.markers as unknown as { options: { title: string }; handlers: { click?: () => void } }[];
+    markers.find(marker => marker.options.title === '离线测试药房')?.handlers.click?.();
+  });
+  await expect(page.locator('.facility-list button.selected', { hasText: '离线测试药房' })).toBeVisible();
+  await expect(legend).not.toContainText('步行路线');
+  expect(await page.evaluate(() => (window as any).__mapAudit.polylines)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('narrow screens keep the facility flow usable without horizontal overflow', async ({ page }) => {
+  await setup(page, { withFacilities: true });
+  const savedRoute = { distance_m: 600, duration_s: 500, endpoint_verified: true, reason: null,
+    path: [[116.404, 39.915], [116.405, 39.916]] };
+  await page.route('**/api/analyses/*/routes/*', route => route.fulfill({ json: savedRoute }));
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByRole('button', { name: '开始分析', exact: true }).click();
+  const report = page.getByTestId('analysis-report');
+  await expect(report).toBeVisible();
+  await expect(report).toContainText('部分体检结果');
+  await page.keyboard.press('Escape');
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  // Result, facilities and legend rendered: no horizontal overflow at 390px.
+  await expect(page.getByTestId('map-legend')).toBeVisible();
+  await expect.poll(overflow).toBeLessThanOrEqual(0);
+  const legendBox = await page.getByTestId('map-legend').boundingBox();
+  expect(legendBox).toBeTruthy();
+  expect(legendBox!.x).toBeGreaterThanOrEqual(0);
+  expect(legendBox!.x + legendBox!.width).toBeLessThanOrEqual(390);
+  // The map keeps an effective area with controls visible.
+  const mapBox = await page.getByTestId('algorithm-map').boundingBox();
+  expect(mapBox).toBeTruthy();
+  expect(mapBox!.width).toBeGreaterThanOrEqual(280);
+  expect(mapBox!.height).toBeGreaterThanOrEqual(300);
+  // Facility panel stays operable: select, route request, readable evidence.
+  await page.getByRole('button', { name: /离线测试药房/ }).click();
+  await page.getByRole('button', { name: '查看中心到设施的步行路线' }).click();
+  await expect(page.getByText('600 米 · 500 秒 · 端点已核验')).toBeVisible();
+  await expect.poll(overflow).toBeLessThanOrEqual(0);
+  // The report reopens and remains readable on the narrow screen.
+  await page.getByRole('button', { name: '查看分析报告', exact: true }).click();
+  await expect(report).toBeVisible();
+  await expect(report).toContainText('116.404000, 39.915000');
+  await page.keyboard.press('Escape');
   expect(errors).toEqual([]);
 });
