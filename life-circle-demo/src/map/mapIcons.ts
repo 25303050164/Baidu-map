@@ -10,12 +10,15 @@ export type DotIconSpec = {
   textColor?: string;
   /** 分析中心点样式：多层同心圆 + 光晕。 */
   layered?: boolean;
+  /** 实心样式：主色填充 + 白色文字，用于选中态等需要突出的标记。 */
+  filled?: boolean;
 };
 
 const DIAMETER = { marker: 36, sample: 26, center: 58 };
 
-/** 绘制并返回 BMapGL 图标；canvas 不可用时返回 undefined（Marker 回退为默认图标）。 */
+/** 绘制并返回 BMapGL 图标；canvas 或 Icon/Size 构造器不可用（旧版脚本、测试替身）时返回 undefined，Marker 回退为默认图标。 */
 export function createDotIcon(api: BaiduMapApi, spec: DotIconSpec): BMapIcon | undefined {
+  if (typeof api.Icon !== 'function' || typeof api.Size !== 'function') return undefined;
   const size = spec.layered ? DIAMETER.center : spec.text ? DIAMETER.marker : DIAMETER.sample;
   const canvas = document.createElement('canvas');
   canvas.width = size * 2;
@@ -30,6 +33,16 @@ export function createDotIcon(api: BaiduMapApi, spec: DotIconSpec): BMapIcon | u
     ctx.beginPath(); ctx.arc(c, c, c - 9, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
     ctx.beginPath(); ctx.arc(c, c, c - 15, 0, Math.PI * 2); ctx.fillStyle = spec.color; ctx.fill();
     ctx.beginPath(); ctx.arc(c, c, 5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+  } else if (spec.filled) {
+    ctx.beginPath(); ctx.arc(c, c, c - 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = spec.color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.fill(); ctx.stroke();
+    if (spec.text) {
+      ctx.fillStyle = '#fff';
+      ctx.font = `700 ${Math.round(size * 0.42)}px Inter, "Microsoft YaHei", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(spec.text, c, c + 0.5);
+    }
   } else {
     ctx.beginPath(); ctx.arc(c, c, c - 1.5, 0, Math.PI * 2);
     ctx.fillStyle = '#fff'; ctx.strokeStyle = spec.color; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
