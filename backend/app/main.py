@@ -11,6 +11,7 @@ from .config import Settings, load_settings
 from .analysis import router
 from .contracts import AnalysisResponse, Issue
 from .analyses import AnalysisManager, analysis_router
+from .osm_api import router as osm_router
 
 
 class HealthResponse(BaseModel):
@@ -24,6 +25,8 @@ def create_app(settings: Settings | None = None, *, provider_factory=None) -> Fa
 
     @asynccontextmanager
     async def lifespan(app):
+        from .algorithms.osm_offline.engine import OsmOfflineEngine
+        app.state.osm_offline = OsmOfflineEngine.load(config)
         yield
         await manager.close()
 
@@ -38,6 +41,7 @@ def create_app(settings: Settings | None = None, *, provider_factory=None) -> Fa
         allow_headers=["Content-Type"],
     )
     app.include_router(router)
+    app.include_router(osm_router)
 
     def failure_response(status_code: int, code: str, message: str):
         body = AnalysisResponse(status="failed", source="system", errors=[

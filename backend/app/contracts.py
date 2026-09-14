@@ -233,9 +233,17 @@ class AnalysisResponse(WireModel):
     errors: list[Issue] = Field(default_factory=list)
 
 
-class SyntheticRequest(WireModel):
+class AnalysisRequest(WireModel):
     origin: Origin
     coordinate_system: Literal["bd09ll"]
+
+
+class OsmOfflineRequest(AnalysisRequest):
+    algorithm: Literal["osm_offline"] = "osm_offline"
+    threshold: Literal[900] = 900
+
+
+class SyntheticRequest(AnalysisRequest):
     scenario: Literal["plane", "local_failure", "global_failure"] = "plane"
     budget: int = Field(default=400, ge=144, le=800, strict=True)
     distance_rule: DistanceRule = Field(default_factory=DistanceRule)

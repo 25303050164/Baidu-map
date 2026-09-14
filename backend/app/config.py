@@ -15,6 +15,23 @@ class Settings(BaseSettings):
     baidu_map_ak: SecretStr = SecretStr("")
     analysis_provider: Literal["baidu", "synthetic"] = "baidu"
     analysis_qps: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    osm_pbf_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.osm.pbf"
+    osm_graph_cache_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.osm-cache"
+    osm_data_version: str = "unconfigured"
+    osm_metric_crs: str = "EPSG:32651"
+    walk_speed_mps: float = Field(default=1.3, gt=0, allow_inf_nan=False)
+    snap_max_distance_m: float = Field(default=200, ge=0, allow_inf_nan=False)
+    isochrone_buffer_m: float = Field(default=25, gt=0, allow_inf_nan=False)
+    osm_coverage_boundary_path: Path | None = None
+    osm_coverage_margin_m: float = Field(default=100, ge=0, allow_inf_nan=False)
+
+    @field_validator("osm_pbf_path", "osm_graph_cache_path", "osm_coverage_boundary_path", mode="before")
+    @classmethod
+    def osm_paths(cls, value):
+        if value is None or value == "":
+            return None
+        path = Path(value)
+        return path if path.is_absolute() else BACKEND_DIR / path
     cors_origins: list[str] = [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
