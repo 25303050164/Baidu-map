@@ -89,8 +89,12 @@ class OsmHybridEngine:
         quality = result["quality"]
         if readiness_warnings and quality == "usable":
             quality = "partial"
+        # 离线步行图与本地合成 provider 都不出进程。它照样"用掉"成圈次数，但一次百度请求
+        # 也没发 —— 本应用的预算池读的是后面那个数，两个计数不能混成同一个。
+        network_requests = result["requests_used"] if getattr(provider, "network", False) else 0
         statistics = {
             "requestsUsed": result["requests_used"],
+            "networkRequests": network_requests,
             "validBaiduSamples": result["valid_baidu_samples"],
             "invalidBaiduSamples": result["invalid_baidu_samples"],
             "unknownSamples": result["unknown_samples"],
@@ -107,4 +111,4 @@ class OsmHybridEngine:
             uncertain_region=result.get("evidence_unknown_region"),
             computation_extent=result["computation_extent"], quality=quality,
             stop_reason=result["stop_reason"], warnings=warnings, statistics=statistics,
-            requests_used=result["requests_used"], network_requests=result["requests_used"])
+            requests_used=result["requests_used"], network_requests=network_requests)

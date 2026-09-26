@@ -110,7 +110,12 @@ class IsochroneSnapshot(EngineModel):
                    parameters=parameters, geometry=geometry, display_geometry=display_geometry,
                    unknown_region=unknown_region, uncertain_region=uncertain_region,
                    computation_extent=computation_extent, quality=quality, stop_reason=stop_reason,
-                   warnings=warnings, statistics=statistics, isochrone_hash=isochrone_hash)
+                   warnings=warnings, statistics=statistics,
+                   # 成圈自己数出来的尝试次数要留下来：任务计数、trace.budgets 和界面的预算
+                   # 余额都读它。曾经在这里漏传，两个引擎的成圈请求都被记成 0，界面上的
+                   # 计数还会在下一阶段发布时从 226 掉回 28。
+                   requests_used=requests_used, network_requests=network_requests,
+                   isochrone_hash=isochrone_hash)
 
 
 @runtime_checkable

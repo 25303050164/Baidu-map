@@ -277,12 +277,15 @@ class CheckupManager:
     def _budgets(self, budget, snapshot) -> dict:
         """Every pool of the task and what each has spent so far.
 
-        The isochrone entry reports what the engine counted itself: both
-        algorithms still pace on the legacy shared gate (§9.1) and stop on their
-        own tier, so their attempts are not drawn from this counter.
+        The isochrone entry reports what the engine counted **on the network**:
+        both algorithms still pace on the legacy shared gate (§9.1) and stop on
+        their own tier, so their attempts are not drawn from this counter. What
+        the pool is for is bounding paid usage, and a run whose provider never
+        leaves the process -- the synthetic transport, and tests -- spends none
+        of it, however many boundary samples it computed locally.
         """
         state = budget.state()
-        state["isochrone"]["spent"] = snapshot.requests_used
+        state["isochrone"]["spent"] = snapshot.network_requests
         return state
 
     def _base(self, task_id: str, payload: CheckupRequest, snapshot, *, revision: int, stage: str,
@@ -390,7 +393,9 @@ class CheckupManager:
         self._publish(task_id, "isochrone", document, revision, result_hash)
         # The engine consumed what the progress callback last reported; the
         # frozen snapshot is the authoritative count for the finished stage.
-        self.store.update(task_id, requests=snapshot.requests_used,
+        # 两列都记网络尝试：本任务"已用多少次"说的是花了多少付费额度，而合成与离线路径
+        # 一次也没发出去。成圈自己算过的边界采样数在 snapshot.statistics 里，不会丢。
+        self.store.update(task_id, requests=snapshot.network_requests,
                           network_requests=snapshot.network_requests)
 
     def _publish_facilities(self, task_id: str, payload: CheckupRequest, snapshot, budget,
@@ -413,8 +418,9 @@ class CheckupManager:
                          extra_rules={"classification": POI_RULES["version"]}))
         self._publish(task_id, "poi", document, revision, result_hash)
         # Cumulative across the stages: the boundary's attempts were counted
-        # before this stage drew from the same budget object.
-        self.store.update(task_id, requests=snapshot.requests_used + outcome.requests,
+        # before this stage drew from the same budget object. 只累加网络尝试，
+        # 与上一阶段的写法一致 —— 否则这一列会在本阶段发布时突然跳一大截。
+        self.store.update(task_id, requests=snapshot.network_requests + outcome.requests,
                           network_requests=snapshot.network_requests + outcome.network_requests)
         return business
 

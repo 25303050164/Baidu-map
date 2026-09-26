@@ -66,14 +66,25 @@ def analytic(origin):
     return EndpointAnalyticProvider(origin, lambda x, y: math.hypot(x, y) / 1.2)
 
 
-def make_app(tmp_path, **overrides):
+class MetredAnalyticProvider(EndpointAnalyticProvider):
+    """A provider that answer from local geometry but bills like a networked one.
+
+    The legacy scheduler charges one network attempt per call when the provider
+    says ``network``. This one answers from the same analytic geometry, so the
+    counters move without a socket -- which is what makes "attempts stay
+    counted" testable offline.
+    """
+    network = True
+
+
+def make_app(tmp_path, provider_factory=None, **overrides):
     settings = Settings(
         _env_file=None, baidu_map_ak="", analysis_provider="synthetic",
         checkup_dir=tmp_path / "checkups", hybrid_ledger_dir=tmp_path / "ledgers",
         quota_ledger_path=tmp_path / "quota.sqlite3",
         hybrid_obstacle_path=Path("missing-checkup-obstacles"),
         hybrid_risk_path=Path("missing-checkup-risks"), **overrides)
-    app = create_app(settings, provider_factory=analytic,
+    app = create_app(settings, provider_factory=provider_factory or analytic,
                      hybrid_provider_factory=lambda projection, config: OfflineHybrid(projection))
     for engine in app.state.checkups.registry.engines.values():
         engine.gate = FastGate()
@@ -117,7 +128,9 @@ def test_isochrone_stage_publishes_a_revision_without_a_second_facility_search(t
         # Facilities are this checkup's own stage; nothing may issue the legacy
         # search for them, and this deployment has no place key to send one.
         assert calls == []
-        assert view["requests"] == view["networkRequests"] == 0  # synthetic transport
+        # 合成 provider 不出进程，两列因此都是 0：它们记的是花掉的付费尝试，而这一步一次
+        # 也没发出去。成圈自己算过的边界采样数留在 snapshot.statistics 里，不在这里冒充网络用量。
+        assert view["requests"] == view["networkRequests"] == 0
 
         result = client.get(f"/api/v2/checkups/{task_id}/result")
         assert result.status_code == 200
@@ -186,6 +199,34 @@ def test_isochrone_stage_publishes_a_revision_without_a_second_facility_search(t
         assert boundary.status_code == 200
         assert boundary.json()["resultHash"] == earlier["result_hash"]
         assert boundary.json()["resultHash"] != trace["resultHash"]
+
+
+def test_the_boundary_attempts_stay_counted_when_the_next_stage_publishes(tmp_path):
+    """一次真实体检暴露过这里。
+
+    成圈快照的两个计数曾经在组装时被吃掉，于是 400 次真实百度请求在任务上记成 0，
+    ``trace.budgets.isochrone.spent`` 也是 0；更糟的是设施阶段发布时会重写这两个计数器，
+    界面上的数字因此从 226 掉回 28 —— 跑得越久，显示的用量越少。计数只增不减。
+    """
+    app = make_app(tmp_path, provider_factory=lambda origin: MetredAnalyticProvider(
+        origin, lambda x, y: math.hypot(x, y) / 1.2), analysis_qps=16)
+    with TestClient(app) as client:
+        created = client.post("/api/v2/checkups", json=body())
+        assert created.status_code == 202
+        task_id = created.json()["taskId"]
+        view = wait_for(client, task_id)
+        assert view["status"] == "completed", view
+        document = client.get(f"/api/v2/checkups/{task_id}/result").json()
+        # 成圈这一次确实发过请求（这个 provider 按网络计费），所以计数必须是非零的。
+        boundary = document["isochrone"]
+        spent = boundary["networkRequests"]
+        assert spent > 0
+        # 两列说的是同一件事：花掉的付费尝试。设施阶段这一步没有密钥，加不出任何东西，
+        # 所以任务上的数必须还是成圈自己数出来的那个，而不是被重写成 0。
+        assert view["requests"] == view["networkRequests"] == spent
+        assert document["trace"]["budgets"]["isochrone"] == {"limit": 200, "spent": spent}
+        # 成圈自己数的边界采样数留在快照里，没有被挪走，也没有被当成网络用量。
+        assert boundary["requestsUsed"] == boundary["statistics"]["requests"] == spent
 
 
 def test_identical_request_returns_the_same_task_and_runs_once(tmp_path):
