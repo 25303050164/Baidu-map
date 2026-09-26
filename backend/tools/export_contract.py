@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+from app.checkups.models import (CheckupCapabilities, CheckupLayer, CheckupRequest,
+                                 CheckupSnapshot, CheckupTaskView, FacilityRoute)
 from app.contracts import (AnalysisResponse, CategoryResult, Data, Facility, Geometry, Issue,
                            Origin, Rules, TaskResultResponse, TaskStatusResponse, OsmOfflineRequest)
 from app.hybrid_contracts import HybridRequest, HybridResultResponse, HybridError
@@ -99,6 +101,14 @@ def export():
         typescript([AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest,
                     HybridRequest, HybridResultResponse, HybridError],
                    request_models=[OsmOfflineRequest, HybridRequest]), encoding="utf-8")
+    # v2 体检契约单独一份文件：它和上面那份不共用类型名，也不共用文件，所以旧的严格
+    # POI 证据类型保持逐字节不变 —— 新字段加进旧契约就会改掉旧响应的序列化语义（§10）。
+    target = ROOT.parent / "life-circle-demo/src/checkup/contract.ts"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        typescript([CheckupRequest, CheckupTaskView, CheckupSnapshot, CheckupLayer,
+                    FacilityRoute, CheckupCapabilities], request_models=[CheckupRequest]),
+        encoding="utf-8")
 
 
 if __name__ == "__main__":

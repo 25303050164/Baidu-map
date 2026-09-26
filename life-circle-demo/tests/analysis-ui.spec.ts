@@ -1,45 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
+import { installMapSdk } from './mapSdk';
 import { resultFixture } from '../src/analysis/testFixtures';
 
 /** Contract-only browser tests. All external requests are blocked; no backend/AK is used. */
 async function setup(page: Page, options: { failOnce?: boolean; unavailable?: boolean; mismatch?: boolean;
   createGate?: Promise<void>; resultGate?: Promise<void>; running?: boolean; createError?: number; statusError?: number; failed?: boolean;
-  withFacilities?: boolean } = {}) {
+  withFacilities?: boolean; facilityCount?: number } = {}) {
   let submitted: { center: { lng: number; lat: number }; budget: number };
   let count = 0;
-  await page.addInitScript(() => {
-    const audit = { creations: 0, active: 0, paths: [] as string[][],
-      polylines: [] as { lng: number; lat: number }[][],
-      markers: [] as Marker[], click: undefined as undefined | ((e: unknown) => void) };
-    let iconSeq = 0;
-    class Overlay {
-      handlers: Record<string, () => void> = {};
-      addEventListener(type: string, handler: () => void) { this.handlers[type] = handler; }
-      removeEventListener() {}
-    }
-    class Point { constructor(public lng: number, public lat: number) {} }
-    class Size { constructor(public width: number, public height: number) {} }
-    class Icon { seq = ++iconSeq; constructor(public url: string, public size: Size, public options: { anchor?: Size }) {} }
-    class Marker extends Overlay { constructor(public point: Point, public options: { title: string; icon?: Icon }) { super(); } }
-    class Polygon extends Overlay { constructor(public rings: string[]) { super(); } }
-    class Label extends Overlay { setStyle() {} }
-    class Polyline extends Overlay { constructor(public points: Point[]) { super(); audit.polylines.push(points.map(p => ({ lng: p.lng, lat: p.lat }))); } }
-    class Map {
-      constructor(el: HTMLElement) {
-        audit.creations++; audit.active++;
-        el.addEventListener('click', () => audit.click?.({ latlng: { lng: 116.405, lat: 39.916 } }));
-      }
-      centerAndZoom() {} panTo() {} enableScrollWheelZoom() {}
-      addEventListener(_event: string, handler: (e: unknown) => void) { audit.click = handler; }
-      addOverlay(overlay: Polygon | Marker) {
-        if (overlay instanceof Polygon) audit.paths.push(overlay.rings);
-        if (overlay instanceof Marker) audit.markers.push(overlay);
-      }
-      clearOverlays() { audit.paths = []; audit.markers = []; audit.polylines = []; }
-      destroy() { audit.active--; }
-    }
-    Object.assign(window, { BMapGL: { Map, Point, Size, Icon, Polygon, Marker, Label, Polyline }, __mapAudit: audit });
-  });
+  await installMapSdk(page);
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.hostname !== '127.0.0.1') return route.abort();
@@ -81,6 +50,18 @@ async function setup(page: Page, options: { failOnce?: boolean; unavailable?: bo
           serviceBlindRegions: {},
           warnings: ['离线样例，未测点不计入盲区。'],
         };
+      }
+      if (options.facilityCount) {
+        // 密集设施场景：200+ 处同类设施在默认缩放下必然同格，用来验证聚合而不是截断。
+        // 覆盖在 withFacilities 之后：保留它给出的报告与设施分析，只换设施清单。
+        const count = options.facilityCount;
+        result.facilitiesStatus = 'partial';
+        result.data = { ...result.data, facilities: Array.from({ length: count }, (_, index) => ({
+          id: `bulk-${index}`, name: `压力测试设施 ${index}`, category: 'pharmacy', minor_category: 'pharmacy',
+          major_category: 'medical',
+          location: { lng: +(submitted.center.lng + ((index % 20) - 10) * 0.0005).toFixed(6),
+            lat: +(submitted.center.lat + (Math.floor(index / 20) - 6) * 0.0005).toFixed(6) },
+          in_circle: true })) };
       }
       return route.fulfill({ json: result });
     }
@@ -292,6 +273,116 @@ test('facility route requests stay on the same origin and draw the returned path
   await expect(page.locator('.facility-list button.selected', { hasText: '离线测试药房' })).toBeVisible();
   await expect(legend).not.toContainText('步行路线');
   expect(await page.evaluate(() => (window as any).__mapAudit.polylines)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+/** 读取热力画布的像素证据：取样点按覆盖物自己的投影换算，与图层同坐标系。 */
+const HEAT_CENTRE = { lng: 116.43, lat: 39.919 };
+async function heatPixels(page: Page) {
+  return page.evaluate(centre => {
+    const audit = (window as any).__mapAudit;
+    const canvas = document.querySelector('[data-pane="overlayPane"] canvas') as HTMLCanvasElement | null;
+    if (!canvas) return null;
+    const context = canvas.getContext('2d')!;
+    const ratio = canvas.width / (canvas.clientWidth || 1);
+    const origin = audit.project(centre.lng, centre.lat);
+    const alphaAt = (lng: number, lat: number) => {
+      const point = audit.project(lng, lat);
+      const x = Math.round((point.x - origin.x + canvas.clientWidth / 2) * ratio);
+      const y = Math.round((point.y - origin.y + canvas.clientHeight / 2) * ratio);
+      if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return -1;
+      return context.getImageData(x, y, 1, 1).data[3];
+    };
+    const image = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let painted = 0;
+    for (let index = 3; index < image.length; index += 4) if (image[index] > 0) painted++;
+    return { pointer: canvas.style.pointerEvents, painted, ratio,
+      // 设施在圈内、核半径内：必须着色。
+      inside: alphaAt(centre.lng, centre.lat - 0.0003),
+      // 同样在核半径内，但落在环序列的孔洞里：必须被奇偶裁剪挖空。
+      inHole: alphaAt(centre.lng, 39.9203) };
+  }, HEAT_CENTRE);
+}
+
+test('the density layer paints real facilities inside the clip ring and survives vector layer rebuilds', async ({ page }) => {
+  await setup(page, { withFacilities: true });
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  // 选点落在可达面内部、贴近第二个环（孔洞）下方：核半径跨过裁剪线，裁剪是否生效
+  // 才可能被真正验证，而不是只验证"画了点东西"。
+  await page.getByRole('spinbutton', { name: '经度', exact: true }).fill('116.430000');
+  await page.getByRole('spinbutton', { name: '纬度', exact: true }).fill('39.919000');
+  await page.getByRole('button', { name: '开始分析', exact: true }).click();
+  const report = page.getByTestId('analysis-report');
+  await expect(report).toBeVisible();
+  await expect(report).toContainText('116.430000, 39.919000');
+  await page.keyboard.press('Escape');
+  const legend = page.getByTestId('heat-legend');
+  await expect(legend).toBeVisible();
+  await expect(legend).toContainText('设施密度（个/公顷）固定色标 0—4');
+  await expect(legend).toContainText('核半径 120 米 · 圈内设施等权去重 1 条');
+  // 截断的检索必须写在图例里，热力不能被当成圈内全部分布。
+  await expect(legend).toContainText('只覆盖已检索到的设施');
+  await expect(legend).toContainText('不等同于服务覆盖');
+  await expect.poll(async () => (await heatPixels(page))?.painted ?? 0).toBeGreaterThan(0);
+  const painted = await heatPixels(page);
+  expect(painted!.pointer).toBe('none');
+  expect(painted!.inside).toBeGreaterThan(0);
+  expect(painted!.inHole).toBe(0);
+  // 新结果的中心与地图初值不同，因此这里恰好发生一次视角移动（且只对结果中心发生）。
+  expect(await page.evaluate(() => (window as any).__mapAudit.pans)).toEqual([{ lng: 116.43, lat: 39.919 }]);
+  // 切换矢量图层只摘自己那一组：热力画布留在原地，地图实例不重建。
+  await page.getByRole('checkbox', { name: '可达区域', exact: true }).uncheck();
+  await expect.poll(async () => (await heatPixels(page))?.painted ?? 0).toBeGreaterThan(0);
+  expect(await page.evaluate(() => (window as any).__mapAudit.creations)).toBe(1);
+  // 关掉热力层：画布与图例一起消失，地图本身不动。
+  await page.getByRole('checkbox', { name: '设施密度热力（真实 POI）', exact: true }).uncheck();
+  await expect(legend).not.toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.querySelector('[data-pane="overlayPane"] canvas'))).toBeNull();
+  expect(await page.evaluate(() => (window as any).__mapAudit.creations)).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test('over 100 facilities are aggregated rather than truncated and layer toggles do not reset the map', async ({ page }) => {
+  await setup(page, { withFacilities: true, facilityCount: 240 });
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await page.getByRole('button', { name: '开始分析', exact: true }).click();
+  await expect(page.getByTestId('analysis-report')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('map-legend')).toContainText('共 240 处设施，同格合并显示，数据不截断');
+  // 聚合只改变显示方式：标记数少于设施总数，但成员数之和必须等于 240，一条都不能丢。
+  const facilityState = () => page.evaluate(() => {
+    const audit = (window as any).__mapAudit;
+    const selected = (audit.markers as { uid: number; options: { title: string } }[])
+      .filter(marker => marker.options.title.startsWith('压力测试设施') || /^\d+ 处设施聚合/.test(marker.options.title));
+    return { count: selected.length,
+      represented: selected.reduce((sum, marker) => {
+        const clustered = /^(\d+) 处设施聚合/.exec(marker.options.title);
+        return sum + (clustered ? Number(clustered[1]) : 1);
+      }, 0),
+      uids: selected.map(marker => marker.uid), pans: (audit.pans as unknown[]).length };
+  });
+  const before = await facilityState();
+  expect(before.represented).toBe(240);
+  expect(before.count).toBeLessThan(240);
+  expect(before.count).toBeGreaterThan(0);
+  // 分析中心与地图初值相同，不该发生任何 panTo。
+  expect(before.pans).toBe(0);
+  // 切换图层只摘自己那一组覆盖物：设施标记保持原来的 uid，视角不动。
+  await page.getByRole('checkbox', { name: '可达区域', exact: true }).uncheck();
+  await page.getByRole('checkbox', { name: '未核验区域（灰色）', exact: true }).check();
+  const after = await facilityState();
+  expect(after.uids).toEqual(before.uids);
+  expect(after.pans).toBe(0);
+  // 显式定位（点地图上的聚合标记）才允许移动视角。
+  await page.evaluate(() => {
+    const markers = (window as any).__mapAudit.markers as unknown as { options: { title: string }; handlers: { click?: () => void } }[];
+    markers.find(marker => /^\d+ 处设施聚合/.test(marker.options.title))?.handlers.click?.();
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).__mapAudit.pans.length)).toBe(1);
   expect(errors).toEqual([]);
 });
 

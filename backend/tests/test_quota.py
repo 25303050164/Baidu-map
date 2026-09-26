@@ -128,6 +128,53 @@ def test_the_standard_task_budget_matches_the_documented_pools(tmp_path):
         {"isochrone": 200, "poi": 5, "route": 6, "detail": 7}
 
 
+def test_two_tasks_keep_their_own_buckets_but_share_the_days_allowance(tmp_path):
+    """Back-to-back checkups: the buckets belong to a task, the day's budget does not.
+
+    A task that spends its own POI bucket down to zero must not shorten the next
+    task's, and a full bucket must not hand out one extra call once the day's
+    allowance is gone. Read the other way round, "one task, one budget" would
+    become "one task, one allowance", which is how an account gets overdrawn.
+    """
+    async def run():
+        # The day's allowance is deliberately tiny: otherwise "full bucket, empty
+        # ledger" would need 1600 attempts to reach.
+        quota = Quota(settings_with(tmp_path, baidu_place_daily_budget=2),
+                      clock=before_switch)
+        first = quota.task_budget(isochrone=400, poi=1)
+        second = quota.task_budget(isochrone=400, poi=1)
+        async with quota.place.attempt(time.monotonic() + 10, budget=first, pool="poi") as attempt:
+            attempt.outcome(None)
+        with pytest.raises(BudgetExhausted):
+            async with quota.place.attempt(time.monotonic() + 10, budget=first, pool="poi"):
+                pass
+        # The exhausted bucket is the first task's alone; the second task's is
+        # untouched. A refusal before sending is still counted and not refunded,
+        # exactly like a failed send — so one attempt, not two, reached the day.
+        assert first.remaining("poi") == 0 and second.remaining("poi") == 1
+        assert quota.balance()["services"][PLACE]["spentToday"] == 1
+
+        async with quota.place.attempt(time.monotonic() + 10, budget=second, pool="poi") as attempt:
+            attempt.outcome(None)
+        # Both tasks' attempts land in the same ledger row: the allowance is the
+        # application's, and it is what every task draws down. Two tasks, two
+        # attempts, and the day is done — the second attempt took the last unit.
+        service = quota.balance()["services"][PLACE]
+        assert service["spentToday"] == 2 and service["remainingToday"] == 0
+
+        third = quota.task_budget(isochrone=400, poi=1)
+        # A fresh task with a fresh bucket, and nothing left in the day: the
+        # refusal names the day, not the bucket, so nobody reads "your task
+        # still had 60 POI calls" as "so send them".
+        with pytest.raises(DailyBudgetExhausted) as refusal:
+            async with quota.place.attempt(time.monotonic() + 10, budget=third, pool="poi"):
+                pass
+        assert refusal.value.service == PLACE and refusal.value.budget == 2
+        assert quota.balance()["services"][PLACE]["spentToday"] == 2
+
+    asyncio.run(run())
+
+
 # -- the durable ledger ----------------------------------------------------
 
 def test_daily_spend_survives_a_restart_and_a_new_quota_instance(tmp_path):

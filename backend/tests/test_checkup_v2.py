@@ -110,8 +110,12 @@ def test_isochrone_stage_publishes_a_revision_without_a_second_facility_search(t
         assert created.status_code == 202
         task_id = created.json()["taskId"]
         view = wait_for(client, task_id)
-        assert view["status"] == "completed" and view["stage"] == "isochrone"
-        # Facilities are a later stage; nothing may issue their search now.
+        # One revision per stage, and the task is only ready once the last one is
+        # published: isochrone, facilities, accessibility, verification, report.
+        assert view["status"] == "completed" and view["stage"] == "ready"
+        assert view["revision"] == 5
+        # Facilities are this checkup's own stage; nothing may issue the legacy
+        # search for them, and this deployment has no place key to send one.
         assert calls == []
         assert view["requests"] == view["networkRequests"] == 0  # synthetic transport
 
@@ -119,22 +123,69 @@ def test_isochrone_stage_publishes_a_revision_without_a_second_facility_search(t
         assert result.status_code == 200
         document = result.json()
         assert document["schemaVersion"] == "checkup-v1"
-        assert document["revision"] == 1 and document["stage"] == "isochrone"
+        assert document["revision"] == 5 and document["stage"] == "reporting"
         assert document["engine"]["engineId"] == "baidu_e82"
-        assert document["facilitiesStatus"] == "not_integrated"
-        # A later stage is outstanding, so completeness is never claimed.
-        assert document["businessStatus"] == "partial"
+        # The facility stage could not run without a key, and says so instead of
+        # returning an empty facility group that would read as "none exist".
+        assert document["facilities"] is None
+        assert document["facilitiesStatus"] == "failed"
+        assert "FACILITIES_UNAVAILABLE" in {item["code"] for item in document["warnings"]}
+        # Whatever is outstanding, completeness is never claimed.
+        assert document["businessStatus"] == "insufficient"
         assert any(w["code"] == "STAGES_NOT_INTEGRATED" for w in document["warnings"])
+        # The assessment runs even when the facility stage failed, so the revision
+        # answers "why is there no coverage" instead of publishing a group-shaped
+        # hole. The two blockers are named where each belongs: this deployment has
+        # no place key (FACILITIES_UNAVAILABLE above) and no walking graph either,
+        # and the graph is the assessment's own first precondition.
+        assert document["accessibilityStatus"] == "failed"
+        assert document["accessibility"]["status"] == "failed"
+        assert {item["unavailableReason"] for item in document["accessibility"]["categories"]} == \
+            {"osm_graph_unavailable"}
+        assert document["serviceGaps"] is None and document["scores"] is None
+        assert document["heatmap"] is None
+        # The verification stage ran and refused by name: this deployment has no
+        # route key, so its revision carries the refusal rather than a count of
+        # zero that would read as "checked everything, found nothing".
+        assert document["verification"]["status"] == "not_integrated"
+        assert document["verification"]["reason"] == "missing_ak"
+        assert document["verification"]["checked"] == 0
+        # The report exists and states what it could not establish; a report that
+        # is absent and a report that is empty must not look alike.
+        assert document["report"]["reportId"] == f"{task_id}:5"
+        assert document["report"]["verification"]["available"] is False
+        assert document["report"]["verification"]["status"] == "not_integrated"
+        assert document["scope"]["coverageSupported"] is True
+        assert document["scope"]["modelSupportAvailable"] is False
         # The boundary digest and the full result digest are different objects.
         trace = document["trace"]
         assert trace["isochroneHash"] != trace["resultHash"]
         assert document["isochrone"]["isochroneHash"] == trace["isochroneHash"]
+        # The report summarises the revision before it — the verification one —
+        # so it pins that revision's digest. Its own digest would make the
+        # document describe itself, and no reader could recompute it.
+        assert document["report"]["evidence"]["sourceResultHash"] == \
+            app.state.checkups.store.revisions(task_id)[3]["result_hash"]
         # The rule body is shared verbatim with the legacy contracts, so it
         # keeps that object's field names rather than being described twice.
         assert document["rules"]["threshold_m"] == 1000
         assert document["rules"]["tolerance_m"] == 100
         assert document["rules"]["metric"] == "walking_route"
-        assert trace["budgets"] == {"isochrone": 200}
+        # Every pool of the task is on the record, spent or not. The synthetic
+        # transport issues no request, so the boundary reports none.
+        assert trace["budgets"] == {"isochrone": {"limit": 200, "spent": 0},
+                                    "poi": {"limit": 60, "spent": 0},
+                                    "route": {"limit": 120, "spent": 0},
+                                    "detail": {"limit": 20, "spent": 0}}
+
+        # The first revision is the boundary alone, published before the stage
+        # that follows it and still addressable on its own.
+        earlier = app.state.checkups.store.revisions(task_id)[0]
+        assert earlier["stage"] == "isochrone"
+        boundary = client.get(f"/api/v2/checkups/{task_id}/layers/isochrone?revision=1")
+        assert boundary.status_code == 200
+        assert boundary.json()["resultHash"] == earlier["result_hash"]
+        assert boundary.json()["resultHash"] != trace["resultHash"]
 
 
 def test_identical_request_returns_the_same_task_and_runs_once(tmp_path):
@@ -147,10 +198,12 @@ def test_identical_request_returns_the_same_task_and_runs_once(tmp_path):
 
         repeat = client.post("/api/v2/checkups", json=body())
         assert repeat.status_code == 202 and repeat.json()["taskId"] == task_id
-        assert repeat.json()["revision"] == 1
+        assert repeat.json()["revision"] == 5
         assert client.get(f"/api/v2/checkups/by-request/checkup-1").json()["taskId"] == task_id
         assert client.get(f"/api/v2/checkups/{task_id}/result").json()["trace"]["resultHash"] == published
-        assert len(app.state.checkups.store.revisions(task_id)) == 1
+        # One run, one revision per stage, and never a second run.
+        assert [item["stage"] for item in app.state.checkups.store.revisions(task_id)] == \
+            ["isochrone", "poi", "accessibility", "verification", "reporting"]
 
 
 def test_same_request_id_with_different_parameters_is_a_conflict(tmp_path):
@@ -204,8 +257,10 @@ def test_result_is_not_ready_before_the_first_revision(tmp_path):
     with TestClient(app) as client:
         assert client.get("/api/v2/checkups/orphan").json()["status"] == "failed"
         assert client.get("/api/v2/checkups/orphan/result").json()["code"] == "checkup_result_not_ready"
+        # A route detail names a facility of a published revision, so a task
+        # with no revision at all is refused for that reason and not another.
         assert client.post("/api/v2/checkups/orphan/routes/some-facility").json()["code"] == \
-            "checkup_facilities_not_ready"
+            "checkup_result_not_ready"
 
 
 # -- cancellation ----------------------------------------------------------
@@ -221,7 +276,7 @@ def test_cancel_keeps_the_revisions_already_published(tmp_path):
         # A finished task is terminal; cancelling it changes nothing.
         assert cancelled.json()["status"] == "completed"
         assert app.state.checkups.store.revisions(task_id) == stored
-        assert client.get(f"/api/v2/checkups/{task_id}/result").json()["revision"] == 1
+        assert client.get(f"/api/v2/checkups/{task_id}/result").json()["revision"] == 5
 
 
 # -- revisions -------------------------------------------------------------
@@ -231,7 +286,9 @@ def test_a_published_revision_is_immutable_and_addressable(tmp_path):
     with TestClient(app) as client:
         task_id = client.post("/api/v2/checkups", json=body()).json()["taskId"]
         wait_for(client, task_id)
-        revision = app.state.checkups.store.revisions(task_id)[0]
+        revisions = app.state.checkups.store.revisions(task_id)
+        revision = revisions[-1]
+        assert revisions[0]["revision"] == 1 and revision["revision"] == 5
         path = app.state.checkups.store.root / revision["payload"]
         before = path.read_bytes()
 
@@ -239,18 +296,33 @@ def test_a_published_revision_is_immutable_and_addressable(tmp_path):
         assert first.status_code == 200
         etag = first.headers["etag"]
         assert first.json()["resultHash"] == revision["result_hash"]
-        assert first.json()["revision"] == 1
+        assert first.json()["revision"] == 5
         assert first.json()["geometry"] is not None
 
         assert path.read_bytes() == before
         # The validator identifies this exact revision.
-        revalidated = client.get(f"/api/v2/checkups/{task_id}/layers/isochrone?revision=1",
+        revalidated = client.get(f"/api/v2/checkups/{task_id}/layers/isochrone?revision=5",
                                  headers={"If-None-Match": etag})
         assert revalidated.status_code == 304
         assert client.get(f"/api/v2/checkups/{task_id}/layers/isochrone?revision=9",
                           headers={"If-None-Match": etag}).status_code == 409
-        assert client.get(f"/api/v2/checkups/{task_id}/layers/heatmap").json()["code"] == \
+        # A layer this release does not serve, a layer whose group this revision
+        # does not contain and a layer whose group is there but holds no geometry
+        # are three different answers. None of them is an empty shape: an empty
+        # collection drawn on a map reads as "nothing here", which is the claim
+        # the assessment refused to make.
+        assert client.get(f"/api/v2/checkups/{task_id}/layers/sunshine").json()["code"] == \
             "checkup_layer_not_found"
+        refused = {layer_id: client.get(f"/api/v2/checkups/{task_id}/layers/{layer_id}").json()
+                   for layer_id in ("accessibility", "service_gaps", "heatmap", "verification")}
+        assert {item["code"] for item in refused.values()} == {
+            "checkup_domain_unavailable", "checkup_service_gaps_not_ready",
+            "checkup_heatmap_not_ready", "checkup_verification_not_integrated"}
+        # The report is a document rather than a shape: it is served from the same
+        # endpoint, and it fills the field that says so.
+        report = client.get(f"/api/v2/checkups/{task_id}/layers/report").json()
+        assert report["geometry"] is None and report["displayGeometry"] is None
+        assert report["document"]["reportId"] == f"{task_id}:5"
 
 
 def test_restart_marks_unfinished_tasks_interrupted_and_keeps_revisions(tmp_path):
@@ -290,7 +362,12 @@ def test_hybrid_engine_publishes_its_own_boundary_under_its_own_identity(tmp_pat
         # result reports itself degraded instead of claiming a full run.
         assert document["isochrone"]["quality"] == "partial"
         assert any("hybrid_graph_available_false" == w for w in document["isochrone"]["warnings"])
-        assert document["businessStatus"] == "partial"
+        # This deployment has no place key either, so the facility stage of this
+        # Hybrid task failed the same way: the run is not called complete on the
+        # strength of a boundary alone.
+        assert document["facilities"] is None
+        assert document["facilitiesStatus"] == "failed"
+        assert document["businessStatus"] == "insufficient"
 
 
 def test_capabilities_report_both_engines_and_the_fixed_distance_rule(tmp_path):

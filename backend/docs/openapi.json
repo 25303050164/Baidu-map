@@ -696,6 +696,352 @@
         }
       }
     },
+    "/api/v2/checkups": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Create",
+        "operationId": "create_api_v2_checkups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckupTaskView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/by-request/{client_request_id}": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "By Request",
+        "operationId": "by_request_api_v2_checkups_by_request__client_request_id__get",
+        "parameters": [
+          {
+            "name": "client_request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Client Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckupTaskView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Status",
+        "operationId": "status_api_v2_checkups__task_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckupTaskView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/result": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Result",
+        "operationId": "result_api_v2_checkups__task_id__result_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckupSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/layers/{layer_id}": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Layer",
+        "operationId": "layer_api_v2_checkups__task_id__layers__layer_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/cancel": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Cancel",
+        "operationId": "cancel_api_v2_checkups__task_id__cancel_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckupTaskView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/routes/{facility_id}": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Facility Route",
+        "operationId": "facility_route_api_v2_checkups__task_id__routes__facility_id__post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "facility_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Facility Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacilityRoute"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/capabilities": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Capabilities",
+        "operationId": "capabilities_api_v2_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckupCapabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/analysis/mock/{scenario}": {
       "get": {
         "tags": [
@@ -877,6 +1223,97 @@
   },
   "components": {
     "schemas": {
+      "AccessibilityEvidence": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "failed"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "domainAreaM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domainaream2"
+          },
+          "excludedAreaM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excludedaream2"
+          },
+          "gridStepM": {
+            "type": "number",
+            "title": "Gridstepm",
+            "default": 50.0
+          },
+          "refinedStepM": {
+            "type": "number",
+            "title": "Refinedstepm",
+            "default": 25.0
+          },
+          "maxLeafCells": {
+            "type": "integer",
+            "title": "Maxleafcells",
+            "default": 5000
+          },
+          "searchCutoffM": {
+            "type": "number",
+            "title": "Searchcutoffm",
+            "default": 1100.0
+          },
+          "views": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Views"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryCoverage"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AccessibilityEvidence",
+        "description": "§5–§6 的服务可达性结果：评估域、网格参数与逐类别的三态面积。\n\n``domain_area_m2`` 是冻结的分母 A。``excluded_area_m2`` 是被数据集覆盖范围\n裁掉的面积 —— 那是\"不在结论范围内\"，不是\"没有服务\"。"
+      },
       "AnalysisInput": {
         "properties": {
           "center": {
@@ -1126,6 +1563,85 @@
         ],
         "title": "BlindPoint"
       },
+      "CategoryCoverage": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "coveredM2": {
+            "type": "number",
+            "title": "Coveredm2",
+            "default": 0.0
+          },
+          "gapM2": {
+            "type": "number",
+            "title": "Gapm2",
+            "default": 0.0
+          },
+          "unknownM2": {
+            "type": "number",
+            "title": "Unknownm2",
+            "default": 0.0
+          },
+          "domainAreaM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domainaream2"
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailablereason"
+          },
+          "cells": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cells"
+          },
+          "entrances": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Entrances"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "supported"
+        ],
+        "title": "CategoryCoverage",
+        "description": "一类在冻结评估域内的三态面积（§7.1）。\n\n面积只在这里出现一次：:class:`ScoreEvidence` 报的是由这些面积算出的百分比，\n不再复制一份面积。``C + G + U`` 与 ``domain_area_m2`` 必须相符，不符的类别按\n``supported=False`` 报出 ``unavailable_reason``，绝不归一化后照常给分。"
+      },
       "CategoryResult": {
         "properties": {
           "category": {
@@ -1225,6 +1741,469 @@
         ],
         "title": "Center"
       },
+      "CheckupCapabilities": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "title": "Schemaversion",
+            "default": "checkup-v1"
+          },
+          "engines": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Engines"
+          },
+          "rules": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Rules"
+          },
+          "dataVersions": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Dataversions"
+          },
+          "coverage": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Coverage"
+          },
+          "budgets": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budgets"
+          },
+          "quota": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Quota"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "engines",
+          "rules",
+          "dataVersions",
+          "coverage",
+          "budgets",
+          "quota"
+        ],
+        "title": "CheckupCapabilities"
+      },
+      "CheckupFacilities": {
+        "properties": {
+          "categories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "shopping",
+                "medical",
+                "education"
+              ]
+            },
+            "type": "array",
+            "title": "Categories",
+            "default": [
+              "shopping",
+              "medical",
+              "education"
+            ]
+          },
+          "maxPoiRequests": {
+            "type": "integer",
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Maxpoirequests",
+            "default": 60
+          },
+          "maxRouteRequests": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Maxrouterequests",
+            "default": 120
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CheckupFacilities"
+      },
+      "CheckupIsochrone": {
+        "properties": {
+          "budget": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 800.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CheckupIsochrone"
+      },
+      "CheckupRequest": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "checkup-v1",
+            "title": "Schemaversion",
+            "default": "checkup-v1"
+          },
+          "clientRequestId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Clientrequestid"
+          },
+          "engine": {
+            "type": "string",
+            "title": "Engine"
+          },
+          "center": {
+            "$ref": "#/components/schemas/Origin"
+          },
+          "coordinateSystem": {
+            "type": "string",
+            "const": "bd09ll",
+            "title": "Coordinatesystem",
+            "default": "bd09ll"
+          },
+          "isochrone": {
+            "$ref": "#/components/schemas/CheckupIsochrone"
+          },
+          "facilities": {
+            "$ref": "#/components/schemas/CheckupFacilities"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "clientRequestId",
+          "engine",
+          "center"
+        ],
+        "title": "CheckupRequest"
+      },
+      "CheckupSnapshot": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "checkup-v1",
+            "title": "Schemaversion",
+            "default": "checkup-v1"
+          },
+          "taskId": {
+            "type": "string",
+            "title": "Taskid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "generatedAt": {
+            "type": "number",
+            "title": "Generatedat"
+          },
+          "center": {
+            "$ref": "#/components/schemas/Origin"
+          },
+          "coordinateSystem": {
+            "type": "string",
+            "const": "bd09ll",
+            "title": "Coordinatesystem",
+            "default": "bd09ll"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "isochrone",
+              "poi",
+              "accessibility",
+              "verification",
+              "reporting",
+              "ready"
+            ],
+            "title": "Stage"
+          },
+          "businessStatus": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "insufficient"
+            ],
+            "title": "Businessstatus"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineRef"
+          },
+          "isochrone": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Isochrone"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/DistanceRule"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ScopeEvidence"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/TraceEvidence"
+          },
+          "facilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FacilityGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "facilitiesStatus": {
+            "type": "string",
+            "enum": [
+              "not_integrated",
+              "complete",
+              "partial",
+              "failed"
+            ],
+            "title": "Facilitiesstatus"
+          },
+          "accessibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccessibilityEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "accessibilityStatus": {
+            "type": "string",
+            "enum": [
+              "not_integrated",
+              "complete",
+              "partial",
+              "failed"
+            ],
+            "title": "Accessibilitystatus",
+            "default": "not_integrated"
+          },
+          "serviceGaps": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceGapsEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "heatmap": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeatmapEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scores": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScoreEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/Issue"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "taskId",
+          "revision",
+          "generatedAt",
+          "center",
+          "stage",
+          "businessStatus",
+          "engine",
+          "isochrone",
+          "rules",
+          "scope",
+          "trace",
+          "facilitiesStatus"
+        ],
+        "title": "CheckupSnapshot",
+        "description": "One immutable stage revision. Published content is never rewritten."
+      },
+      "CheckupTaskView": {
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "title": "Taskid"
+          },
+          "clientRequestId": {
+            "type": "string",
+            "title": "Clientrequestid"
+          },
+          "engine": {
+            "type": "string",
+            "title": "Engine"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "cancelling",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "businessStatus": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "complete",
+                  "partial",
+                  "insufficient"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Businessstatus"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "isochrone",
+                  "poi",
+                  "accessibility",
+                  "verification",
+                  "reporting",
+                  "ready"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision",
+            "default": 0
+          },
+          "budget": {
+            "type": "integer",
+            "title": "Budget"
+          },
+          "requests": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Requests",
+            "default": 0
+          },
+          "networkRequests": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Networkrequests",
+            "default": 0
+          },
+          "elapsedSeconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Elapsedseconds",
+            "default": 0
+          },
+          "createdAt": {
+            "type": "number",
+            "title": "Createdat"
+          },
+          "cancelRequested": {
+            "type": "boolean",
+            "title": "Cancelrequested",
+            "default": false
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "taskId",
+          "clientRequestId",
+          "engine",
+          "status",
+          "budget",
+          "createdAt"
+        ],
+        "title": "CheckupTaskView"
+      },
       "CoverageEvidence": {
         "properties": {
           "category": {
@@ -1280,6 +2259,157 @@
           "reason"
         ],
         "title": "CoverageEvidence"
+      },
+      "CoverageRow": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "supported": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supported"
+          },
+          "coverageLowerPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coveragelowerpct"
+          },
+          "coverageUpperPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverageupperpct"
+          },
+          "assessablePct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessablepct"
+          },
+          "unknownPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknownpct"
+          },
+          "intervalWidthPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intervalwidthpct"
+          },
+          "intervalDegenerate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intervaldegenerate"
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailablereason"
+          },
+          "coveredM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coveredm2"
+          },
+          "gapM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gapm2"
+          },
+          "unknownM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknownm2"
+          },
+          "cells": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cells"
+          },
+          "entrances": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Entrances"
+          },
+          "evidenceGrade": {
+            "type": "string",
+            "title": "Evidencegrade",
+            "default": "model"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category"
+        ],
+        "title": "CoverageRow",
+        "description": "报告里的一行：区间分加上它赖以计算的面积与格数。\n\n继承 :class:`ScoreRow` 不是省字，而是写明\"报告的每一行就是一个类别的分数行，附上\n这些分数是从哪块面积算出来的\"。合并成一个模型之后，报告里同类别的数字只可能出现\n一次 —— 面积与分数分栏写，读者就只能自己把两栏对起来。"
       },
       "Data": {
         "properties": {
@@ -1471,6 +2601,30 @@
         "type": "object",
         "title": "DistanceRule"
       },
+      "EngineRef": {
+        "properties": {
+          "engineId": {
+            "type": "string",
+            "title": "Engineid"
+          },
+          "engineVersion": {
+            "type": "string",
+            "title": "Engineversion"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "engineId",
+          "engineVersion",
+          "label"
+        ],
+        "title": "EngineRef"
+      },
       "Facility": {
         "properties": {
           "category": {
@@ -1645,6 +2799,360 @@
         ],
         "title": "FacilityAnalysis"
       },
+      "FacilityGroup": {
+        "properties": {
+          "queryStatus": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "partial",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Querystatus"
+          },
+          "catalogCompleteness": {
+            "type": "string",
+            "const": "unverified",
+            "title": "Catalogcompleteness",
+            "default": "unverified"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "apiVersion": {
+            "type": "string",
+            "title": "Apiversion"
+          },
+          "dataSource": {
+            "type": "string",
+            "enum": [
+              "baidu_place",
+              "synthetic"
+            ],
+            "title": "Datasource"
+          },
+          "queryDomain": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Querydomain"
+          },
+          "dataObtainedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataobtainedat"
+          },
+          "countsByCategory": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Countsbycategory"
+          },
+          "facilities": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Facilities"
+          },
+          "reviewCandidates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Reviewcandidates"
+          },
+          "excludedCandidates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Excludedcandidates"
+          },
+          "quarantine": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Quarantine"
+          },
+          "queryCoverage": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Querycoverage"
+          },
+          "statistics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Statistics"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "stopReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopreason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "queryStatus",
+          "provider",
+          "apiVersion",
+          "dataSource",
+          "queryDomain"
+        ],
+        "title": "FacilityGroup",
+        "description": "§4.4's two quality axes, reported side by side and never conflated.\n\n``query_status`` is what the planned queries and their spatial range\nestablished; ``catalog_completeness`` is whether the real directory was\nindependently verified, which a keyword search can never establish, so it is\n``unverified`` here by construction and not by omission.\n\n``counts_by_category`` is what the run *retrieved* inside the computed\nboundary, keyed by the request's major categories. A zero is an observed\nzero: it must be read with ``query_status``, never as \"none exist\" (§4.4)."
+      },
+      "FacilityRoute": {
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "title": "Taskid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "facilityId": {
+            "type": "string",
+            "title": "Facilityid"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "majorCategory": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "shopping",
+                  "medical",
+                  "education"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Majorcategory"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/Origin"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/Origin"
+          },
+          "straightLineM": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Straightlinem"
+          },
+          "withinRule": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withinrule"
+          },
+          "routeDistanceM": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routedistancem"
+          },
+          "durationS": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durations"
+          },
+          "observedDurationS": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observeddurations"
+          },
+          "poiStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "verified_reachable",
+              "verified_unreachable"
+            ],
+            "title": "Poistatus",
+            "default": "pending"
+          },
+          "poiReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poireason"
+          },
+          "evidenceGrade": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "model"
+            ],
+            "title": "Evidencegrade",
+            "default": "model"
+          },
+          "routeOrigin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Origin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "routeDestination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Origin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originOffsetM": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Originoffsetm"
+          },
+          "destinationOffsetM": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destinationoffsetm"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "network": {
+            "type": "boolean",
+            "title": "Network",
+            "default": false
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attempts",
+            "default": 0
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "taskId",
+          "revision",
+          "facilityId",
+          "category",
+          "origin",
+          "destination",
+          "provider"
+        ],
+        "title": "FacilityRoute",
+        "description": "§3.3 点击设施路线：一条独立详情证据，不改变任何已发布的结论。\n\n``revision`` 是要它回答的那一版，不是它产生的版本：详情证据不发布新修订，所以\n``withinRule`` 说的是\"这条路线怎么走\"，不是\"评分变成了什么\"。要让新的证据改变\n结论，必须重新评估并生成新修订。"
+      },
       "Geometry": {
         "properties": {
           "type": {
@@ -1715,6 +3223,61 @@
           "osm_state"
         ],
         "title": "HealthResponse"
+      },
+      "HeatmapEvidence": {
+        "properties": {
+          "metric": {
+            "type": "string",
+            "const": "walking_route",
+            "title": "Metric",
+            "default": "walking_route"
+          },
+          "estimated": {
+            "type": "boolean",
+            "const": true,
+            "title": "Estimated",
+            "default": true
+          },
+          "stepM": {
+            "type": "number",
+            "title": "Stepm",
+            "default": 50.0
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "categories": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Categories"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HeatmapEvidence",
+        "description": "设施密度热力的数据面：每格到最近设施模型距离（§5.4）。\n\n这是**模型估计**：它只回答\"路网上走 1000 米能到哪里\"，不是实测、不是设施数量、\n也不是人口覆盖。没有模型路径的格不出现在热力里 —— 它们的结论由灰区层与未知面积\n表达，不在这里被画成一个\"距离为零\"的热点。"
       },
       "HybridConfig": {
         "properties": {
@@ -2454,6 +4017,97 @@
         ],
         "title": "OsmOfflineRequest"
       },
+      "OverallScore": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "missingCategories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missingcategories"
+          },
+          "coverageLowerPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coveragelowerpct"
+          },
+          "coverageUpperPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverageupperpct"
+          },
+          "assessablePct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessablepct"
+          },
+          "unknownPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknownpct"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "weights": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Weights"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "OverallScore",
+        "description": ":func:`overall_score` 的两种结果写在同一个模型里：给得出区间，或者给不出。\n\n``available`` 是唯一的分支开关，``reason`` 给不出时说明是哪一类（类别不齐、缺空间\n支持）；其余字段在两个分支里都是可空的，界面因此不需要按分支换类型。"
+      },
       "PoiEvidence": {
         "properties": {
           "version": {
@@ -2710,6 +4364,349 @@
         ],
         "title": "QueryEvidence"
       },
+      "ReportEvidence": {
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "title": "Reportid"
+          },
+          "generatedAt": {
+            "type": "number",
+            "title": "Generatedat"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "const": "checkup-v1",
+            "title": "Schemaversion",
+            "default": "checkup-v1"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "domainAreaM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domainaream2"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CoverageRow"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "overall": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OverallScore"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gaps": {
+            "$ref": "#/components/schemas/ReportGaps"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/ReportVerification"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/ReportQuality"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reportId",
+          "generatedAt",
+          "gaps",
+          "verification",
+          "evidence"
+        ],
+        "title": "ReportEvidence",
+        "description": "§7.2 报告快照：一份可离线复核的完整结论。\n\n``limitations`` 是这个报告不能回答的问题（目录完整性、人口覆盖、设施容量、\n政策准入、与建设选址的关系）。它随报告一起冻结，不能由界面自行省略。"
+      },
+      "ReportGaps": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "failed"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "zones": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceZone"
+            },
+            "type": "array",
+            "title": "Zones"
+          },
+          "byCategoryM2": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Bycategorym2"
+          },
+          "compositeAreaM2": {
+            "type": "number",
+            "title": "Compositeaream2",
+            "default": 0.0
+          },
+          "gapAreaM2": {
+            "type": "number",
+            "title": "Gapaream2",
+            "default": 0.0
+          },
+          "minLabelAreaM2": {
+            "type": "number",
+            "title": "Minlabelaream2",
+            "default": 2500.0
+          },
+          "compositeMinCategories": {
+            "type": "integer",
+            "title": "Compositemincategories",
+            "default": 2
+          },
+          "obstacleLayerAvailable": {
+            "type": "boolean",
+            "title": "Obstaclelayeravailable",
+            "default": false
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ReportGaps",
+        "description": "报告的灰区栏目：既可以是完整清单，也可以是\"这一阶段没跑\"的具名缺席。\n\n缺席时 ``status`` 是 ``failed`` 且 ``reason`` 有话说，``zones`` 为空 —— 省略这一栏\n在读者看来就是\"没有灰区问题\"，这比一份带原因的缺席错得多。"
+      },
+      "ReportQuality": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "title": "Schemaversion",
+            "default": "checkup-v1"
+          },
+          "ruleVersion": {
+            "type": "string",
+            "title": "Ruleversion",
+            "default": "walk-distance-1000-v1"
+          },
+          "sourceResultHash": {
+            "type": "string",
+            "title": "Sourceresulthash"
+          },
+          "views": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Views"
+          },
+          "grid": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Grid"
+          },
+          "excludedAreaM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excludedaream2"
+          },
+          "obstacleLayerAvailable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Obstaclelayeravailable"
+          },
+          "heatmapEstimated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heatmapestimated"
+          },
+          "catalogCompleteness": {
+            "type": "string",
+            "title": "Catalogcompleteness",
+            "default": "unverified"
+          },
+          "queryStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Querystatus"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sourceResultHash"
+        ],
+        "title": "ReportQuality",
+        "description": "证据质量栏：这份结论建立在什么之上，以及这一版缺了什么。"
+      },
+      "ReportVerification": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "checked": {
+            "type": "integer",
+            "title": "Checked",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "default": 0
+          },
+          "unresolved": {
+            "type": "integer",
+            "title": "Unresolved",
+            "default": 0
+          },
+          "facilities": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Facilities"
+          },
+          "conflicts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Conflicts"
+          },
+          "queries": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Queries"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "available",
+          "status"
+        ],
+        "title": "ReportVerification",
+        "description": "报告的核验栏目。``available`` 与 ``status`` 是两件事：这个部署有没有核验服务\n（available），以及核验跑到什么程度（status）。把 ``not_integrated`` 读成\n``available: True`` 会让\"没有核验\"看起来像\"核验过、没发现问题\"。"
+      },
       "RouteEvidence": {
         "properties": {
           "distance_m": {
@@ -2823,6 +4820,398 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Rules"
+      },
+      "ScopeEvidence": {
+        "properties": {
+          "projection": {
+            "type": "string",
+            "title": "Projection"
+          },
+          "dataVersion": {
+            "type": "string",
+            "title": "Dataversion"
+          },
+          "coverageSupported": {
+            "type": "boolean",
+            "title": "Coveragesupported"
+          },
+          "assessmentDomainAvailable": {
+            "type": "boolean",
+            "title": "Assessmentdomainavailable",
+            "default": false
+          },
+          "excludedAreaM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excludedaream2"
+          },
+          "modelSupportAvailable": {
+            "type": "boolean",
+            "title": "Modelsupportavailable",
+            "default": false
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "projection",
+          "dataVersion",
+          "coverageSupported"
+        ],
+        "title": "ScopeEvidence",
+        "description": "What this revision's analysis covers, and what it had to leave out.\n\n``coverage_supported`` says the spatial analysis group is *present* in this\nrevision; whether that analysis could reach a conclusion is\n``accessibility_status``, and whether a domain was frozen at all is\n``assessment_domain_available``. A revision can carry the group and still\nreport nothing: those are different facts, so they are different fields."
+      },
+      "ScoreEvidence": {
+        "properties": {
+          "ruleVersion": {
+            "type": "string",
+            "title": "Ruleversion",
+            "default": "walk-distance-1000-v1"
+          },
+          "domainAreaM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domainaream2"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreRow"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "overall": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OverallScore"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "formula": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Formula"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ScoreEvidence",
+        "description": "§7.1 的覆盖区间分：固定分母、上下界与可评估率。\n\n只报百分比与总体分，不重复 :class:`AccessibilityEvidence` 里的面积。总体分在\n三大类不齐备或有一类没有空间支持时是\"无法给出\"，而不是把已分析的类别重新加权。"
+      },
+      "ScoreRow": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "supported": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supported"
+          },
+          "coverageLowerPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coveragelowerpct"
+          },
+          "coverageUpperPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverageupperpct"
+          },
+          "assessablePct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessablepct"
+          },
+          "unknownPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknownpct"
+          },
+          "intervalWidthPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intervalwidthpct"
+          },
+          "intervalDegenerate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intervaldegenerate"
+          },
+          "unavailableReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailablereason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category"
+        ],
+        "title": "ScoreRow",
+        "description": "一个类别的区间分。``supported`` 为假时百分比全是 null —— \"没有空间支持\"和\n\"支持了但算出来是 0%\"必须能分辨。"
+      },
+      "ServiceGapsEvidence": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "failed"
+          },
+          "zones": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceZone"
+            },
+            "type": "array",
+            "title": "Zones"
+          },
+          "byCategoryM2": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Bycategorym2"
+          },
+          "compositeAreaM2": {
+            "type": "number",
+            "title": "Compositeaream2",
+            "default": 0.0
+          },
+          "gapAreaM2": {
+            "type": "number",
+            "title": "Gapaream2",
+            "default": 0.0
+          },
+          "compositeMinCategories": {
+            "type": "integer",
+            "title": "Compositemincategories",
+            "default": 2
+          },
+          "minLabelAreaM2": {
+            "type": "number",
+            "title": "Minlabelaream2",
+            "default": 2500.0
+          },
+          "obstacleLayerAvailable": {
+            "type": "boolean",
+            "title": "Obstaclelayeravailable",
+            "default": false
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ServiceGapsEvidence",
+        "description": "§6.5 的灰区清单：连通分量、面积与逐区的解释。\n\n``by_category_m2`` 是每类灰区的并集面积；``composite_area_m2`` 是\"三大类至少\n两类为 gap\"的并集面积。两者都不与逐区面积相加混用。"
+      },
+      "ServiceZone": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "default": 0
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "areaM2": {
+            "type": "number",
+            "title": "Aream2"
+          },
+          "parts": {
+            "type": "integer",
+            "title": "Parts",
+            "default": 0
+          },
+          "cellIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cellids"
+          },
+          "labelVisible": {
+            "type": "boolean",
+            "title": "Labelvisible",
+            "default": false
+          },
+          "suspected": {
+            "type": "boolean",
+            "title": "Suspected",
+            "default": true
+          },
+          "evidenceGrade": {
+            "type": "string",
+            "title": "Evidencegrade",
+            "default": "model"
+          },
+          "queryStatus": {
+            "type": "string",
+            "title": "Querystatus",
+            "default": "complete"
+          },
+          "nearestFacility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nearestfacility"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "suggestion": {
+            "type": "string",
+            "title": "Suggestion"
+          },
+          "geometry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "geometrySystem": {
+            "type": "string",
+            "const": "metric",
+            "title": "Geometrysystem",
+            "default": "metric"
+          },
+          "displayGeometry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displaygeometry"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "areaM2",
+          "suggestion"
+        ],
+        "title": "ServiceZone",
+        "description": "一片灰区在冻结修订里的样子（§6.5）。\n\n``zones`` 曾经是裸 dict，于是\"这一片有多大、为什么是灰区、建议查什么\"只存在于\n``Zone.as_dict()`` 的写法里：写错了没有一处会报错，读的人也没有类型可依。把它写成\n模型之后，冻结出来的清单自带校验，前端契约也从同一份定义生成。\n\n两份几何必须来自同一个对象：``geometry`` 是**统计几何**（米制，面积以它为准），\n``displayGeometry`` 是同一对象的 bd09ll 形态。展示简化改变统计几何是 §6.5 明令禁止的。"
       },
       "SyntheticRequest": {
         "properties": {
@@ -3121,6 +5510,43 @@
         "title": "TaskStatusResponse",
         "description": "统一异步任务响应；business_status 是业务结果，status 是传输任务状态。"
       },
+      "TraceEvidence": {
+        "properties": {
+          "dataVersions": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Dataversions"
+          },
+          "ruleVersions": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ruleversions"
+          },
+          "isochroneHash": {
+            "type": "string",
+            "title": "Isochronehash"
+          },
+          "resultHash": {
+            "type": "string",
+            "title": "Resulthash"
+          },
+          "budgets": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budgets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "dataVersions",
+          "ruleVersions",
+          "isochroneHash",
+          "resultHash",
+          "budgets"
+        ],
+        "title": "TraceEvidence"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -3160,6 +5586,90 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VerificationEvidence": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "failed",
+              "not_integrated"
+            ],
+            "title": "Status",
+            "default": "not_integrated"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "checked": {
+            "type": "integer",
+            "title": "Checked",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "default": 0
+          },
+          "unresolved": {
+            "type": "integer",
+            "title": "Unresolved",
+            "default": 0
+          },
+          "facilities": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Facilities"
+          },
+          "conflicts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Conflicts"
+          },
+          "queries": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Queries"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VerificationEvidence",
+        "description": "§6.3 的百度核验阶段：能核实的与核实不了的都留下名字。\n\n``checked`` 是真实发起过路线核验的设施；``unresolved`` 是核验后仍然接入不了的\n入口；``conflicts`` 是\"模型说覆盖、路线说走不通\"这类分歧所在的那几格。三者都不是\n\"目录已完整\"的证据 —— 目录完整性永远是 ``unverified``。"
       }
     }
   }
