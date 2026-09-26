@@ -12,11 +12,16 @@ __all__ = ["CheckupError", "CheckupManager", "CheckupStore", "CheckupRequest", "
 
 
 def build_checkups(settings, gate, offline, *, quota, provider_factory=None,
-                   hybrid_provider_factory=None):
+                   hybrid_provider_factory=None, place_factory=None, route_factory=None):
     """Open the durable store and register both engines for the given settings.
 
     ``quota`` is injected rather than built here: one allocation entry is shared
-    by every stage of the application, so it outlives this manager.
+    by every stage of the application, so it outlives this manager. ``place_factory``
+    and ``route_factory`` are the facility stage's and the verification stage's
+    transport seams, ``None`` meaning the deployment's own. ``offline`` is the
+    walking-network provider; the assessment uses the same one the OSM engine
+    does, because "within 1000 m on foot" does not depend on which algorithm drew
+    the circle.
     """
     from ..engines import build_registry
 
@@ -24,4 +29,5 @@ def build_checkups(settings, gate, offline, *, quota, provider_factory=None,
     store.initialize()
     registry = build_registry(settings, gate, offline, provider_factory=provider_factory,
                               hybrid_provider_factory=hybrid_provider_factory)
-    return CheckupManager(settings, registry, store, quota)
+    return CheckupManager(settings, registry, store, quota, place_factory=place_factory,
+                          route_factory=route_factory, offline=offline)

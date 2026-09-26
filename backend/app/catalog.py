@@ -101,6 +101,33 @@ def poi_key(key: str) -> str:
     return ALIASES.get(key, key)
 
 
+# The reverse view, built from the same table so a caller holding the runtime's
+# spelling gets the contract's category back without a second list.
+_KEY_BY_POI_NAME: dict[str, str] = {poi_key(category.key): category.key for category in CATEGORIES}
+
+
+def contract_key(name: str) -> str:
+    """The contract's key for a name in either vocabulary."""
+    return _KEY_BY_POI_NAME.get(name, name)
+
+
+def major_of(name: str) -> str | None:
+    """The major category a minor category belongs to, in either spelling."""
+    category = BY_KEY.get(contract_key(name))
+    return category.major if category is not None else None
+
+
+def poi_keys(majors=None) -> tuple[str, ...]:
+    """The POI runtime's categories for these major categories, in dictionary order.
+
+    This is the one place the request's category vocabulary is translated into
+    the retrieval runtime's, so a request cannot name a category the dictionary
+    does not have and no module keeps its own mapping.
+    """
+    return tuple(poi_key(category.key) for category in CATEGORIES
+                 if category.poi_runtime and (majors is None or category.major in majors))
+
+
 def _mapping(selector) -> dict:
     return {poi_key(category.key): selector(category) for category in CATEGORIES
             if category.poi_runtime}

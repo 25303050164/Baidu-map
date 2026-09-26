@@ -97,11 +97,23 @@ def inside(point, bounds, projection):
     return bounds[0]-epsilon <= x <= bounds[2]+epsilon and bounds[1]-epsilon <= y <= bounds[3]+epsilon
 
 
-def merge_entities(records, request, plan):
+def merge_entities(records, request, plan=None, *, within=None):
+    """Merge the records of one run into entities, each with its own verdict.
+
+    ``plan`` names the rectangular search window a POI runtime ran, and every
+    entity outside it is reported rather than merged. A caller whose counting
+    region is not a rectangle — the checkup counts inside the computed boundary —
+    passes ``within`` instead: one test from a geographic point to whether this
+    run counts there. Exactly one of the two is required.
+    """
+    if within is None and plan is None:
+        raise ValueError('a merge needs a counting region: plan or within')
     by_uid = defaultdict(list)
     for record in records:
         by_uid[record['id']].append(record)
     projection = LocalProjection((request.center.lng, request.center.lat))
+    counted = (within if within is not None else
+               (lambda point: inside(point, plan['searchExtent']['localMeters'], projection)))
     accepted, review, excluded, outside = [], [], [], []
     for uid, values in sorted(by_uid.items()):
         observations = sorted({digest({k: v for k, v in r.items() if k != 'provenance'}): r for r in values}.values(),
@@ -114,8 +126,13 @@ def merge_entities(records, request, plan):
         item['observations'] = [{k: r[k] for k in ('name', 'address', 'location', 'navigationLocation',
                                                    'confirmedEntrances', 'parentUid', 'sourceTags')}
                                 for r in observations]
-        if not any(inside(r['location'], plan['searchExtent']['localMeters'], projection) for r in values):
-            outside.append({'sourceUid': item['sourceUid'], 'reason': 'outside_search_window', 'provenance': item['provenance']})
+        if not any(counted(r['location']) for r in values):
+            # The record keeps where it is and what it was: a nearby facility
+            # outside the counting region is evidence for the region, not noise.
+            outside.append({'sourceUid': item['sourceUid'], 'category': item['category'],
+                            'location': item['location'],
+                            'reason': 'outside_counting_region' if within is not None else 'outside_search_window',
+                            'provenance': item['provenance']})
             continue
         names = ' / '.join(sorted({r['name'] for r in values}))
         category, status, evidence = classify(names, item['sourceTags'])

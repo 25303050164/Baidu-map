@@ -26,7 +26,7 @@ class HealthResponse(BaseModel):
 
 
 def create_app(settings: Settings | None = None, *, provider_factory=None,
-               hybrid_provider_factory=None) -> FastAPI:
+               hybrid_provider_factory=None, place_factory=None, route_factory=None) -> FastAPI:
     config = settings if settings is not None else load_settings()
     # One allocation entry for the whole application. The legacy stages keep
     # their own conservative shared gate for now (§9.1), so they do not draw
@@ -40,7 +40,8 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
     offline = LazyOsmOfflineEngine(config)
     checkups = build_checkups(config, manager.gate, offline, quota=quota,
                               provider_factory=provider_factory,
-                              hybrid_provider_factory=hybrid_provider_factory)
+                              hybrid_provider_factory=hybrid_provider_factory,
+                              place_factory=place_factory, route_factory=route_factory)
 
     @asynccontextmanager
     async def lifespan(app):
