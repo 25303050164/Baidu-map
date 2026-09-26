@@ -151,6 +151,15 @@ class CheckupManager:
 
     # -- admission ---------------------------------------------------------
 
+    def interrupt_unfinished(self) -> int:
+        """Sweep tasks this process did not finish, as a restart does.
+
+        Called once when the server starts serving, never from a constructor:
+        an interrupted task stops being "running" because a new deployment took
+        over, and merely building the app object is not that.
+        """
+        return self.store.interrupt_unfinished()
+
     def start(self) -> None:
         """Start the single worker on first use, so no lifecycle hook is required."""
         if self.worker is None or self.worker.done():

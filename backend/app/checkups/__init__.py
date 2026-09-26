@@ -22,11 +22,15 @@ def build_checkups(settings, gate, offline, *, quota, provider_factory=None,
     walking-network provider; the assessment uses the same one the OSM engine
     does, because "within 1000 m on foot" does not depend on which algorithm drew
     the circle.
+
+    The store is opened and its schema created, but unfinished tasks are **not**
+    swept here -- that is the serving startup's job (``interrupt_unfinished``).
+    Building the app object is not a restart; see ``CheckupStore``.
     """
     from ..engines import build_registry
 
     store = CheckupStore(settings.checkup_dir)
-    store.initialize()
+    store.create_schema()
     registry = build_registry(settings, gate, offline, provider_factory=provider_factory,
                               hybrid_provider_factory=hybrid_provider_factory)
     return CheckupManager(settings, registry, store, quota, place_factory=place_factory,

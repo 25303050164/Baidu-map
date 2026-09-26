@@ -45,6 +45,9 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
 
     @asynccontextmanager
     async def lifespan(app):
+        # 重启清点在**开始服务**时做，不在导入时：导入 app 对象（比如导出 OpenAPI）
+        # 不该把别人正在跑的体检判成中断。清点只改状态，不重放任何已付费的请求。
+        checkups.interrupt_unfinished()
         yield
         await checkups.close()
         await hybrid.close()

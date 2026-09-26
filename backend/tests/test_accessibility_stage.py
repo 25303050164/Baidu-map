@@ -391,6 +391,64 @@ def test_zone_geometry_is_the_counted_geometry():
     assert drawn.area == pytest.approx(counted.area, rel=1e-4)
 
 
+# -- 评估域只由圈面和数据覆盖范围决定 ----------------------------------------
+
+def test_the_dataset_window_trims_only_what_lies_outside_it():
+    """数据集覆盖范围是窗口：域里超出窗口的那一半要报出来，而不是把域换掉。
+
+    窗口求交（``∩``）—— 这一条钉住的是"运算符的方向"，不是"扣了多少"。
+    """
+    window = box(*metric(-500, -400), *metric(0, 400))
+    domain, exclusions = stage.assessment_domain(
+        boundary(-500, -400, 500, 400), projection=PROJECTION, coverage=window)
+    assert domain.area == pytest.approx(500 * 800, rel=1e-3)
+    assert exclusions["coverage_beyond_dataset"] == pytest.approx(500 * 800, rel=1e-3)
+
+
+def test_a_domain_entirely_outside_the_dataset_is_not_scored():
+    """域整个落在数据集之外时报"评估域为空"，不是 0% 覆盖 —— 那两句话不是一回事。"""
+    window = box(*metric(5000, 5000), *metric(6000, 6000))
+    with pytest.raises(ValueError) as refused:
+        stage.assessment_domain(boundary(-500, -400, 500, 400), projection=PROJECTION,
+                                coverage=window)
+    assert str(refused.value) == stage.EMPTY_DOMAIN
+
+
+def test_the_engine_unknown_region_never_shrinks_the_assessment_domain():
+    """成圈算法的不确定区不进评估域，也不从评估域里扣（方案 §6.1）。
+
+    两个引擎都把它造成 ``unknown.difference(geometry)``，也就是围在可达面外面的一圈；
+    把它当"要保留的那一块"去求交，评估域就只剩边界上那一丝缝 —— 真实的一次百度体检
+    因此跑出过 A = 0.00035 m²、覆盖率 0%、未知 99.9999%，报告读起来像"这一带没有服务"。
+    """
+    reachable = box(*metric(-500, -400), *metric(500, 400))
+    ring = box(*metric(-600, -500), *metric(600, 500)).difference(reachable)
+    window = box(*metric(-2000, -2000), *metric(2000, 2000))
+    domain, exclusions = stage.assessment_domain(
+        boundary(-500, -400, 500, 400), projection=PROJECTION, coverage=window)
+    assert domain.area == pytest.approx(reachable.area, rel=1e-3)
+    assert exclusions == {}
+    # 传进来的那一圈原样报出来，看得见，但不许它改动分母。
+    reported = stage.engine_unknown_region(PROJECTION.public_geometry(ring), PROJECTION)
+    assert reported.area == pytest.approx(ring.area, rel=1e-3)
+
+
+def test_a_whole_extent_unknown_region_still_leaves_the_domain_alone():
+    """缺未知几何时 E8.2 会拿整个计算域当 unknownRegion（§6.1 点名的那个坑）。
+
+    机械相减会在这里把评估域整块扣没。域里剩下的部分本来就该保留为未知、不从分母消失：
+    那是 U 的活，不是 A 的。
+    """
+    reachable = box(*metric(-500, -400), *metric(500, 400))
+    whole_extent = box(*metric(-1600, -1600), *metric(1600, 1600))
+    domain, exclusions = stage.assessment_domain(
+        boundary(-500, -400, 500, 400), projection=PROJECTION)
+    assert domain.area == pytest.approx(reachable.area, rel=1e-3)
+    assert exclusions == {}
+    assert stage.engine_unknown_region(
+        PROJECTION.public_geometry(whole_extent), PROJECTION).area > reachable.area
+
+
 def test_views_are_built_once_for_the_whole_stage():
     """两张视图按图与版本复用：每类重建一次会把整城图的通行判定算三遍。"""
     store = road_store()

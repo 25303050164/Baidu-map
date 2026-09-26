@@ -107,12 +107,12 @@ def metric_region(geometry: dict, projection):
         raise ValueError(NO_BOUNDARY) from None
 
 
-def _metric_hole(geometry: dict | None, projection):
+def engine_unknown_region(geometry: dict | None, projection):
     """成圈算法标出的不确定区（bd09ll）→ 米制几何；没有就返回 None。
 
-    它是"边界没立住"的地方，不是"没有服务"的地方，所以只会从评估域里扣掉，绝不并进
-    未知面积：未知面积是"这一片有没有服务还没有结论"，而那一片连"属不属于本次分析范围"
-    都还没有结论。
+    这块面积**不进评估域，也不从评估域里扣**（§6.1）。它是一句关于成圈质量的说明：
+    "这一片我立不住"，而不是"这一片没有服务"。报告里按原样报出来，让它可见，但不许它
+    改动分母 A。
     """
     if geometry is None:
         return None
@@ -120,19 +120,19 @@ def _metric_hole(geometry: dict | None, projection):
     return None if region.is_empty else region
 
 
-def assessment_domain(geometry: dict | None, *, projection, coverage=None, unknown_region=None):
-    """§6.1 的固定报告评估域：成圈结果，扣掉数据说不清楚的部分。
+def assessment_domain(geometry: dict | None, *, projection, coverage=None):
+    """§6.1 的固定报告评估域：计算圈面，扣掉数据集覆盖不到的部分。
 
-    返回 ``(domain, exclusions)``，``exclusions`` 是 ``{原因: 面积}``。被扣掉的那两块是
-    "不在结论范围内"，不是"没有服务"，所以分开报出，都不并进未知面积：
+    返回 ``(domain, exclusions)``，``exclusions`` 是 ``{原因: 面积}``。``coverage`` 是数据
+    集的覆盖范围，它是**窗口**：评估域只保留窗口以内的部分。超出窗口的面积单列出来，因为
+    那是"不在结论范围内"，不是"没有服务"。
 
-    * ``coverage``：超出数据集覆盖范围的部分；
-    * ``unknown_region``：成圈算法自己标为不确定的那一块。评估域只该包含边界真正立得住
-      的地方 —— 把"这一片圈到哪儿都不确定"并进分母 A，等于用一块没结论的面积去摊薄
-      覆盖率。
-
-    扣减顺序固定为覆盖范围在前、成圈不确定区在后，两次都重新求并集：几何的空腔与孔洞
-    在两次裁剪之间必须保持成立，否则灰区的连通性会在报告与图之间不一致。
+    成圈算法自己标的那块不确定区**不在这里扣**（方案 §6.1）：E8.2 在缺少未知几何时会拿
+    整个计算域当 ``unknownRegion``，机械相减会把评估域整块扣没 —— 真实的一次百度体检因此
+    跑出过 A = 0.00035 m²、覆盖率 0%、未知 99.9999%，而报告读起来像"这一带没有服务"。
+    即便拿到了标定过的未知面，它也只在可达面之外（两个引擎都是 ``unknown.difference(
+    geometry)`` 造出来的），减与不减都改不动 A。评估域里剩下的部分本来就该保留为未知、
+    不从分母消失 —— 那是 U 的活（§5.6），不是 A 的。
     """
     if geometry is None:
         raise ValueError(NO_BOUNDARY)
@@ -140,15 +140,12 @@ def assessment_domain(geometry: dict | None, *, projection, coverage=None, unkno
     if region.is_empty or region.area <= 0:
         raise ValueError(EMPTY_DOMAIN)
     exclusions: dict[str, float] = {}
-    for reason, extra in (("coverage_beyond_dataset", coverage),
-                          ("isochrone_unknown_region", _metric_hole(unknown_region, projection))):
-        if extra is None:
-            continue
-        clipped = region.intersection(extra)
-        excluded = max(0.0, region.area - clipped.area)
+    if coverage is not None:
+        inside = region.intersection(coverage)
+        excluded = max(0.0, region.area - inside.area)
         if excluded > 0:
-            exclusions[reason] = excluded
-        region = unary_union(_polygonal(clipped))
+            exclusions["coverage_beyond_dataset"] = excluded
+        region = unary_union(_polygonal(inside))
         if region.is_empty or region.area <= 0:
             raise ValueError(EMPTY_DOMAIN)
     return region, exclusions
@@ -481,7 +478,7 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
                         status="partial")
     try:
         domain, exclusions = assessment_domain(geometry, projection=store.projection,
-                                              coverage=coverage, unknown_region=unknown_region)
+                                              coverage=coverage)
     except ValueError as exc:
         return _refusal(str(exc), majors_used,
                         "评估域无法建立（边界不可用或落在数据集覆盖范围之外），服务覆盖未评估。")
@@ -515,6 +512,12 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
     excluded = sum(exclusions.values())
     for reason, area in sorted(exclusions.items()):
         notes.append(f"excluded_area_m2={round(area, 3)} ({reason}): 未计入评估域。")
+    engine_unknown = engine_unknown_region(unknown_region, store.projection)
+    if engine_unknown is not None:
+        # 报出来是为了让它可见，不是为了让它做减法：分母 A 只由圈面和数据覆盖范围决定。
+        notes.append(f"engine_unknown_region_m2={round(engine_unknown.area, 3)}: "
+                     "成圈算法标出的不确定区，不从评估域扣除（§6.1）；"
+                     "域内无法评估的格子按未知计，仍留在分母里。")
     records = [record for item in evaluated for record in item.records]
     zones = merge_zones(records, domain=domain, majors=majors_used,
                         obstacle_between=obstacles.separates if obstacles.available else None)

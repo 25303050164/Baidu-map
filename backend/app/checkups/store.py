@@ -106,13 +106,31 @@ class CheckupStore:
             connection.close()
 
     def initialize(self) -> int:
-        """Create the schema and record unfinished tasks as interrupted.
+        """The whole of a restart: create the schema, then sweep unfinished tasks.
 
-        Returns the number of tasks marked interrupted. Cancelled or completed
-        tasks are left untouched, and no paid request is ever replayed.
+        Returns the number of tasks marked interrupted.
         """
+        self.create_schema()
+        return self.interrupt_unfinished()
+
+    def create_schema(self) -> None:
+        """Create the tables. Runs anywhere, changes no task's state."""
         with self._connection() as connection:
             connection.executescript(SCHEMA)
+
+    def interrupt_unfinished(self) -> int:
+        """Fail every queued/running/cancelling task as ``interrupted_by_restart``.
+
+        Returns how many were marked. Cancelled or completed tasks are left
+        untouched, and no paid request is ever replayed.
+
+        This is a **serving** startup step, not an import-time one: importing the
+        app object is not an event in the deployment's history. Anything that
+        imports ``app.main`` for its own reasons -- ``tools/export_contract.py``
+        builds the OpenAPI out of it -- would otherwise reach into the live store
+        and kill whatever checkup is running at that moment.
+        """
+        with self._connection() as connection:
             cursor = connection.execute(
                 "UPDATE tasks SET status='failed', stage=NULL, finished_at=?,"
                 " error='interrupted_by_restart', updated_at=?"

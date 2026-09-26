@@ -343,6 +343,27 @@ def test_restart_marks_unfinished_tasks_interrupted_and_keeps_revisions(tmp_path
     assert restarted.initialize() == 0
 
 
+def test_building_the_app_does_not_interrupt_a_running_task(tmp_path):
+    """构造 app 对象不是一次部署事件。
+
+    `tools/export_contract.py` 为了导出 OpenAPI 会 `from app.main import app`。清点要是
+    发生在构造里，导出一次契约就会把别人正在跑的体检判成中断 —— 那是已经付过费的请求，
+    也永远不会再有结果。所以构造只建表，清点留给"开始服务"这一刻。
+    """
+    store = CheckupStore(tmp_path / "checkups")
+    store.create_schema()
+    store.create(task_id="live", client_request_id="live", engine="baidu_e82",
+                 fingerprint="f", payload=body(), budget=200)
+    assert store.claim("live")
+    make_app(tmp_path)
+    assert store.get("live").status == "running"
+    # 而真的开始服务时它就是重启：同一个任务这时才被判成中断。
+    with TestClient(make_app(tmp_path)):
+        pass
+    assert store.get("live").status == "failed"
+    assert store.get("live").error == "interrupted_by_restart"
+
+
 # -- the other engine ------------------------------------------------------
 
 def test_hybrid_engine_publishes_its_own_boundary_under_its_own_identity(tmp_path):
