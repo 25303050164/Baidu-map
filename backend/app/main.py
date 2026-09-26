@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 
 from .config import Settings, load_settings
 from .analysis import router
+from .checkups import CheckupError, build_checkups, capabilities_router, checkup_router
+from .engines import UnknownEngine
 from .contracts import AnalysisResponse, Issue
 from .analyses import AnalysisManager, analysis_router
 from .hybrid_api import HybridManager, hybrid_router
@@ -27,22 +29,33 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
     config = settings if settings is not None else load_settings()
     manager = AnalysisManager(config, provider_factory)
     hybrid = HybridManager(config, manager.gate, hybrid_provider_factory)
+    # The offline graph loads lazily, so the checkup registry can be built
+    # before it; both adapters resolve it on first use.
+    from .algorithms.osm_offline.lazy import LazyOsmOfflineEngine
+    offline = LazyOsmOfflineEngine(config)
+    checkups = build_checkups(config, manager.gate, offline,
+                              provider_factory=provider_factory,
+                              hybrid_provider_factory=hybrid_provider_factory)
 
     @asynccontextmanager
     async def lifespan(app):
         yield
+        await checkups.close()
         await hybrid.close()
         await manager.close()
 
     app = FastAPI(title="Life Circle Backend", version="2.0.0", debug=False, lifespan=lifespan)
-    from .algorithms.osm_offline.lazy import LazyOsmOfflineEngine
-    app.state.osm_offline = LazyOsmOfflineEngine(config)
+    app.state.osm_offline = offline
     app.state.analyses = manager
     app.state.hybrid = hybrid
-    # The two algorithms intentionally coexist on separate, stable contracts.
-    # /api/analyses is Baidu-only; /api/v1/analysis/hybrid is OSM + Baidu.
+    app.state.checkups = checkups
+    # The two legacy algorithms intentionally coexist on separate, stable
+    # contracts. /api/analyses is Baidu-only; /api/v1/analysis/hybrid is OSM +
+    # Baidu. /api/v2/checkups is the versioned orchestrator over both.
     app.include_router(analysis_router(manager))
     app.include_router(hybrid_router(hybrid))
+    app.include_router(checkup_router(checkups))
+    app.include_router(capabilities_router(checkups, config))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_origins,
@@ -59,8 +72,25 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
         ])
         return JSONResponse(status_code=status_code, content=body.model_dump(mode="json"))
 
+    def checkup_failure(status_code: int, code: str, message: str):
+        return JSONResponse(status_code=status_code, content={"code": code, "message": message})
+
+    @app.exception_handler(CheckupError)
+    async def checkup_error(request, exc):
+        return checkup_failure(exc.status_code, exc.code, exc.message)
+
+    @app.exception_handler(UnknownEngine)
+    async def unknown_engine(request, exc):
+        # An engine or budget tier the registry does not serve is a request
+        # error; the other algorithm is never entered as a substitute.
+        status = 422 if exc.reason == "unsupported_budget" else 404
+        return checkup_failure(status, f"checkup_{exc.reason}", exc.reason)
+
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
+        if request.url.path.startswith("/api/v2/"):
+            # Never echo raw input, URLs or credentials from a validation error.
+            return checkup_failure(422, "checkup_invalid_request", "请求字段无效，请核对引擎、坐标和预算。")
         if request.url.path.startswith("/api/v1/analysis/hybrid"):
             return JSONResponse(status_code=422, content={"code": "hybrid_invalid_request", "message": "Invalid Hybrid request"})
         if request.url.path.startswith("/api/analyses"):
@@ -71,6 +101,9 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
 
     @app.exception_handler(HTTPException)
     async def http_error(request, exc):
+        if request.url.path.startswith("/api/v2/"):
+            # Routing and method errors keep the checkup envelope, like Hybrid.
+            return checkup_failure(exc.status_code, "checkup_http_error", "请求路径或方法不可用。")
         if request.url.path.startswith("/api/v1/analysis/hybrid"):
             detail = exc.detail if isinstance(exc.detail, dict) and "code" in exc.detail else {
                 "code": "hybrid_http_error", "message": "Hybrid request unavailable"}
@@ -81,6 +114,8 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
 
     @app.exception_handler(Exception)
     async def internal_error(request, exc):
+        if request.url.path.startswith("/api/v2/"):
+            return checkup_failure(500, "checkup_internal_error", "体检暂不可用，请稍后重试。")
         return failure_response(500, "INTERNAL_ERROR", "分析暂不可用，请稍后重试。")
 
     @app.get("/health", response_model=HealthResponse)

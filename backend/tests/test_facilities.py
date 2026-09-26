@@ -49,7 +49,9 @@ def test_rate_limit_stops_all_categories():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("distance,expected", [(899,"covered"), (999,"unknown"), (1000,"covered"), (1001,"unknown"), (1101,"unknown")])
+# The whole §11.2 distance list: the 100 m band is an uncertainty band, never a
+# radius enlargement, so both of its edges are unknown and 1000 m is satisfied.
+@pytest.mark.parametrize("distance,expected", [(899,"covered"), (900,"unknown"), (999,"unknown"), (1000,"covered"), (1001,"unknown"), (1100,"unknown"), (1101,"unknown")])
 def test_walking_distance_boundaries_with_same_analysis(distance, expected):
     async def run():
         def handle(r):

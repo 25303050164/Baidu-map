@@ -1,0 +1,110 @@
+"""OSM + Baidu Hybrid compute-only adapter.
+
+Live Hybrid traffic refuses to run without a durable pre-send ledger
+(``cache.py``: ``live_requests_require_durable_ledger``), so the task's own
+artifact directory carries it. The ledger is engine audit evidence; the
+immutable checkup revision is published separately.
+"""
+import asyncio
+import time
+
+from shapely.geometry import Point
+
+from ..algorithms.hybrid_isochrone import HybridConfig, HybridIsochroneProvider
+from ..algorithms.hybrid_isochrone.baidu_validator import StrictBaiduProvider
+from ..algorithms.hybrid_isochrone.extent import ALGORITHM_VERSION, computation_extent
+from ..algorithms.hybrid_isochrone.hard_obstacles import load_obstacles
+from ..algorithms.hybrid_isochrone.osm_guidance import OsmGuidance
+from ..geo.projection import MetricProjection
+from .protocol import EngineCapabilities, EngineContext, IsochroneAsk, IsochroneSnapshot
+
+# The Hybrid core caps generation at 400 attempts; the checkup offers no more.
+BUDGET_TIERS = (200, 400)
+DEFAULT_QPS = 3.0
+
+
+class OsmHybridEngine:
+    engine_id = "osm_hybrid"
+
+    def __init__(self, settings, gate, offline, provider_factory=None):
+        self.settings, self.gate, self.offline = settings, gate, offline
+        self.provider_factory = provider_factory
+
+    def capabilities(self) -> EngineCapabilities:
+        return EngineCapabilities(
+            engine_id=self.engine_id, label="OSM＋百度", engine_version=ALGORITHM_VERSION,
+            budgets=BUDGET_TIERS, default_budget=400, requires_osm_graph=True,
+            notes=["OSM 引导成圈，端点由百度实际返回核验",
+                   "displayGeometry 只用于外轮廓展示，不参与计数与评估范围",
+                   "缺图或缺风险层时标记 degraded，不冒充完整 Hybrid"])
+
+    def _config(self, budget: int) -> HybridConfig:
+        qps = self.settings.analysis_qps or DEFAULT_QPS
+        return HybridConfig(max_baidu_requests=budget, request_qps=max(1.0, min(20.0, qps)))
+
+    async def _prepare(self, origin, config):
+        """Resolve graph, guidance and obstacles; report what is missing."""
+        resolved = await asyncio.to_thread(self.offline.get)
+        store, coverage = resolved.store, resolved.coverage
+        projection = store.projection if store else MetricProjection(self.settings.osm_metric_crs)
+        guidance = await asyncio.to_thread(
+            OsmGuidance, store, projection.origin(origin), config,
+            risk_path=self.settings.hybrid_risk_path, speed=self.settings.walk_speed_mps)
+        extent = computation_extent(projection.origin(origin), config)
+        obstacles = await asyncio.to_thread(
+            load_obstacles, self.settings.hybrid_obstacle_path, projection,
+            self.settings.osm_data_version, extent)
+        ready = dict(
+            graph_available=store is not None,
+            data_version_matches=bool(
+                store and store.graph.graph.get("osm_data_version") == self.settings.osm_data_version),
+            coverage_available=coverage is not None,
+            origin_in_coverage=bool(coverage is not None and coverage.covers(Point(projection.origin(origin)))),
+            extent_in_coverage=bool(coverage is not None and coverage.covers(extent)),
+            obstacle_layer_available=bool(obstacles.source),
+            risk_layer_available=not any(w in guidance.warnings for w in
+                ("osm_risk_layer_invalid", "osm_water_railway_barrier_layer_unavailable")))
+        warnings = sorted(set([f"hybrid_{k}_false" for k, v in ready.items() if not v]
+                              + guidance.warnings + obstacles.warnings))
+        return projection, guidance, obstacles, ready, warnings
+
+    async def compute(self, ask: IsochroneAsk, context: EngineContext) -> IsochroneSnapshot:
+        config = self._config(ask.budget)
+        started = time.perf_counter()
+        projection, guidance, obstacles, ready, readiness_warnings = await self._prepare(
+            ask.origin, config)
+        if context.token.cancelled:
+            raise asyncio.CancelledError()
+        ledger_path = (context.artifact_dir / "hybrid-ledger.json"
+                       if context.artifact_dir is not None else None)
+        provider = (self.provider_factory(projection, config) if self.provider_factory
+                    else StrictBaiduProvider(self.settings.baidu_map_ak.get_secret_value(),
+                                             projection, config))
+        async with provider:
+            engine = HybridIsochroneProvider(projection, provider, self.gate, guidance,
+                                             obstacles=obstacles)
+            result = await engine.compute(ask.origin, config, ledger_path=ledger_path,
+                                          token=context.token)
+        warnings = sorted(set(result["warnings"] + readiness_warnings))
+        quality = result["quality"]
+        if readiness_warnings and quality == "usable":
+            quality = "partial"
+        statistics = {
+            "requestsUsed": result["requests_used"],
+            "validBaiduSamples": result["valid_baidu_samples"],
+            "invalidBaiduSamples": result["invalid_baidu_samples"],
+            "unknownSamples": result["unknown_samples"],
+            "boundaryErrorEstimate": result["boundary_error_estimate"],
+            "computeSeconds": round(time.perf_counter() - started, 6),
+        }
+        return IsochroneSnapshot.build(
+            engine_id=self.engine_id, engine_version=ALGORITHM_VERSION,
+            # The boundary is drawn from the shell; counting and the assessment
+            # domain use the computed geometry and its unknown region.
+            algorithm=result["algorithm"], parameters=result["config"],
+            geometry=result["geometry"], display_geometry=result.get("displayGeometry"),
+            unknown_region=result["unknown_region"],
+            uncertain_region=result.get("evidence_unknown_region"),
+            computation_extent=result["computation_extent"], quality=quality,
+            stop_reason=result["stop_reason"], warnings=warnings, statistics=statistics,
+            requests_used=result["requests_used"], network_requests=result["requests_used"])
