@@ -13,6 +13,10 @@ from .models import (DEFAULT_POI_REQUESTS, DEFAULT_ROUTE_REQUESTS, DETAIL_ROUTE_
 # the heatmap, grey-zone and facility layers arrive with their own stages.
 LAYER_IDS = ("isochrone",)
 CACHE_CONTROL = "private, max-age=0, must-revalidate"
+# The balance counts this application's own attempts. The browser SDK, other
+# applications and the console's accounting sit outside it, so the interface
+# must not present it as the account's remaining allowance.
+QUOTA_LABEL = "本应用预算余额（不含浏览器 SDK、其他应用及旧接口流量）"
 
 
 def _latest(manager: CheckupManager, task_id: str, revision: int | None = None):
@@ -106,6 +110,9 @@ def capabilities_router(manager: CheckupManager, settings):
                       "completeDirectory": False},
             budgets={"poiRequests": DEFAULT_POI_REQUESTS, "routeRequests": DEFAULT_ROUTE_REQUESTS,
                      "detailRouteRequests": DETAIL_ROUTE_REQUESTS,
-                     "maxPoiRequests": MAX_POI_REQUESTS, "maxRouteRequests": MAX_ROUTE_REQUESTS})
+                     "maxPoiRequests": MAX_POI_REQUESTS, "maxRouteRequests": MAX_ROUTE_REQUESTS},
+            # Reported per request rather than cached: the tier switches at a
+            # wall-clock instant and the day turns at Shanghai midnight.
+            quota={**manager.quota.balance(), "label": QUOTA_LABEL})
 
     return router

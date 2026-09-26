@@ -30,6 +30,7 @@ backend/logs/
 backend/.poi-ledgers/
 backend/.hybrid-ledgers/
 backend/.checkups/
+backend/.quota/
 
 # Python algorithm artifacts (environments and large outputs live on D:)
 *.egg-info/

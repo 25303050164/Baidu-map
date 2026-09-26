@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 from typing import Literal
@@ -6,6 +7,11 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+
+# The quota tier that applies before the date below and the conservative tier
+# that replaces it afterwards. The switch instant is an engineering choice, not
+# a claim about when the console entitlement actually lapses.
+DEFAULT_FALLBACK_AT = "2026-09-30T00:00:00+08:00"
 
 
 class Settings(BaseSettings):
@@ -26,10 +32,23 @@ class Settings(BaseSettings):
     osm_coverage_margin_m: float = Field(default=100, ge=0, allow_inf_nan=False)
     hybrid_ledger_dir: Path = BACKEND_DIR / ".hybrid-ledgers"
     checkup_dir: Path = BACKEND_DIR / ".checkups"
+    # Per-service route and place pools. Both algorithms and the facility stages
+    # draw from these; nothing allocates quota outside this entry.
+    baidu_direction_qps: float = Field(default=16, gt=0, allow_inf_nan=False)
+    baidu_place_qps: float = Field(default=8, gt=0, allow_inf_nan=False)
+    baidu_direction_max_inflight: int = Field(default=1, ge=1, le=1)
+    baidu_place_max_inflight: int = Field(default=1, ge=1, le=1)
+    baidu_place_daily_budget: int = Field(default=1600, ge=0)
+    baidu_matrix_enabled: Literal[False] = False
+    baidu_quota_fallback_at: datetime = DEFAULT_FALLBACK_AT
+    baidu_fallback_direction_qps: float = Field(default=2, gt=0, allow_inf_nan=False)
+    baidu_fallback_place_qps: float = Field(default=2, gt=0, allow_inf_nan=False)
+    baidu_fallback_place_daily_budget: int = Field(default=80, ge=0)
+    quota_ledger_path: Path = BACKEND_DIR / ".quota/quota.sqlite3"
     hybrid_risk_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.risks.geojson"
     hybrid_obstacle_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.obstacles.geojson"
 
-    @field_validator("osm_pbf_path", "osm_graph_cache_path", "osm_coverage_boundary_path", "hybrid_ledger_dir", "hybrid_risk_path", "hybrid_obstacle_path", "checkup_dir", mode="before")
+    @field_validator("osm_pbf_path", "osm_graph_cache_path", "osm_coverage_boundary_path", "hybrid_ledger_dir", "hybrid_risk_path", "hybrid_obstacle_path", "checkup_dir", "quota_ledger_path", mode="before")
     @classmethod
     def osm_paths(cls, value):
         if value is None or value == "":
@@ -52,6 +71,15 @@ class Settings(BaseSettings):
     @classmethod
     def empty_qps(cls, value):
         return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("baidu_quota_fallback_at")
+    @classmethod
+    def explicit_fallback_instant(cls, value):
+        # An offset is required: the switch instant is a wall-clock instant in
+        # the deployment's own zone, not a naive local timestamp.
+        if value.tzinfo is None:
+            raise ValueError("BAIDU_QUOTA_FALLBACK_AT must include an UTC offset")
+        return value
 
     @field_validator("cors_origins")
     @classmethod

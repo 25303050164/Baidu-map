@@ -15,6 +15,7 @@ from .contracts import AnalysisResponse, Issue
 from .analyses import AnalysisManager, analysis_router
 from .hybrid_api import HybridManager, hybrid_router
 from .osm_api import router as osm_router
+from .quota import Quota
 
 
 class HealthResponse(BaseModel):
@@ -27,13 +28,17 @@ class HealthResponse(BaseModel):
 def create_app(settings: Settings | None = None, *, provider_factory=None,
                hybrid_provider_factory=None) -> FastAPI:
     config = settings if settings is not None else load_settings()
+    # One allocation entry for the whole application. The legacy stages keep
+    # their own conservative shared gate for now (§9.1), so they do not draw
+    # from it yet; every checkup attempt does.
+    quota = Quota(config)
     manager = AnalysisManager(config, provider_factory)
     hybrid = HybridManager(config, manager.gate, hybrid_provider_factory)
     # The offline graph loads lazily, so the checkup registry can be built
     # before it; both adapters resolve it on first use.
     from .algorithms.osm_offline.lazy import LazyOsmOfflineEngine
     offline = LazyOsmOfflineEngine(config)
-    checkups = build_checkups(config, manager.gate, offline,
+    checkups = build_checkups(config, manager.gate, offline, quota=quota,
                               provider_factory=provider_factory,
                               hybrid_provider_factory=hybrid_provider_factory)
 
@@ -49,6 +54,7 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
     app.state.analyses = manager
     app.state.hybrid = hybrid
     app.state.checkups = checkups
+    app.state.quota = quota
     # The two legacy algorithms intentionally coexist on separate, stable
     # contracts. /api/analyses is Baidu-only; /api/v1/analysis/hybrid is OSM +
     # Baidu. /api/v2/checkups is the versioned orchestrator over both.

@@ -4,6 +4,10 @@ One task runs at a time. The shared account-level gate already paces every
 route attempt, and the first release deliberately does not add in-flight
 concurrency before its own timing acceptance. A second request is queued
 rather than rejected.
+
+``quota`` is the application's one allocation entry. A stage takes its attempts
+from a pool built here for the task, so nothing can spend outside the ledger and
+a task's own pools stay separate from every other task's.
 """
 import asyncio
 import time
@@ -49,8 +53,8 @@ def business_status_for(quality: str) -> str:
 
 
 class CheckupManager:
-    def __init__(self, settings, registry, store: CheckupStore):
-        self.settings, self.registry, self.store = settings, registry, store
+    def __init__(self, settings, registry, store: CheckupStore, quota):
+        self.settings, self.registry, self.store, self.quota = settings, registry, store, quota
         self.tokens: dict[str, CancelToken] = {}
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.worker: asyncio.Task | None = None

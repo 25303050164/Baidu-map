@@ -70,6 +70,7 @@ def make_app(tmp_path, **overrides):
     settings = Settings(
         _env_file=None, baidu_map_ak="", analysis_provider="synthetic",
         checkup_dir=tmp_path / "checkups", hybrid_ledger_dir=tmp_path / "ledgers",
+        quota_ledger_path=tmp_path / "quota.sqlite3",
         hybrid_obstacle_path=Path("missing-checkup-obstacles"),
         hybrid_risk_path=Path("missing-checkup-risks"), **overrides)
     app = create_app(settings, provider_factory=analytic,
@@ -311,6 +312,24 @@ def test_capabilities_report_both_engines_and_the_fixed_distance_rule(tmp_path):
         assert document["budgets"]["poiRequests"] == 60
         assert document["budgets"]["routeRequests"] == 120
         assert document["coverage"]["queryPaddingM"] == 1300
+
+
+def test_capabilities_report_the_application_budget_never_the_account_balance(tmp_path):
+    app = make_app(tmp_path)
+    with TestClient(app) as client:
+        quota = client.get("/api/v2/capabilities").json()["quota"]
+        assert quota["tier"] == "current" and quota["matrixEnabled"] is False
+        # The two services are separate pools, and only place has a day budget.
+        assert quota["services"]["direction"] == {
+            "qps": 16, "maxInflight": 1, "dailyBudget": None,
+            "spentToday": None, "remainingToday": None}
+        assert quota["services"]["place"] == {
+            "qps": 8, "maxInflight": 1, "dailyBudget": 1600,
+            "spentToday": 0, "remainingToday": 1600}
+        # Nothing may present this as the account's own remaining allowance.
+        assert quota["claimsAccountBalance"] is False
+        assert "本应用预算余额" in quota["label"]
+        assert app.state.quota is app.state.checkups.quota
 
 
 def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):

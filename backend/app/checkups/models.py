@@ -157,6 +157,8 @@ class CheckupCapabilities(CheckupModel):
     data_versions: dict
     coverage: dict
     budgets: dict
+    # The application's own remaining allowance, never the account's.
+    quota: dict
 
 
 def new_trace(*, isochrone_hash: str, result_hash: str, data_versions: dict,

@@ -11,13 +11,17 @@ __all__ = ["CheckupError", "CheckupManager", "CheckupStore", "CheckupRequest", "
            "SCHEMA_VERSION", "RULE_VERSION"]
 
 
-def build_checkups(settings, gate, offline, *, provider_factory=None,
+def build_checkups(settings, gate, offline, *, quota, provider_factory=None,
                    hybrid_provider_factory=None):
-    """Open the durable store and register both engines for the given settings."""
+    """Open the durable store and register both engines for the given settings.
+
+    ``quota`` is injected rather than built here: one allocation entry is shared
+    by every stage of the application, so it outlives this manager.
+    """
     from ..engines import build_registry
 
     store = CheckupStore(settings.checkup_dir)
     store.initialize()
     registry = build_registry(settings, gate, offline, provider_factory=provider_factory,
                               hybrid_provider_factory=hybrid_provider_factory)
-    return CheckupManager(settings, registry, store)
+    return CheckupManager(settings, registry, store, quota)
