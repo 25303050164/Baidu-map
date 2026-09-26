@@ -186,6 +186,24 @@ describe('evidence notes', () => {
     expect(limits).toHaveLength(1);
   });
 
+  it('gives every line its own key even when several share a code', () => {
+    // 一次 OSM 体检会带回五条 ALGORITHM_WARNING。它们说的不是同一件事，所以去重只能按
+    // 句子去重；而 key 撞在一起会让 React 丢一条 —— 这一段的意义正是"一条不少"。
+    const notes = evidenceNotes(snapshot({ warnings: [
+      { code: 'ALGORITHM_WARNING', severity: 'warning', scope: 'isochrone',
+        message: 'budget_exhausted' },
+      { code: 'ALGORITHM_WARNING', severity: 'warning', scope: 'isochrone',
+        message: 'hard_obstacle_water_lines_unresolved' },
+      { code: 'FACILITY_WARNING', severity: 'warning', scope: 'facilities',
+        message: 'outside_boundary_records' },
+    ] }));
+    const keys = notes.map(note => note.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    const text = notes.map(note => note.text).join('\n');
+    expect(text).toContain('budget_exhausted');
+    expect(text).toContain('hard_obstacle_water_lines_unresolved');
+  });
+
   it('keeps the caveats that apply when a stage did not run', () => {
     const notes = evidenceNotes(notAssessed());
     const text = notes.map(note => note.text).join('\n');

@@ -215,7 +215,9 @@ export function CheckupReport({ snapshot, stale }: { snapshot: CheckupSnapshot; 
     <ul className="checkup-notes">{notes.map(note => <li key={note.key}
       className={note.level === 'warning' ? 'checkup-note-warning' : undefined}>{note.text}</li>)}</ul>
     {snapshot.warnings.length > 0 && <details><summary>算法质量标记（{snapshot.warnings.length} 条）</summary>
-      <ul className="checkup-notes">{snapshot.warnings.map(warning => <li key={warning.code}>
+      {/* 这些标记往往共用同一个 code（一次 OSM 体检有五条 ALGORITHM_WARNING），只用 code
+          当 key 会让 React 认不出孩子，而这一块的意义就是"一条不少"，所以按位置认。 */}
+      <ul className="checkup-notes">{snapshot.warnings.map((warning, index) => <li key={index}>
         [{warning.severity}] {warning.code}：{warning.message}（{warning.scope}）</li>)}</ul>
     </details>}
     <details><summary>查看机器可读修订</summary><pre>{JSON.stringify(snapshot, null, 2)}</pre></details>

@@ -186,7 +186,9 @@ for (const [engine, { label, version }] of Object.entries(ENGINES)) {
     const coverage = await page.locator('[data-testid^="coverage-"]').first().innerText();
     expect(coverage).toMatch(/最低覆盖率[\s\S]*?C \/ A = \d+(\.\d+)?%/);
     expect(coverage).toMatch(/最高覆盖率[\s\S]*?\(C \+ U\) \/ A = \d+(\.\d+)?%/);
-    expect(coverage, '覆盖面积要带单位写出来').toMatch(/已覆盖 \/ 缺口 \/ 未知[\s\S]*?(m²|km²)/);
+    // 单位是界面自己定的（一万平方米以上改用公顷），所以这里断的是"带了单位"，
+    // 不是"带了某一个单位"。
+    expect(coverage, '覆盖面积要带单位写出来').toMatch(/已覆盖 \/ 缺口 \/ 未知[\s\S]*?(公顷|m²)/);
 
     await page.screenshot({ path: resolve(dir, 'report-top.png') });
     await page.keyboard.press('Escape');

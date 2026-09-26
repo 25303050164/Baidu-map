@@ -331,7 +331,11 @@ export function evidenceNotes(snapshot: CheckupSnapshot): Note[] {
   const notes: Note[] = [];
   const push = (key: string, level: Note['level'], text: string) => {
     if (!text || notes.some(note => note.text === text)) return;
-    notes.push({ key, level, text });
+    // key 只用来给 React 认孩子，但一批提示可能共用同一个 code —— 一次 OSM 体检就有五条
+    // ALGORITHM_WARNING，它们说的不是同一件事。重复的 key 会让 React 丢一条或重复一条，
+    // 而这一段的意义正是"一条不少"，所以重名时补一个序号。
+    const unique = notes.some(note => note.key === key) ? `${key}#${notes.length}` : key;
+    notes.push({ key: unique, level, text });
   };
   const report = snapshot.report;
   push('rule', 'info', `判据：${snapshot.rules.metric === 'walking_route' ? '步行路线距离'
