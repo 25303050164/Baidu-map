@@ -252,7 +252,9 @@ export default function CheckupApp() {
               { key: 'revision', label: '当前修订', children: `第 ${task.revision} 版` },
               { key: 'status', label: '状态', children: task.status +
                 (task.businessStatus ? `（${BUSINESS_LABELS[task.businessStatus] ?? task.businessStatus}）` : '') },
-              { key: 'spend', label: '本任务已用', children: `${task.networkRequests} 次网络尝试 / 预算 ${task.budget}` },
+              { key: 'spend', label: '本任务已用', children:
+                `${task.networkRequests} 次网络尝试（等时圈、设施与核验各池合计）` },
+              { key: 'tier', label: '等时圈档位', children: `${task.budget} 次上限` },
               { key: 'elapsed', label: '已用时', children: `${task.elapsedSeconds.toFixed(1)} 秒` },
             ]} />
           </>}
