@@ -1,0 +1,38 @@
+/* v2 体检报告的样式。沿用 api.css 的配色与紧凑写法，只补报告本身需要的排布。 */
+.checkup-report{color:#233b48;font-size:13px;line-height:1.8}
+.checkup-report h1{font-size:20px;margin:6px 0 14px}
+.checkup-report h2{font-size:15px;margin:22px 0 10px;padding-top:14px;border-top:1px solid #e7eded}
+.checkup-eyebrow{font-size:11px;letter-spacing:1px;color:#147d70;font-weight:600}
+.checkup-muted{font-size:12px;color:#687b85;margin:8px 0}
+.checkup-report .ant-alert{margin:10px 0}
+.checkup-report pre{max-width:100%;max-height:240px;overflow:auto;background:#f3f6f6;padding:10px;font-size:11px}
+.checkup-report summary{cursor:pointer;font-size:12px;color:#537279}
+.checkup-facts{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:12px 0;font-size:12px}
+.checkup-facts dt{color:#687b85;white-space:nowrap}
+.checkup-facts dd{margin:0;overflow-wrap:anywhere}
+.checkup-interval{font-size:15px;margin:6px 0}
+.checkup-interval b{font-size:26px;color:#147d70;font-variant-numeric:tabular-nums}
+.checkup-overall b{font-size:34px}
+.checkup-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.checkup-card{border:1px solid #e2eaea;border-radius:10px;padding:10px 12px;background:#fff;min-width:0}
+.checkup-card header{display:flex;align-items:center;gap:6px}
+.checkup-card header strong{font-size:14px}
+.checkup-dot{display:inline-block;width:10px;height:10px;border-radius:50%}
+.checkup-card .checkup-facts{gap:2px 8px}
+.checkup-charts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:center}
+.checkup-zones{list-style:none;padding:0;margin:10px 0;display:flex;flex-direction:column;gap:10px}
+.checkup-zones li{border-left:3px solid #6b7280;padding:8px 12px;background:#fafbfb;border-radius:0 8px 8px 0}
+.checkup-zones header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.checkup-zone-area{color:#147d70;font-weight:600}
+.checkup-zones p{margin:6px 0 0;font-size:12px}
+.checkup-notes{margin:8px 0;padding-left:18px;font-size:12px;color:#5b6f78}
+.checkup-notes li{margin:4px 0}
+.checkup-note-warning{color:#a8551a}
+/* 工作台里的进度与图层说明：阶段不是进度条，所以只区分"到过没到过"。 */
+.checkup-stages{list-style:none;display:flex;flex-wrap:wrap;gap:4px 10px;padding:0;margin:6px 0 12px}
+.checkup-stages li{display:flex;align-items:center;gap:5px;font-size:12px;color:#9aa9b0}
+.checkup-stages li[data-reached="yes"]{color:#147d70;font-weight:600}
+.checkup-stage-index{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#eef3f3;font-size:10px}
+.checkup-stages li[data-reached="yes"] .checkup-stage-index{background:#147d70;color:#fff}
+.checkup-layer-note{margin:2px 0 8px 24px}
+@media(max-width:760px){.checkup-charts{grid-template-columns:minmax(0,1fr)}}

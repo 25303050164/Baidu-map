@@ -1,0 +1,164 @@
+/**
+ * 校验层测的是"它拒绝了什么"，不是"它接受什么"。
+ *
+ * 接受的用例只有一条（夹具本身），其余每一条都构造一种**自相矛盾**，然后要求校验层
+ * 当场拒绝。理由：这些校验存在的唯一目的就是不让不自洽的文档上屏，如果只测合法输入
+ * 通过，把它们全删掉测试照样绿。
+ */
+import { describe, expect, it } from 'vitest';
+import { areaTolerance, readLayerGeometry, validFacilityRoute, validLayer, validSnapshot,
+  validTaskView } from './validate';
+import { AREA, collection, feature, layer, point, report, route, snapshot, task, zone } from './fixtures';
+
+describe('task view', () => {
+  it('accepts the fixture and a queued task with no stage yet', () => {
+    expect(validTaskView(task())).toBe(true);
+    expect(validTaskView(task({ status: 'queued', stage: null }))).toBe(true);
+  });
+
+  it('refuses a failed task that will not say why', () => {
+    // "failed" 加上空的 error 只告诉人"出事了"，不告诉人下一步做什么。
+    expect(validTaskView(task({ status: 'failed', error: null }))).toBe(false);
+    expect(validTaskView(task({ status: 'failed', error: '步行服务未配置' }))).toBe(true);
+  });
+
+  it('refuses a stage the pipeline never publishes', () => {
+    expect(validTaskView({ ...task(), stage: 'scoring' })).toBe(false);
+    expect(validTaskView({ ...task(), revision: -1 })).toBe(false);
+  });
+});
+
+describe('snapshot', () => {
+  it('accepts the fixture', () => {
+    expect(validSnapshot(snapshot())).toBe(true);
+  });
+
+  it('refuses revision zero', () => {
+    // 修订从 1 起：0 只可能是"没读到"被默认成的数。
+    expect(validSnapshot({ ...snapshot(), revision: 0 })).toBe(false);
+  });
+
+  it('refuses grey zones and scores from a failed accessibility assessment', () => {
+    const failed = snapshot({ accessibilityStatus: 'failed',
+      accessibility: { ...snapshot().accessibility!, status: 'failed' } });
+    expect(validSnapshot(failed)).toBe(false);
+    // 同一份文档把灰区与分数拿掉，就是可信的："这次没算出来"是可以说出口的结论。
+    expect(validSnapshot({ ...failed, serviceGaps: null, scores: null, report: null })).toBe(true);
+  });
+
+  it('refuses a zone that would render without anything to act on', () => {
+    const bad = snapshot({ serviceGaps: { ...snapshot().serviceGaps!, zones: [zone({ suggestion: '' })] } });
+    expect(validSnapshot(bad)).toBe(false);
+  });
+
+  it('refuses a grey zone whose area is not a number', () => {
+    const bad = snapshot({ serviceGaps: { ...snapshot().serviceGaps!, zones: [zone({ areaM2: NaN })] } });
+    expect(validSnapshot(bad)).toBe(false);
+  });
+});
+
+describe('report', () => {
+  it('refuses a supported row whose C + G + U misses the assessment domain', () => {
+    // §11.3：三类面积必须与评估域相符。对不上，说明分母被动过，百分比就不该被渲染。
+    const broken = snapshot({ report: report({ categories: [
+      { ...report().categories[0], unknownM2: AREA * 0.4 + 1.5 }] }) });
+    expect(validSnapshot(broken)).toBe(false);
+    // 容差之内（max(1 m², A×10⁻⁶) = 1 m²）是允许的：面积是按几何算的，不是按整数拼的。
+    const rounded = snapshot({ report: report({ categories: [
+      { ...report().categories[0], unknownM2: AREA * 0.4 + 0.5 }] }) });
+    expect(validSnapshot(rounded)).toBe(true);
+  });
+
+  it('measures that tolerance the way the plan does', () => {
+    expect(areaTolerance(AREA)).toBe(1);
+    expect(areaTolerance(50_000_000)).toBe(50);
+  });
+
+  it('refuses a report that claims verification the snapshot says never ran', () => {
+    const none = { status: 'not_integrated' as const, provider: null, checked: 0, failed: 0,
+      unresolved: 0, facilities: [], conflicts: [], queries: {}, reason: '未接入核验服务', notes: [] };
+    const honest = snapshot({ verification: none,
+      report: report({ verification: { ...report().verification, available: false,
+        status: 'not_integrated', provider: null, reason: '未接入核验服务' } }) });
+    expect(validSnapshot(honest)).toBe(true);
+    // "没有核验"被写成"核验可用"，读者会理解成"核验过、没问题" —— 这一条必须拦住。
+    const lying = snapshot({ verification: none,
+      report: report({ verification: { ...report().verification, available: true,
+        status: 'not_integrated' } }) });
+    expect(validSnapshot(lying)).toBe(false);
+  });
+
+  it('refuses a report with no limitations', () => {
+    expect(validSnapshot(snapshot({ report: report({ limitations: [] }) }))).toBe(false);
+  });
+});
+
+describe('layer', () => {
+  it('refuses a layer that is not the one requested', () => {
+    expect(validLayer(layer(), 'service_gaps')).toBe(true);
+    expect(validLayer(layer(), 'heatmap')).toBe(false);
+    expect(validLayer(layer({ revision: 0 }), 'service_gaps')).toBe(false);
+    expect(validLayer(layer({ resultHash: '' }), 'service_gaps')).toBe(false);
+  });
+
+  it('accepts a layer with no geometry, because "this time nothing" is a real answer', () => {
+    expect(validLayer(layer({ geometry: null, displayGeometry: null }), 'service_gaps')).toBe(true);
+    // 半张形状则不是：坐标缺失的环会画成一条穿过整个城市的线。
+    expect(validLayer(layer({ geometry: { type: 'Polygon', coordinates: [[[1, 2], [3, 4]]] } }),
+      'service_gaps')).toBe(false);
+  });
+
+  it('accepts the feature collection five of the seven layers actually return', () => {
+    // 后端只有等时圈这一层给单个面；设施、覆盖、灰区、热力、核验给的都是要素集合。
+    // 只认面的校验会把图上最要紧的五层整层丢掉。
+    const facilities = layer({ layerId: 'facilities', displayGeometry: null,
+      geometry: collection([feature(point(116.4, 39.9), { id: 'f-1', majorCategory: 'medical' })]) });
+    expect(validLayer(facilities, 'facilities')).toBe(true);
+    expect(readLayerGeometry(facilities)).toMatchObject({
+      kind: 'collection', features: [{ type: 'Feature' }], properties: {} });
+  });
+
+  it('refuses a collection with one broken feature rather than drawing the rest', () => {
+    // 静默跳过坏要素的表现是"地图上少一个设施"，而报告里的设施数是不会少的。
+    expect(validLayer(layer({ geometry: collection([feature(point(116.4, 39.9)),
+      { type: 'Feature', properties: {} } ]) }), 'service_gaps')).toBe(false);
+    expect(validLayer(layer({ geometry: { type: 'FeatureCollection', features: 'all' } }),
+      'service_gaps')).toBe(false);
+  });
+
+  it('refuses a shape it does not recognise instead of drawing it', () => {
+    expect(validLayer(layer({ geometry: { cells: ['0:1:2'], area: 12 } }), 'service_gaps')).toBe(false);
+    expect(validLayer(layer({ geometry: { type: 'Point', coordinates: [116.4, 39.9] } }),
+      'service_gaps')).toBe(false);
+  });
+
+  it('reads the three layer forms apart, including the document-only report layer', () => {
+    expect(readLayerGeometry(layer())?.kind).toBe('polygon');
+    expect(readLayerGeometry(layer({ layerId: 'report', geometry: null, displayGeometry: null,
+      document: { reportId: 'task-1:5' } })))
+      .toMatchObject({ kind: 'document' });
+    // 没有形状也没有文档：合法状态（等时圈失败），但绝不能读成一个空集合了事。
+    expect(readLayerGeometry(layer({ geometry: null, displayGeometry: null, document: null })))
+      .toEqual({ kind: 'none' });
+  });
+});
+
+describe('facility route', () => {
+  it('accepts the fixture', () => {
+    expect(validFacilityRoute(route())).toBe(true);
+  });
+
+  it('refuses a verdict that comes without the distance it was made from', () => {
+    // 判定与距离同进同出：只有判定没有距离，读者无法复核；只有距离没有判定，界面
+    // 就得到处自己判 1000 米 —— 判据必须只有一处。
+    expect(validFacilityRoute(route({ routeDistanceM: null }))).toBe(false);
+    expect(validFacilityRoute(route({ withinRule: null, routeDistanceM: null,
+      durationS: null, observedDurationS: null }))).toBe(true);
+  });
+
+  it('refuses a route that is neither verified nor modelled', () => {
+    expect(validFacilityRoute(route({ evidenceGrade: 'assumed' as never }))).toBe(false);
+    expect(validFacilityRoute(route({ poiStatus: 'unknown' as never }))).toBe(false);
+    expect(validFacilityRoute(route({ durationS: Infinity }))).toBe(false);
+  });
+});

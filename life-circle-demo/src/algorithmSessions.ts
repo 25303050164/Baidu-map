@@ -20,11 +20,13 @@ const baiduDefaults: BaiduSession = {
   center: { lng: 116.404, lat: 39.915 }, lng: 116.404, lat: 39.915, budget: 400,
   group: 'all', selected: null, showFacilities: true, showAssessments: true, route: null,
   dirty: false, reportOpen: false,
-  layers: { reachable: true, unreachable: true, unknown: true, uncertain: true, extent: false, serviceBlind: true },
+  layers: { reachable: true, unreachable: true, unknown: true, uncertain: true, extent: false, serviceBlind: true,
+    heatmap: true },
 };
 const hybridDefaults: HybridSession = {
   center: { lng: 121.513925, lat: 31.313079 }, lng: 121.513925, lat: 31.313079, budget: 400, dirty: false,
-  layers: { reachable: true, unreachable: false, unknown: false, uncertain: false, extent: false, serviceBlind: false },
+  layers: { reachable: true, unreachable: false, unknown: false, uncertain: false, extent: false, serviceBlind: false,
+    heatmap: false },
 };
 
 let baiduSession: BaiduSession = baiduDefaults;

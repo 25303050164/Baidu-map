@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Card, Checkbox, Drawer, InputNumber, Select, Space, Tag } from 'antd';
 import type { Center } from '../types';
 import { createApiService } from './service';
@@ -9,6 +9,7 @@ import { ApiMap, type Layers } from './ApiMap';
 import { LocationControls } from './LocationControls';
 import { geometryMessage } from './geometry';
 import { analysisAvailability, withFacilityRoute } from './adapter';
+import { heatNoticeFor, heatPointsOf, undeterminedInCircleOf } from './heat';
 import { AnalysisReport } from './AnalysisReport';
 import { AnalysisProgress } from './AnalysisProgress';
 import './api.css';
@@ -68,6 +69,19 @@ export default function ApiApp() {
       route, lastResult, dirty, reportOpen, layers });
   }, [center, lng, lat, budget, group, selected, showFacilities, showAssessments, route, lastResult, dirty, reportOpen, layers]);
   const displayedResult = lastResult;
+  // 传给地图的这几组数据必须按内容保持身份稳定：每次渲染都新建数组会让图层误以为
+  // 数据变了，从而在整个地图上重建覆盖物（标记顺序、选中态、用户视角都会被重置）。
+  const mapFacilities = useMemo(() =>
+    !showFacilities ? [] : (displayedResult?.data.facilities ?? []).filter(f => group === 'all' || f.major_category === group),
+  [showFacilities, displayedResult, group]);
+  const mapHeatPoints = useMemo(() => heatPointsOf(displayedResult?.data.facilities, group), [displayedResult, group]);
+  const mapHeatUndetermined = useMemo(() => undeterminedInCircleOf(displayedResult?.data.facilities, group), [displayedResult, group]);
+  const mapAssessments = useMemo(() => !showAssessments ? [] : (displayedResult?.facilityAnalysis?.assessments ?? [])
+    .map(p => ({ ...p, categories: p.categories.filter(c => group === 'all' || c.category === group) })),
+  [showAssessments, displayedResult, group]);
+  const mapRoute = useMemo(() => route && route.taskId === displayedResult?.taskId ? route.points : [],
+  [route, displayedResult]);
+  const emptyBlindRegions = useMemo(() => ({}), []);
   const unavailable = !!state.result && analysisAvailability(state.result) === 'unavailable';
   const lastAttemptFailed = state.phase === 'error' || unavailable;
   const busy = isAnalysisBusy(state);
@@ -102,7 +116,7 @@ export default function ApiApp() {
           <Space wrap><Button aria-label="开始分析" type="primary" onClick={analyze} disabled={!valid || busy} loading={busy}>开始分析</Button>
             {(busy || (state.phase === 'error' && state.task)) && <Button onClick={() => void controller.current?.cancel()} disabled={state.phase === 'cancelling'}>取消任务</Button>}</Space>
         </Card>
-        <Card title="地图图层"><div className="api-layer-list">{([['reachable', '可达区域'], ['unreachable', '已知不可达区域'], ['unknown', '未核验区域（灰色）'], ['serviceBlind', '设施服务盲区（灰色）'], ['uncertain', '不确定区域'], ['extent', '计算范围']] as const).map(([key, label]) => <Checkbox key={key} checked={layers[key]} onChange={event => setLayers({ ...layers, [key]: event.target.checked })}><i className={`api-swatch ${key}`} />{label}</Checkbox>)}</div></Card>
+        <Card title="地图图层"><div className="api-layer-list">{([['reachable', '可达区域'], ['unreachable', '已知不可达区域'], ['unknown', '未核验区域（灰色）'], ['serviceBlind', '设施服务盲区（灰色）'], ['uncertain', '不确定区域'], ['extent', '计算范围'], ['heatmap', '设施密度热力（真实 POI）']] as const).map(([key, label]) => <Checkbox key={key} checked={layers[key]} onChange={event => setLayers({ ...layers, [key]: event.target.checked })}><i className={`api-swatch ${key}`} />{label}</Checkbox>)}</div></Card>
         <label className="api-label">步行时间层<Select aria-label="步行时间层" value={minutes} onChange={setMinutes} options={[15].map(value=>({value,label:`${value} 分钟`}))}/></label>
         <Checkbox checked={showFacilities} onChange={e=>setShowFacilities(e.target.checked)}>设施标记</Checkbox>
         <Checkbox checked={showAssessments} onChange={e=>setShowAssessments(e.target.checked)}>点位三态</Checkbox>
@@ -117,12 +131,15 @@ export default function ApiApp() {
           layers={layers}
           onPick={choose}
           minutes={minutes}
-          facilities={showFacilities ? (displayedResult?.data.facilities ?? []).filter(f => group === 'all' || f.major_category === group) : []}
-          assessments={showAssessments ? (displayedResult?.facilityAnalysis?.assessments ?? []).map(p => ({ ...p, categories: p.categories.filter(c => group === 'all' || c.category === group) })) : []}
-          blindRegions={displayedResult?.facilityAnalysis?.serviceBlindRegions ?? {}}
+          facilities={mapFacilities}
+          heatPoints={mapHeatPoints}
+          heatNotice={heatNoticeFor(displayedResult?.facilityAnalysis)}
+          heatUndetermined={mapHeatUndetermined}
+          assessments={mapAssessments}
+          blindRegions={displayedResult?.facilityAnalysis?.serviceBlindRegions ?? emptyBlindRegions}
           selected={selected}
           onFacility={id => { setSelected(id); setRoute(null); }}
-          route={route && route.taskId === displayedResult?.taskId ? route.points : []}
+          route={mapRoute}
         />
       </section>
       <section className="api-results" aria-label="分析结果"><Card title="分析结果">

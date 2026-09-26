@@ -1,0 +1,284 @@
+/**
+ * 运行时校验 v2 体检响应。
+ *
+ * 生成出来的 `contract.ts` 只在编译期存在：`fetch` 返回的是 `unknown`，把它断言成
+ * `CheckupSnapshot` 只是把"没检查"写成了"已检查"。这一层是唯一真正读字段的地方，
+ * 所以任何"这个响应能不能拿来渲染"的判断都放在这里。
+ *
+ * 校验只做一件事：**拒绝不自洽的文档，绝不补全或修正它**。几个不自洽是必须当场拦住的：
+ *
+ * - 修订号与所请求的那一版不符 —— 渲染旧修订会让人以为在看新结论；
+ * - `accessibility.status === 'failed'` 却带着灰区或分数 —— 失败的评估不可能产出它们；
+ * - 核验是 `not_integrated` 却在报告里写着 `available: true` —— "没有核验"会被读成
+ *   "核验过、没发现问题"；
+ * - 有空间支持的类别 `C + G + U` 与评估域 A 对不上 —— §11.3 的验收门槛，也是"分数被
+ *   人工抬过"最容易留下的痕迹。
+ *
+ * 它不推导任何结论：设施是否可达、面积属于哪一态，都由后端说，这里只核对它说清了没有。
+ */
+import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityRoute, Origin,
+  ReportEvidence, ServiceZone } from './contract';
+
+type RecordValue = Record<string, unknown>;
+const object = (value: unknown): value is RecordValue =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+// 这三个都要写成显式的类型谓词：箭头函数的返回值不会被推导成 `x is T`，推理成
+// `boolean` 之后 `if (!count(x) || x < 1)` 里的 `x` 还是 `unknown`，编译期就少了一层保护。
+const count = (value: unknown): value is number =>
+  finite(value) && Number.isInteger(value) && value >= 0;
+const text = (value: unknown): value is string => typeof value === 'string';
+const nullableText = (value: unknown) => value === null || text(value);
+const nullableNumber = (value: unknown) => value === null || finite(value);
+const oneOf = <T extends string>(value: unknown, allowed: readonly T[]): value is T =>
+  typeof value === 'string' && (allowed as readonly string[]).includes(value);
+
+export const TASK_STATUSES = ['queued', 'running', 'cancelling', 'completed', 'failed', 'cancelled'] as const;
+export const STAGES = ['isochrone', 'poi', 'accessibility', 'verification', 'reporting', 'ready'] as const;
+export const LAYER_IDS = ['isochrone', 'facilities', 'accessibility', 'service_gaps', 'heatmap',
+  'verification', 'report'] as const;
+const BUSINESS = ['complete', 'partial', 'insufficient'] as const;
+const EVIDENCE_STATUS = ['not_integrated', 'complete', 'partial', 'failed'] as const;
+
+export type Stage = typeof STAGES[number];
+export type LayerId = typeof LAYER_IDS[number];
+
+function point(value: unknown): value is Origin {
+  return object(value) && finite(value.lng) && finite(value.lat)
+    && value.lng >= -180 && value.lng <= 180 && value.lat > -85 && value.lat < 85;
+}
+
+/** GeoJSON 面或非空：环至少四个点才闭合得起来，半张形状不能画。 */
+function polygon(value: unknown): boolean {
+  if (value === null) return true;
+  if (!object(value) || !['Polygon', 'MultiPolygon'].includes(value.type as string)) return false;
+  const rings = value.type === 'MultiPolygon' ? value.coordinates : [value.coordinates];
+  return Array.isArray(rings) && rings.length > 0 && rings.every(ringSet =>
+    Array.isArray(ringSet) && ringSet.length > 0 && ringSet.every(ring =>
+      Array.isArray(ring) && ring.length >= 4 && ring.every(position =>
+        Array.isArray(position) && position.length >= 2 && finite(position[0]) && finite(position[1]))));
+}
+
+function pointGeometry(value: unknown): boolean {
+  return object(value) && value.type === 'Point' && Array.isArray(value.coordinates)
+    && value.coordinates.length >= 2 && finite(value.coordinates[0]) && finite(value.coordinates[1]);
+}
+
+/** GeoJSON 面或空：灰区与评估域都必须是面，`null` 表示"这一层这次没有形状"。 */
+function geometry(value: unknown): boolean {
+  return polygon(value);
+}
+
+/**
+ * 图层几何的三种形态。后端按组返回不同形态，客户端必须能分辨，否则设施、覆盖、灰区、
+ * 热力、核验这五层会被当成"结构异常"整层丢掉 —— 而那正好是体检图上最要紧的五层。
+ *
+ * - `polygon`：等时圈这一层给的是单个面；
+ * - `collection`：其余各层给的是要素集合（设施是点，灰区是面）；
+ * - `document`：报告这一层没有形状，只有一份文档。
+ *
+ * "没有形状"与"空集合"都画不出东西，但含义不同，所以这里保留 `kind` 让调用方自己说。
+ */
+export type LayerGeometry =
+  | { kind: 'polygon'; geometry: RecordValue }
+  | { kind: 'collection'; features: RecordValue[]; properties: RecordValue }
+  | { kind: 'document'; document: RecordValue }
+  | { kind: 'none' };
+
+/**
+ * 校验与读取是同一步：能读出来的形状，一定已经过了校验；读不出来的一律返回 `null`，
+ * 由调用方拒绝整层。**绝不部分接受** —— 一条缺了几何的要素被静默跳过，表现就是地图上
+ * 少一个设施，而那正是体检报告最不能出的错。
+ */
+export function readLayerGeometry(layer: CheckupLayer): LayerGeometry | null {
+  const value = layer.geometry;
+  if (object(value) && value.type === 'FeatureCollection') {
+    if (!Array.isArray(value.features)) return null;
+    if (!value.features.every(feature => object(feature) && feature.type === 'Feature'
+      && (pointGeometry(feature.geometry) || polygon(feature.geometry))
+      && (feature.properties === undefined || object(feature.properties)))) return null;
+    return { kind: 'collection', features: value.features as RecordValue[],
+      properties: object(value.properties) ? value.properties : {} };
+  }
+  if (object(value) && (value.type === 'Polygon' || value.type === 'MultiPolygon')) {
+    return polygon(value) ? { kind: 'polygon', geometry: value } : null;
+  }
+  // 认不出来的形状一律拒绝：一个既不是面也不是要素集合的字典画到图上，是凭空多出来的东西。
+  if (object(value)) return null;
+  if (object(layer.document)) return { kind: 'document', document: layer.document };
+  // 既没有形状也没有文档：这是"这一层这次没有内容"（等时圈失败时就是这样），不是错误。
+  return { kind: 'none' };
+}
+
+export function validTaskView(value: unknown): value is CheckupTaskView {
+  return object(value) && text(value.taskId) && value.taskId.length > 0
+    && text(value.clientRequestId) && text(value.engine) && value.engine.length > 0
+    && oneOf(value.status, TASK_STATUSES)
+    && (value.businessStatus === null || oneOf(value.businessStatus, BUSINESS))
+    // 排队中的任务还没有阶段，终态之后也不再有：null 是"还没有"，不是缺失。
+    && (value.stage === null || oneOf(value.stage, STAGES))
+    && count(value.revision) && count(value.budget) && count(value.requests)
+    && count(value.networkRequests) && finite(value.elapsedSeconds) && value.elapsedSeconds >= 0
+    && finite(value.createdAt) && value.createdAt > 0
+    && typeof value.cancelRequested === 'boolean'
+    && nullableText(value.error)
+    // 失败必须有话说：一个只说 "failed" 的任务视图没法告诉人下一步该做什么。
+    && (value.status !== 'failed' || text(value.error));
+}
+
+function validZone(value: unknown): value is ServiceZone {
+  return object(value) && text(value.id) && value.id.length > 0
+    && count(value.index) && Array.isArray(value.categories) && value.categories.every(text)
+    && text(value.kind) && finite(value.areaM2) && value.areaM2 >= 0 && count(value.parts)
+    && Array.isArray(value.cellIds) && value.cellIds.every(text)
+    && typeof value.labelVisible === 'boolean' && typeof value.suspected === 'boolean'
+    && text(value.evidenceGrade) && text(value.queryStatus)
+    && nullableText(value.nearestFacility) && nullableText(value.reason)
+    && text(value.suggestion) && value.suggestion.length > 0
+    && geometry(value.geometry) && value.geometrySystem === 'metric'
+    && geometry(value.displayGeometry);
+}
+
+/** §11.3 的容差：`max(1 m², A×10⁻⁶)`。三类面积与评估域必须在它之内相符。 */
+export function areaTolerance(domainAreaM2: number): number {
+  return Math.max(1, Math.abs(domainAreaM2) * 1e-6);
+}
+
+function validReport(value: unknown): value is ReportEvidence {
+  if (!object(value) || !text(value.reportId) || !finite(value.generatedAt)
+    || !Array.isArray(value.categories) || !object(value.evidence)
+    // 限制说明不能是空的：报告里每个数都是模型推出来的，一份"没有任何限制"的报告会被
+    // 读成"这些结论就是事实"，而后端冻结的那一份从来不是空的（`LIMITATIONS`）。
+    || !Array.isArray(value.limitations) || value.limitations.length === 0
+    || !value.limitations.every(text) || !object(value.gaps) || !object(value.verification)) return false;
+  const domain = value.domainAreaM2;
+  if (domain !== null && !finite(domain)) return false;
+  for (const row of value.categories) {
+    if (!object(row) || !text(row.category) || !text(row.evidenceGrade)) return false;
+    for (const key of ['coveredM2', 'gapM2', 'unknownM2', 'coverageLowerPct', 'coverageUpperPct',
+      'assessablePct', 'unknownPct', 'intervalWidthPct'])
+      if (!nullableNumber(row[key])) return false;
+    if (row.supported === true && domain !== null) {
+      const areas = [row.coveredM2, row.gapM2, row.unknownM2];
+      if (!areas.every(finite)) return false;
+      // C + G + U = A。对不上就不渲染：一个和评估域对不上的面积三元组，任何百分比都
+      // 可能是从被改过的分母里算出来的。
+      const total = (areas[0] as number) + (areas[1] as number) + (areas[2] as number);
+      if (Math.abs(total - (domain as number)) > areaTolerance(domain as number)) return false;
+    }
+  }
+  if (!Array.isArray(value.gaps.zones) || !value.gaps.zones.every(validZone)) return false;
+  if (typeof value.gaps.obstacleLayerAvailable !== 'boolean') return false;
+  if (typeof value.verification.available !== 'boolean' || !text(value.verification.status)) return false;
+  // 没有核验服务却报"核验可用"是这一层最需要拦住的一种自相矛盾。
+  if (value.verification.status === 'not_integrated' && value.verification.available !== false) return false;
+  if (value.verification.available === true && value.verification.status === 'not_integrated') return false;
+  if (!Array.isArray(value.verification.facilities)) return false;
+  return true;
+}
+
+function validVerification(value: unknown): boolean {
+  return object(value) && oneOf(value.status, EVIDENCE_STATUS) && nullableText(value.reason)
+    && count(value.checked) && count(value.failed) && count(value.unresolved)
+    && Array.isArray(value.facilities) && Array.isArray(value.conflicts)
+    && object(value.queries) && Array.isArray(value.notes) && value.notes.every(text);
+}
+
+export function validSnapshot(value: unknown): value is CheckupSnapshot {
+  if (!object(value) || value.schemaVersion !== 'checkup-v1' || !text(value.taskId)) return false;
+  const revision = value.revision;
+  if (!count(revision) || revision < 1 || !finite(value.generatedAt)
+    || !point(value.center) || value.coordinateSystem !== 'bd09ll'
+    || !oneOf(value.stage, STAGES) || !oneOf(value.businessStatus, BUSINESS)
+    || !object(value.engine) || !object(value.isochrone) || !object(value.rules)
+    || !object(value.scope) || !object(value.trace) || !text(value.trace.resultHash)
+    || !oneOf(value.facilitiesStatus, EVIDENCE_STATUS) || !Array.isArray(value.warnings)) return false;
+  const accessibility = value.accessibility;
+  if (accessibility !== null) {
+    if (!object(accessibility) || !oneOf(accessibility.status, ['complete', 'partial', 'failed'])
+      || !Array.isArray(accessibility.categories)) return false;
+  }
+  // 可达性没跑成就不可能有灰区、热力或分数：它们全都是它算出来的。
+  if ((accessibility === null || (object(accessibility) && accessibility.status === 'failed'))
+    && (value.serviceGaps !== null || value.scores !== null)) return false;
+  if (value.serviceGaps !== null && (!object(value.serviceGaps)
+    || !oneOf(value.serviceGaps.status, ['complete', 'partial', 'failed'])
+    || !Array.isArray(value.serviceGaps.zones) || !value.serviceGaps.zones.every(validZone)
+    || typeof value.serviceGaps.obstacleLayerAvailable !== 'boolean')) return false;
+  if (value.heatmap !== null && (!object(value.heatmap) || !object(value.heatmap.categories))) return false;
+  if (value.scores !== null && (!object(value.scores) || !Array.isArray(value.scores.categories))) return false;
+  if (value.verification !== null && !validVerification(value.verification)) return false;
+  if (value.report !== null && !validReport(value.report)) return false;
+  // 报告一出现，"报告里那一节"和"快照里那一节"必须是同一件事：报告冻结的是同一版
+  // 结论，两处给出不同的可用性只能说明有一处被改过。
+  if (object(value.report) && object(value.verification) && object(value.report.verification)) {
+    const report = value.report.verification as RecordValue;
+    if (typeof report.available === 'boolean'
+      && (value.verification.status === 'not_integrated') !== (report.available === false)) return false;
+  }
+  return true;
+}
+
+export type EngineOption = {
+  engineId: string;
+  label: string;
+  engineVersion: string;
+  /** 引擎接受哪些预算档。界面只在这里取值，绝不自己编一档发过去（§4.1：不支持即 422）。 */
+  budgets: number[];
+  defaultBudget: number;
+  requiresOsmGraph: boolean;
+  notes: string[];
+};
+
+export type Capabilities = {
+  schemaVersion: string;
+  engines: EngineOption[];
+  quota: RecordValue;
+  budgets: RecordValue;
+  coverage: RecordValue;
+  rules: RecordValue;
+};
+
+/** 能力表：界面靠它决定"能选什么"，所以引擎字段错一个就整份拒绝，不做部分接受。 */
+export function validCapabilities(value: unknown): value is Capabilities {
+  if (!object(value) || !text(value.schemaVersion) || !Array.isArray(value.engines)
+    || value.engines.length === 0) return false;
+  for (const engine of value.engines) {
+    if (!object(engine) || !text(engine.engineId) || engine.engineId.length === 0
+      || !text(engine.label) || !text(engine.engineVersion)
+      || !Array.isArray(engine.budgets) || engine.budgets.length === 0
+      || !engine.budgets.every(budget => count(budget) && budget > 0)
+      || !count(engine.defaultBudget) || !engine.budgets.includes(engine.defaultBudget)
+      || typeof engine.requiresOsmGraph !== 'boolean') return false;
+  }
+  return object(value.quota) && object(value.budgets) && object(value.coverage)
+    && object(value.rules);
+}
+
+export function validLayer(value: unknown, layerId: LayerId): value is CheckupLayer {
+  if (!object(value) || value.layerId !== layerId) return false;
+  const revision = value.revision;
+  // 几何的形态判据只有 `readLayerGeometry` 一处：能读出来的才算合法，读不出来的一律拒绝。
+  if (readLayerGeometry(value as CheckupLayer) === null) return false;
+  return count(revision) && revision >= 1
+    && text(value.resultHash) && value.resultHash.length > 0
+    && geometry(value.displayGeometry)
+    && (value.document === null || object(value.document));
+}
+
+const POI_STATUS = ['pending', 'verified_reachable', 'verified_unreachable'] as const;
+
+export function validFacilityRoute(value: unknown): value is FacilityRoute {
+  if (!object(value) || !text(value.taskId)) return false;
+  const revision = value.revision;
+  if (!count(revision) || revision < 1
+    || !text(value.facilityId) || !text(value.category) || !point(value.origin)
+    || !point(value.destination) || !oneOf(value.poiStatus, POI_STATUS)
+    || !nullableText(value.poiReason) || !oneOf(value.evidenceGrade, ['verified', 'model'])
+    || !nullableNumber(value.straightLineM) || !nullableNumber(value.routeDistanceM)
+    || !nullableNumber(value.durationS) || !nullableNumber(value.observedDurationS)
+    || !(value.withinRule === null || typeof value.withinRule === 'boolean')
+    || !text(value.provider) || typeof value.network !== 'boolean' || !count(value.attempts)) return false;
+  // 判定与距离必须同进同出：有判定的那条路线一定报出了距离，反之亦然。
+  return (value.withinRule === null) === (value.routeDistanceM === null);
+}
