@@ -4,28 +4,28 @@ import time
 
 import httpx
 
+from .catalog import CATEGORIES, EXCLUSIONS
 from .contracts import Facility
 from .place_protocol import Pagination, RETRY_ERRORS, STOP_ERRORS, response_error
 from .request_control import RequestStopped, request_slot
 
-QUERIES = {"market": "菜市场", "supermarket": "超市", "pharmacy": "药店", "hospital_pharmacy": "医院药房", "school": "小学"}
-CLASSIFICATION = (
-    ("hospital_pharmacy", ("医院药房", "门诊药房", "住院药房")),
-    ("pharmacy", ("药店", "药房")),
-    ("school", ("小学",)),
-    ("market", ("菜市场", "菜场", "农贸市场", "农副产品市场")),
-    ("supermarket", ("超市",)),
-)
-EXCLUSIONS = ("培训", "补习", "辅导", "幼儿园", "制药", "药业", "医药公司", "兽药", "出入口", "北门", "南门", "东门", "西门", "管理办公室")
+# Derived from the one dictionary rather than restated here. This endpoint sends
+# a single request type per category, which is the category's primary query.
+QUERIES = {category.key: category.query for category in CATEGORIES}
+# ``hospital_pharmacy`` shadows the general ``pharmacy``: a dispensary inside a
+# hospital is a different service, and a name may match both.
+SHADOWED = {"pharmacy": "hospital_pharmacy"}
 
 
 def classify(name, tag=""):
     text = name + " " + tag
     if any(word in text for word in EXCLUSIONS):
         return None
-    matches = {category for category, words in CLASSIFICATION if any(w in text for w in words)}
-    if "hospital_pharmacy" in matches:
-        matches.discard("pharmacy")
+    matches = {category.key for category in CATEGORIES
+               if any(word in text for word in category.name_hints)}
+    for shadowed, winner in SHADOWED.items():
+        if winner in matches:
+            matches.discard(shadowed)
     return next(iter(matches)) if len(matches) == 1 else None
 
 

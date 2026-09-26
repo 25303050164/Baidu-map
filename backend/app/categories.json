@@ -1,0 +1,61 @@
+{
+  "version": "poi-categories-v1.3",
+  "categories": [
+    {
+      "key": "market",
+      "major": "shopping",
+      "label": "菜市场",
+      "poiRuntime": true,
+      "query": "菜市场",
+      "extraQueries": ["农贸市场", "菜场"],
+      "nameHints": ["菜市场", "菜场", "农贸市场", "农副产品市场"],
+      "tagHints": ["菜市场", "农贸市场"]
+    },
+    {
+      "key": "supermarket",
+      "major": "shopping",
+      "label": "超市",
+      "poiRuntime": false,
+      "query": "超市",
+      "extraQueries": [],
+      "nameHints": ["超市"],
+      "tagHints": []
+    },
+    {
+      "key": "pharmacy",
+      "major": "medical",
+      "label": "药店",
+      "poiRuntime": true,
+      "query": "药店",
+      "extraQueries": ["药房"],
+      "nameHints": ["药店", "药房"],
+      "tagHints": ["药店", "药房"]
+    },
+    {
+      "key": "hospital_pharmacy",
+      "major": "medical",
+      "label": "医院药房",
+      "poiRuntime": false,
+      "query": "医院药房",
+      "extraQueries": [],
+      "nameHints": ["医院药房", "门诊药房", "住院药房"],
+      "tagHints": []
+    },
+    {
+      "key": "school",
+      "major": "education",
+      "label": "小学",
+      "poiRuntime": true,
+      "poiName": "primary_school",
+      "query": "小学",
+      "extraQueries": [],
+      "nameHints": ["小学"],
+      "tagHints": ["小学"]
+    }
+  ],
+  "excluded": ["培训", "补习", "辅导", "幼儿园", "制药", "药业", "医药公司", "药品仓库", "兽药", "出入口", "门口", "北门", "南门", "东门", "西门", "正门", "后门", "管理办公室"],
+  "nonBusinessParentTags": ["教育培训"],
+  "conflictingTags": ["中学", "餐馆", "餐厅", "水果店", "公司", "仓库"],
+  "review": ["生鲜超市", "医院", "门诊", "住院", "九年一贯", "九年制"],
+  "possibleDuplicateMeters": 20
+}

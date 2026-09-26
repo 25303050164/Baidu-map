@@ -1,11 +1,13 @@
 import hashlib
 import json
 import math
-from pathlib import Path
 
 from life_circle.coordinates import LocalProjection
 
-RULES = json.loads(Path(__file__).with_name('categories.json').read_text(encoding='utf-8'))
+from ..catalog import poi_rules
+
+# The POI runtime's view of the one category dictionary, under its own names.
+RULES = poi_rules()
 
 
 def digest(value):

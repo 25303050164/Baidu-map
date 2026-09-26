@@ -34,6 +34,13 @@ def sanitize(value, secret=''):
 
 
 def whitelist(payload, secret=''):
+    """Only the fields named here cross the transport boundary.
+
+    Widening it is how a new kind of business evidence arrives, and it has to be
+    widened deliberately: normalization reads what is present and never promotes
+    an absent field to a confirmed value, so a field left out here stays unknown
+    rather than becoming a default.
+    """
     result = {k: payload[k] if type(payload[k]) in (int, str, type(None)) else None
               for k in ('status', 'total', 'result_type') if k in payload}
     def point(value):

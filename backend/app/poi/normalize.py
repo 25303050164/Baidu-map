@@ -45,7 +45,10 @@ def classify(name, tags):
     disputed = [w for w in RULES['review'] if w in full]
     if disputed:
         return None, 'needs_review', ['policy_unconfirmed:' + w for w in disputed]
-    names = {c for c, words in RULES['queries'].items() if any(w in name for w in words)}
+    # Names classify on the name vocabulary, not on the request types: the two
+    # agree on the keywords actually sent but not on the words that identify a
+    # category, and §4.3 wants one table per question.
+    names = {c for c, words in RULES['nameHints'].items() if any(w in name for w in words)}
     tagged = {c for c, words in RULES['supportedTags'].items() if tag_parts.intersection(words)}
     evidence.extend('name:' + c for c in sorted(names))
     evidence.extend('tag:' + c for c in sorted(tagged))
@@ -66,6 +69,11 @@ def normalize(row, provenance, source):
     details = row.get('detail_info') or {}
     tags = [text(details.get('classified_poi_tag'))] if text(details.get('classified_poi_tag')) else []
     category, status, evidence = classify(name, tags)
+    # §4.3/§5.3: the raw point and the provider's navigation point are entrance
+    # *candidates*. ``navi_location`` is guidance and may be a pickup point, so it
+    # is never recorded as a walking entrance. No place query establishes an
+    # entrance, so ``confirmedEntrances`` stays null — an empty list would claim
+    # the opposite, that there is confirmed to be none.
     navigation, warnings = None, []
     if details.get('navi_location') is not None:
         try:
@@ -74,7 +82,8 @@ def normalize(row, provenance, source):
             warnings.append('invalid_navigation_location')
     return {'id': f'{source}:{uid}', 'source': source, 'sourceUid': uid, 'name': name,
         'category': category, 'coordinateSystem': 'bd09ll', 'location': point,
-        'navigationLocation': navigation, 'parentUid': text(details.get('parent_id')) or None,
+        'navigationLocation': navigation, 'confirmedEntrances': None,
+        'parentUid': text(details.get('parent_id')) or None,
         'address': text(row.get('address')), 'sourceTags': tags, 'operatingStatus': 'unknown',
         'classificationStatus': status, 'classificationRuleVersion': RULES['version'],
         'classificationEvidence': evidence, 'possibleDuplicateGroup': None,
@@ -102,7 +111,8 @@ def merge_entities(records, request, plan):
                                     key=lambda p: (p['tileId'], p['query'], p['pageNum']))
         item['sourceTags'] = sorted({t for r in values for t in r['sourceTags']})
         item['warnings'] = sorted({w for r in values for w in r['warnings']})
-        item['observations'] = [{k: r[k] for k in ('name', 'address', 'location', 'navigationLocation', 'parentUid', 'sourceTags')}
+        item['observations'] = [{k: r[k] for k in ('name', 'address', 'location', 'navigationLocation',
+                                                   'confirmedEntrances', 'parentUid', 'sourceTags')}
                                 for r in observations]
         if not any(inside(r['location'], plan['searchExtent']['localMeters'], projection) for r in values):
             outside.append({'sourceUid': item['sourceUid'], 'reason': 'outside_search_window', 'provenance': item['provenance']})
