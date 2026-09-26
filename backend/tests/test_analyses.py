@@ -15,7 +15,11 @@ def config(**kwargs):
 
 
 def test_empty_qps_in_example_means_unconfigured():
-    assert Settings(_env_file=None, analysis_qps="").analysis_qps is None
+    settings = Settings(_env_file=None, analysis_qps="", cache_freshness_seconds="")
+    assert settings.analysis_qps is None
+    # §3.4: an unset cross-task cache window is "task-local reuse only", which is
+    # not the same value as a zero-second window.
+    assert settings.cache_freshness_seconds is None
 
 
 def body(key="request-1", **kwargs):

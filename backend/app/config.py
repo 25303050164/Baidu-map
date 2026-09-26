@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     osm_coverage_margin_m: float = Field(default=100, ge=0, allow_inf_nan=False)
     hybrid_ledger_dir: Path = BACKEND_DIR / ".hybrid-ledgers"
     checkup_dir: Path = BACKEND_DIR / ".checkups"
+    # §3.4: how long a cached page, route or spatial result may be reused by a
+    # task other than the one that stored it. Unconfigured means reuse stays
+    # inside the storing task — a deployment's data-use agreement is never
+    # assumed, and an entry is never permanently fresh.
+    cache_freshness_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     # Per-service route and place pools. Both algorithms and the facility stages
     # draw from these; nothing allocates quota outside this entry.
     baidu_direction_qps: float = Field(default=16, gt=0, allow_inf_nan=False)
@@ -67,9 +72,10 @@ class Settings(BaseSettings):
             return value.strip()
         return value
 
-    @field_validator("analysis_qps", mode="before")
+    @field_validator("analysis_qps", "cache_freshness_seconds", mode="before")
     @classmethod
-    def empty_qps(cls, value):
+    def empty_optional_numbers(cls, value):
+        # An empty value means "unconfigured", which is not the same as zero.
         return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("baidu_quota_fallback_at")
