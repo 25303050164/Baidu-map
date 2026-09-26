@@ -1,0 +1,472 @@
+"""§4.2 adaptive online planning: coarse blocks, rotation, subdivision, evidence.
+
+The fixed 4×4 plan in ``planner.py`` spends 96 requests on its first round and
+cannot fit the standard 60-attempt online budget. This module plans the same
+``around`` search adaptively instead: it starts from the query domain's envelope
+split 2×2, keeps the blocks that intersect the domain, and spends its budget in a
+rotation across categories so that no category is exhausted first.
+
+A page is the unit of scheduling. ``fetch`` is injected and must perform exactly
+one upstream attempt per call: pacing, the service's single in-flight slot and
+the daily reservation belong to the quota pool that wraps it (§9), while retry
+policy belongs here, because §4.2.5 makes paging, subdivision and retry share
+one budget.
+
+The run reports raw rows with the request that produced them. The caller
+normalizes them and then clips with ``clip_to_domain``: a block is searched with
+its circumscribed circle, which reaches past the domain, and only the domain's
+part is a facility finding.
+
+Incomplete evidence is never discarded and never rounded up. A truncated or
+unstable block is subdivided and queried again with smaller circles when it can
+still be subdivided; when it cannot — the finest block still saturated, the
+budget gone, a query failed — the coverage says so and the run stays ``partial``.
+Finishing a keyword search is not evidence that the real directory is complete,
+so this module cannot express a completeness claim at all: the only value it can
+report is ``unverified`` (§4.2).
+"""
+import asyncio
+import math
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Protocol
+
+import httpx
+
+from app.place_protocol import RETRY_ERRORS, STOP_ERRORS, Pagination
+from app.quota import QuotaError
+from app.request_control import RequestStopped
+from life_circle.coordinates import LocalProjection
+from life_circle.models import CancelToken
+
+from .planner import RULES, sequence
+
+FINEST_BLOCK_METERS = 250.0
+MAX_PAGES = 8
+MAX_PAGE_ATTEMPTS = 2
+# The provider's documented page size and ``total`` ceiling are enforced where
+# they belong — the wire parameters in ``planner.parameters`` and the pagination
+# rules in ``place_protocol.Pagination`` — rather than restated here.
+
+# A density signal says the block's result set was cut short for reasons smaller
+# circles can resolve, so the block is still worth subdividing (§4.2.4).
+DENSITY_SIGNALS = frozenset({'possible_truncation', 'page_limit',
+                             'pagination_anomaly', 'pagination_uncertain'})
+
+# A refusal from the scheduling layer. Stopping is the only correct response and
+# every remaining sequence keeps whatever it obtained.
+FATAL = frozenset(STOP_ERRORS | {'task_budget_exhausted', 'daily_budget_exhausted',
+                                 'deadline_reached', 'matrix_disabled'})
+
+# Only for floating-point inversion at exact edges, as in ``normalize.inside``.
+EDGE_TOLERANCE = 1e-6
+
+
+class Fetch(Protocol):
+    """One upstream attempt for one page; retries are this module's business."""
+
+    async def __call__(self, sequence: dict, page: int) -> tuple[dict | None, str | None]: ...
+
+
+@dataclass(frozen=True)
+class QueryBlock:
+    """One square query block; ``tile_id`` names its path in the subdivision."""
+    tile_id: str
+    x: float
+    y: float
+    edge: float
+
+    def __post_init__(self):
+        if (not math.isfinite(self.x) or not math.isfinite(self.y)
+                or not math.isfinite(self.edge) or self.edge <= 0):
+            raise ValueError('invalid_query_block')
+
+    @property
+    def bounds(self) -> tuple[float, float, float, float]:
+        return (self.x, self.y, self.x + self.edge, self.y + self.edge)
+
+    @property
+    def radius(self) -> int:
+        """The circle that circumscribes the block, as ``planner.sequence`` sends it."""
+        return math.ceil(self.edge / math.sqrt(2)) + 5
+
+    def subdividable(self, finest: float = FINEST_BLOCK_METERS) -> bool:
+        return self.edge / 2 >= finest
+
+    def children(self, finest: float = FINEST_BLOCK_METERS) -> tuple:
+        """The four blocks that tile this one, or none when this is the finest."""
+        if not self.subdividable(finest):
+            return ()
+        half = self.edge / 2
+        return tuple(QueryBlock(f'{self.tile_id}.{index}', self.x + (index % 2)*half,
+                                self.y + (index // 2)*half, half) for index in range(4))
+
+
+def _orientation(a, b, c):
+    return (b[0]-a[0]) * (c[1]-a[1]) - (b[1]-a[1]) * (c[0]-a[0])
+
+
+def _segment_distance(a, b, point):
+    dx, dy = b[0]-a[0], b[1]-a[1]
+    length2 = dx*dx + dy*dy
+    if length2 == 0:
+        return math.dist(a, point)
+    t = max(0.0, min(1.0, ((point[0]-a[0])*dx + (point[1]-a[1])*dy) / length2))
+    return math.dist((a[0] + t*dx, a[1] + t*dy), point)
+
+
+def _near_segment(point, a, b):
+    return _segment_distance(a, b, point) <= EDGE_TOLERANCE
+
+
+def _crosses(p, q, r, s):
+    """Whether two closed segments share a point."""
+    o1, o2 = _orientation(p, q, r), _orientation(p, q, s)
+    o3, o4 = _orientation(r, s, p), _orientation(r, s, q)
+    if ((o1 > 0) != (o2 > 0)) and ((o3 > 0) != (o4 > 0)):
+        return True
+    # Endpoint contact and collinear overlap: decided by distance, because real
+    # coordinates rarely land exactly on a line.
+    return (_near_segment(r, p, q) or _near_segment(s, p, q)
+            or _near_segment(p, r, s) or _near_segment(q, r, s))
+
+
+def _contains(polygon, point):
+    """Ray casting, inclusive of the boundary."""
+    if any(_near_segment(point, polygon[i - 1], polygon[i]) for i in range(len(polygon))):
+        return True
+    inside = False
+    for i, (xi, yi) in enumerate(polygon):
+        xj, yj = polygon[i - 1]
+        if (yi > point[1]) != (yj > point[1]):
+            if point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi:
+                inside = not inside
+    return inside
+
+
+@dataclass(frozen=True)
+class QueryDomain:
+    """The area one task must cover, in metres from the request centre.
+
+    §4.1: the computed boundary expanded by the query margin. The margin covers
+    the current error band and entrance offsets; it is an engineering allowance
+    and never evidence that the real directory is complete.
+    """
+    polygon: tuple
+
+    def __post_init__(self):
+        points = tuple((float(x), float(y)) for x, y in self.polygon)
+        if len(points) < 3 or not all(math.isfinite(v) for p in points for v in p):
+            raise ValueError('invalid_query_domain')
+        object.__setattr__(self, 'polygon', points)
+
+    @classmethod
+    def circle(cls, radius: float, *, segments: int = 72):
+        if not math.isfinite(radius) or radius <= 0 or segments < 3:
+            raise ValueError('invalid_query_domain')
+        step = 2*math.pi / segments
+        return cls(tuple((radius*math.cos(i*step), radius*math.sin(i*step))
+                         for i in range(segments)))
+
+    @property
+    def envelope(self):
+        xs = [point[0] for point in self.polygon]
+        ys = [point[1] for point in self.polygon]
+        return (min(xs), min(ys), max(xs), max(ys))
+
+    def contains(self, point) -> bool:
+        return _contains(self.polygon, (float(point[0]), float(point[1])))
+
+    def intersects(self, block: QueryBlock) -> bool:
+        x0, y0, x1, y1 = block.bounds
+        if any(x0 <= x <= x1 and y0 <= y <= y1 for x, y in self.polygon):
+            return True
+        corners = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+        if any(self.contains(corner) for corner in corners):
+            return True
+        edges = list(zip(corners, corners[1:] + corners[:1]))
+        return any(_crosses(self.polygon[i - 1], self.polygon[i], edge[0], edge[1])
+                   for i in range(len(self.polygon)) for edge in edges)
+
+
+def coarse_blocks(domain: QueryDomain) -> tuple:
+    """§4.2.1: the domain envelope split 2×2, keeping the blocks it intersects.
+
+    Square blocks anchored at the envelope's south-west corner, so a non-square
+    envelope is still tiled and the circumscribed radius stays exactly the one
+    ``planner.sequence`` computes for a square.
+    """
+    x0, y0, x1, y1 = domain.envelope
+    edge = max(x1 - x0, y1 - y0) / 2
+    if edge <= 0:
+        raise ValueError('empty_query_domain')
+    grid = [QueryBlock(f'r{row}c{col}', x0 + col*edge, y0 + row*edge, edge)
+            for row in range(2) for col in range(2)]
+    return tuple(block for block in grid if domain.intersects(block))
+
+
+@dataclass(frozen=True)
+class Observation:
+    """One provider row, with the request that produced it."""
+    provenance: dict
+    row: dict
+
+
+@dataclass
+class _Sequence:
+    """One (block, category, keyword) query and what it established."""
+    block: QueryBlock
+    category: str
+    query: str
+    mapping: dict
+    page: int = 0
+    page_attempts: int = 0
+    status: str = 'pending'
+    stop: str | None = None
+    pages: list = field(default_factory=list)
+    pagination: Pagination = field(default_factory=Pagination)
+
+    def entry(self, source: str) -> dict:
+        """One queryCoverage record, derived from the pages actually requested."""
+        succeeded = [record for record in self.pages if record['succeeded']]
+        return {**self.mapping, 'source': source, 'status': self.status,
+                'pages': len(succeeded),
+                'returned': sum(record['returned'] for record in succeeded),
+                'total': succeeded[-1]['total'] if succeeded else None,
+                'truncated': self.stop in ('possible_truncation', 'page_limit'),
+                'warnings': sorted({w for record in self.pages for w in record['warnings']}),
+                'stopReason': self.stop,
+                'requestedPages': [record['pageNum'] for record in self.pages],
+                'successfulPages': [record['pageNum'] for record in succeeded],
+                'reportedTotals': [{'pageNum': record['pageNum'], 'total': record['total']}
+                                   for record in succeeded],
+                'pageErrors': [{'pageNum': record['pageNum'], 'reason': record['reason']}
+                               for record in self.pages if not record['succeeded']],
+                'pageRecords': [dict(record) for record in self.pages]}
+
+
+@dataclass(frozen=True)
+class OnlineResult:
+    """What one adaptive run obtained, and what it could not establish."""
+    status: str
+    coverage: list
+    observations: list
+    blocks: tuple
+    attempts: int
+    budget: int
+    stop_reason: str | None
+    warnings: list
+
+    @property
+    def catalog_completeness(self) -> str:
+        """Never anything else: a finished keyword search is not a complete directory."""
+        return 'unverified'
+
+
+class OnlinePlanner:
+    """§4.2's adaptive planner.
+
+    Deterministic: every decision is a function of the evidence collected so far,
+    so the same domain and budget always produce the same schedule.
+    """
+
+    def __init__(self, *, domain: QueryDomain, origin, categories, budget: int, source: str,
+                 finest_edge: float = FINEST_BLOCK_METERS, max_pages: int = MAX_PAGES,
+                 token=None):
+        if type(budget) is not int or budget <= 0:
+            raise ValueError('budget must be a positive integer')
+        if not categories:
+            raise ValueError('at least one category required')
+        for category in categories:
+            if category not in RULES['queries']:
+                raise ValueError('unknown_category')
+        self.domain, self.origin, self.categories, self.budget = domain, origin, tuple(categories), budget
+        self.source = source
+        self.finest_edge, self.max_pages = finest_edge, max_pages
+        self.token = token or CancelToken()
+        self.projection = LocalProjection((origin[0], origin[1]))
+        # Structure first: a domain with no extent is empty, not out of range.
+        self.coarse = coarse_blocks(domain)
+        self._window()
+        if not self.coarse:
+            raise ValueError('empty_query_domain')
+        self.blocks = {block.tile_id: block for block in self.coarse}
+        self.children, self.sequences, self.queue = {}, {}, deque()
+        self.observations, self.attempts, self.stopped, self.warnings = [], 0, None, []
+        # §4.2.2: within each block the categories take their keywords in
+        # rotation, so a category with more keywords cannot exhaust the budget
+        # before the others have had their first turn.
+        for block in self.coarse:
+            pending = [(category, deque(RULES['queries'][category])) for category in self.categories]
+            while any(queries for _, queries in pending):
+                for category, queries in pending:
+                    if queries:
+                        self._enqueue(block, category, queries.popleft())
+
+    def _window(self):
+        x0, y0, x1, y1 = self.domain.envelope
+        southwest = self.projection.to_geographic((x0, y0))
+        northeast = self.projection.to_geographic((x1, y1))
+        if not (-180 <= southwest[0] < northeast[0] <= 180 and -85 < southwest[1] < northeast[1] < 85):
+            raise ValueError('window outside supported projection')
+
+    def _enqueue(self, block, category, query):
+        key = (block.tile_id, category, query)
+        if key in self.sequences:
+            return None
+        state = _Sequence(block=block, category=category, query=query,
+                          mapping=sequence(block.tile_id, block.x, block.y, block.edge,
+                                           category, query, self.projection))
+        self.sequences[key] = state
+        self.queue.append(state)
+        return state
+
+    async def _attempt(self, fetch, mapping, page):
+        """One call, with the scheduling layer's refusals turned into reasons."""
+        try:
+            return await fetch(mapping, page)
+        except RequestStopped as exc:
+            return None, exc.reason
+        except QuotaError as exc:
+            return None, exc.code
+        except httpx.TimeoutException:
+            return None, 'timeout'
+        except httpx.RequestError:
+            return None, 'network_error'
+
+    def _finish(self, state, stop):
+        if state.status not in ('pending', 'more'):
+            return
+        state.stop = stop
+        state.status = 'completed' if stop == 'completed' else (
+            'partial' if state.pagination.pages else 'failed')
+        if stop in DENSITY_SIGNALS:
+            self._subdivide(state)
+
+    def _subdivide(self, state):
+        """§4.2.4: query the same keyword again in circles that can return more.
+
+        Only the keyword whose evidence is incomplete is repeated: a sibling
+        keyword that already completed has covered these children's area too.
+        """
+        children = state.block.children(self.finest_edge)
+        if not children:
+            self.warnings.append('finest_block_saturated')
+            return
+        self.children[state.block.tile_id] = children
+        for child in children:
+            self.blocks.setdefault(child.tile_id, child)
+            self._enqueue(child, state.category, state.query)
+
+    async def _step(self, fetch, state):
+        page = state.page
+        state.page_attempts += 1
+        self.attempts += 1
+        payload, reason = await self._attempt(fetch, state.mapping, page)
+        record = {'tileId': state.block.tile_id, 'category': state.category, 'query': state.query,
+                  'pageNum': page, 'requested': True, 'succeeded': payload is not None,
+                  'source': self.source, 'reason': reason, 'total': None, 'returned': 0,
+                  'truncated': False, 'warnings': []}
+        state.pages.append(record)
+        if payload is None:
+            if reason in FATAL:
+                self.stopped = reason
+            if (reason in RETRY_ERRORS and state.page_attempts < MAX_PAGE_ATTEMPTS
+                    and self.attempts < self.budget and self.stopped is None):
+                self.queue.append(state)  # The same page, inside the same budget.
+                return
+            self._finish(state, reason)
+            return
+        before = len(state.pagination.warnings)
+        stop = state.pagination.consume(payload, self.max_pages)
+        added = state.pagination.warnings[before:]
+        record.update(total=state.pagination.total, returned=len(payload['results']),
+                      warnings=sorted(added), truncated='possible_truncation' in added)
+        provenance = {'tileId': state.block.tile_id, 'category': state.category,
+                      'sequenceId': state.mapping['sequenceId'], 'query': state.query, 'pageNum': page}
+        self.observations.extend(Observation(provenance, row) for row in payload['results'])
+        state.page_attempts = 0
+        if stop is None:
+            state.page = page + 1
+            state.status = 'more'
+            self.queue.append(state)
+            return
+        state.page = page + 1
+        self._finish(state, stop)
+
+    async def run(self, fetch: Fetch) -> OnlineResult:
+        try:
+            while self.queue and self.stopped is None:
+                if self.token.cancelled:
+                    self.stopped = 'cancelled'
+                    break
+                state = self.queue.popleft()
+                if state.status not in ('pending', 'more'):
+                    continue
+                if self.attempts >= self.budget:
+                    self.stopped = 'budget_exhausted'
+                    break
+                await self._step(fetch, state)
+        except asyncio.CancelledError:
+            # Cancellation is an outcome of this run, not an exception for the
+            # caller to clean up: the evidence already obtained is still reported.
+            self.token.cancel()
+            self.stopped = 'cancelled'
+        return self.result()
+
+    def _covered(self, block, category, query):
+        """Whether one keyword's evidence over one block is complete.
+
+        A block that completed naturally covers itself. A block that was
+        subdivided covers itself only if all four children do, because together
+        they tile it — which is what lets a resolved anomaly still read as
+        complete evidence rather than as a permanent partial.
+        """
+        state = self.sequences.get((block.tile_id, category, query))
+        if state is not None and state.status == 'completed':
+            return True
+        children = self.children.get(block.tile_id)
+        return bool(children) and all(self._covered(child, category, query) for child in children)
+
+    def result(self) -> OnlineResult:
+        """Report the run. Closes out anything the budget left unscheduled."""
+        for state in self.sequences.values():
+            if state.status in ('pending', 'more'):
+                self._finish(state, self.stopped or 'unfinished')
+        coverage = [state.entry(self.source) for state in self.sequences.values()]
+        covered = all(self._covered(block, category, query)
+                      for block in self.coarse for category in self.categories
+                      for query in RULES['queries'][category])
+        attempted = any(state.pagination.pages for state in self.sequences.values())
+        if self.token.cancelled or self.stopped == 'cancelled':
+            status = 'cancelled'
+        elif covered:
+            status = 'completed'
+        else:
+            status = 'partial' if attempted else 'failed'
+        warnings = sorted(set(self.warnings)
+                          | {state.stop for state in self.sequences.values()
+                             if state.stop not in (None, 'completed')}
+                          | ({self.stopped} if self.stopped else set()))
+        return OnlineResult(status=status, coverage=coverage, observations=list(self.observations),
+                            blocks=tuple(self.blocks.values()), attempts=self.attempts,
+                            budget=self.budget, stop_reason=self.stopped, warnings=warnings)
+
+
+def clip_to_domain(records, domain: QueryDomain, origin):
+    """§4.2.1: the ``around`` search is a superset; keep the domain's part.
+
+    Takes normalized records, so the caller decides what a row is before this
+    decides where it is. The rejected ones keep the shape the B1 pipeline uses
+    for records outside its window, so one reader handles both.
+    """
+    projection = LocalProjection((origin[0], origin[1]))
+    inside, outside = [], []
+    for record in records:
+        point = record['location']
+        if domain.contains(projection.to_local((point['lng'], point['lat']))):
+            inside.append(record)
+        else:
+            outside.append({'sourceUid': record['sourceUid'], 'reason': 'outside_query_domain',
+                            'provenance': record.get('provenance', [])})
+    return inside, outside

@@ -14,6 +14,20 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
 
 
+def sequence(tile_id, x, y, size, category, query, projection):
+    """One ``around`` search over one square block.
+
+    The single definition of what a query sequence is, shared by the fixed plan
+    below and by the adaptive planner: the block's circumscribed circle is the
+    search, and the caller clips the result to what it actually needs.
+    """
+    center = projection.to_geographic((x+size/2, y+size/2))
+    return {'sequenceId': f'{tile_id}:{category}:{query}', 'tileId': tile_id,
+        'category': category, 'query': query, 'center': list(center),
+        'radius': math.ceil(size/math.sqrt(2))+5, 'localMeters': [x, y, x+size, y+size],
+        'bd09ll': [*projection.to_geographic((x, y)), *projection.to_geographic((x+size, y+size))]}
+
+
 def build_plan(request, config):
     origin = (request.center.lng, request.center.lat)
     projection = LocalProjection(origin)
@@ -29,13 +43,9 @@ def build_plan(request, config):
     for row in range(4):
         for col in range(4):
             x, y = -half + col*size, -half + row*size
-            center = projection.to_geographic((x+size/2, y+size/2))
-            bounds = [*projection.to_geographic((x,y)), *projection.to_geographic((x+size,y+size))]
             for category in request.categories:
                 for query in RULES['queries'][category]:
-                    sequences.append({'sequenceId': f'r{row}c{col}:{category}:{query}', 'tileId': f'r{row}c{col}',
-                        'category': category, 'query': query, 'center': list(center),
-                        'radius': math.ceil(size/math.sqrt(2))+5, 'localMeters': [x,y,x+size,y+size], 'bd09ll': bounds})
+                    sequences.append(sequence(f'r{row}c{col}', x, y, size, category, query, projection))
     if config.phase == 'smoke':
         sequences = [s for s in sequences if s['tileId'] == 'r0c0' and s['query'] == RULES['queries'][s['category']][0]]
     plan = {'provider': 'baidu_place', 'apiVersion': '3.0', 'coordinateSystem': 'bd09ll',
