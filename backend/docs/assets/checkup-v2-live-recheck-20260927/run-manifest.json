@@ -1,0 +1,27 @@
+{
+  "recordedAt": "2026-09-27T07:39:20.158010+00:00",
+  "gitHead": "d3944d49c9dd5bee4b9913cd3b8b2a8c85f67abe",
+  "workingTreeModified": true,
+  "python": "3.12.14",
+  "os": "Windows",
+  "center": {
+    "lng": 121.513925,
+    "lat": 31.313079
+  },
+  "isochroneBudget": 400,
+  "initialApplicationPlaceSpent": 192,
+  "sourceSha256": {
+    "backend/app/checkups/routes.py": "2f93edcc620140a61fcfa15b8a6d809d5300f5d95e448be0aa1808cfa2b5e84f",
+    "backend/app/checkups/verification_stage.py": "f95d658c9a1991a1d7a441ceb9f071bf0daaeda31185a4d7ff3f8d9fa76fba9a",
+    "backend/app/accessibility/service_graph.py": "dda0297d0577ee58a99d1acf47250e3899b51537162b761a6f5cf52a018852c6",
+    "backend/app/quota.py": "db99b7e699a09818cd81b5ae09ac9a1c0916b3f0b7fb49f81a60666748a6e892",
+    "life-circle-demo/src/checkup/CheckupMap.tsx": "25c5b8ac465b06492fcc98ac13d75726c2aa1bd91a86386495094f20b38c447c",
+    "life-circle-demo/src/map/layers/heatmapOverlay.ts": "0789b596d48934d1ff14e0de3832004a62134551b9b521ada7abacb086921099",
+    "life-circle-demo/tests/checkup-live.spec.ts": "515d7b5620b47937acde2a99e42e8a4a20a81459669d0691d42d37b67c6c9272"
+  },
+  "notes": [
+    "Initial sandbox browser preflight failed with network access denied; paid checkup tasks were not submitted there.",
+    "One direct route diagnostic failed before connection with WinError 10013; it was outside the application ledger.",
+    "Network-enabled run uses actual configured keys without mocks; trace recording is disabled to avoid storing AK request URLs."
+  ]
+}

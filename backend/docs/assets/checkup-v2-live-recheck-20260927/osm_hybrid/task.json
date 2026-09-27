@@ -1,0 +1,16 @@
+{
+  "taskId": "5e710014-84f5-42e7-ae77-525bd429ae8a",
+  "clientRequestId": "4a1d467f-a3ba-4174-b232-9411dcaae066",
+  "engine": "osm_hybrid",
+  "status": "completed",
+  "businessStatus": "partial",
+  "stage": "ready",
+  "revision": 5,
+  "budget": 400,
+  "requests": 428,
+  "networkRequests": 428,
+  "elapsedSeconds": 367.10637879371643,
+  "createdAt": 1790495044.2158172,
+  "cancelRequested": false,
+  "error": null
+}

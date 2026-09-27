@@ -1,0 +1,25 @@
+{
+  "origin": [
+    121.513925,
+    31.313079
+  ],
+  "destination": [
+    121.514925,
+    31.313079
+  ],
+  "attempts": 1,
+  "stopReason": null,
+  "network": true,
+  "reason": "endpoint_offset",
+  "distanceM": 215,
+  "durationS": 204,
+  "endpointsParsed": true,
+  "routeOrigin": [
+    121.51391521603,
+    31.313079014247
+  ],
+  "routeDestination": [
+    121.51492367214,
+    31.313626820923
+  ]
+}
