@@ -19,7 +19,7 @@ import { resolve } from 'node:path';
  * 但每一个 `/api/v2` 请求都会在浏览器里被 CORS 挡掉 —— 页面照样画地图、照样报错，
  * 看起来只是"接口没通"，而那时已经不知道该不该信这一轮的截图了。
  */
-const out = resolve('output/checkup-live');
+const out = resolve(process.env.CHECKUP_LIVE_OUTPUT_DIR ?? 'output/checkup-live');
 mkdirSync(out, { recursive: true });
 process.env.TEMP = out;
 process.env.TMP = out;
@@ -30,7 +30,8 @@ export default defineConfig({
   timeout: 1700000, expect: { timeout: 20000 },
   outputDir: resolve(out, 'results'), reporter: [['list']],
   use: { baseURL: 'http://127.0.0.1:5173', ...devices['Desktop Edge'], channel: 'msedge',
-    viewport: { width: 1600, height: 1000 }, trace: 'retain-on-failure',
+    // 真实 SDK 请求 URL 含 AK，不将请求上下文写入 Trace 归档。
+    viewport: { width: 1600, height: 1000 }, trace: 'off',
     screenshot: 'only-on-failure',
     // 单步操作必须有上限：默认是"一直等"，于是一个点不到的下拉会静默占满整个用例时限，
     // 而这一套的时限是 28 分钟 —— 看起来像"任务跑了很久"，实际上一笔额度都没花出去。

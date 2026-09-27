@@ -17,6 +17,8 @@ import { resolve } from 'node:path';
 import { LAYER_IDS, type LayerId } from '../src/checkup/validate';
 
 const API = 'http://127.0.0.1:8000';
+const OUTPUT = resolve(process.env.CHECKUP_LIVE_OUTPUT_DIR ?? 'output/checkup-live');
+const redact = (value: string) => value.replace(/([?&](?:ak|key|token)=)[^&\s]+/gi, '$1[REDACTED]');
 /** 国定一社区。历次真实跑用的同一个中心，报告之间才可比。 */
 const CENTER = { lng: 121.513925, lat: 31.313079 };
 const BUDGET = 400;
@@ -72,7 +74,7 @@ async function waitForTask(request: APIRequestContext, taskId: string): Promise<
 async function expectRealBasemap(page: Page) {
   await expect(page.getByText('地图不可用')).toHaveCount(0);
   await expect(page.getByText('正在加载百度地图')).toHaveCount(0);
-  await expect.poll(async () => page.getByTestId('checkup-map').locator('canvas').count(),
+  await expect.poll(async () => page.getByTestId('checkup-map').locator('canvas:not([data-map-layer])').count(),
     { timeout: 60000 }).toBeGreaterThan(0);
   // 画布在，瓦片还没贴上去：BMapGL 是 WebGL 贴图，既不进 resource 列表也没有事件，
   // 只能给它一点时间。少了这一步，截出来的底图是全白的，而断言全都是通过的。
@@ -84,13 +86,16 @@ test('浏览器 AK 能加载真实 BMapGL 底图，页面也能连上真后端',
   // 挡住时，页面仍会跑完体检并"成功"，只有地图是空的；后端连不上时反过来 ——
   // 地图好好的，但一条体检也提交不出去。
   const problems: string[] = [];
+  page.on('pageerror', error => problems.push(redact(`page: ${error.message}`)));
   page.on('console', message => {
-    if (message.type() === 'error') problems.push(`console: ${message.text()}`);
+    if (message.type() === 'error') problems.push(redact(`console: ${message.text()}`));
   });
   page.on('requestfailed', request =>
-    problems.push(`${request.url()} :: ${request.failure()?.errorText}`));
+    problems.push(redact(`${request.url()} :: ${request.failure()?.errorText}`)));
   await page.goto('/');
-  await expectRealBasemap(page);
+  await expectRealBasemap(page).catch(error => {
+    throw new Error(`真实底图预检失败：${problems.join(' | ') || '没有浏览器错误记录'}\n${error}`);
+  });
   expect(await page.evaluate(() => typeof (window as { BMapGL?: unknown }).BMapGL)).toBe('object');
   // 能力表来自真后端：引擎下拉能选，就说明这一页确实读到了它。
   await expect(page.getByRole('combobox', { name: '引擎' }))
@@ -100,7 +105,7 @@ test('浏览器 AK 能加载真实 BMapGL 底图，页面也能连上真后端',
   await expect(page.getByTestId('quota-label'))
     .toHaveText('本应用预算余额（不含浏览器 SDK、其他应用及旧接口流量）');
   await page.locator('.api-map-shell').screenshot({
-    path: resolve('output/checkup-live', 'basemap.png') });
+    path: resolve(OUTPUT, 'basemap.png') });
 });
 
 /**
@@ -119,7 +124,7 @@ async function pick(page: Page, combo: string, item: string) {
 
 for (const [engine, { label, version }] of Object.entries(ENGINES)) {
   test(`${label}：一次真实体检，从选点到报告`, async ({ page, request }) => {
-    const dir = resolve('output/checkup-live', engine);
+    const dir = resolve(OUTPUT, engine);
     mkdirSync(dir, { recursive: true });
     await page.goto('/');
 
@@ -168,6 +173,20 @@ for (const [engine, { label, version }] of Object.entries(ENGINES)) {
       .toEqual([]);
     expect(report.resultHash, '报告图层应当带着这一版的结果指纹').toBeTruthy();
     expect(report.revision).toBe(finished.revision);
+    // checked/failed 计数不能证明路线返回过；必须检查实际端点与距离。
+    const verification = (snapshot as { verification?: { facilities?: {
+      routeDistanceM?: number | null; durationS?: number | null;
+      routeOrigin?: unknown; routeDestination?: unknown; poiStatus?: string;
+    }[] } }).verification?.facilities ?? [];
+    const roadEvidence = verification.filter(row => typeof row.routeDistanceM === 'number'
+      && Number.isFinite(row.routeDistanceM) && typeof row.durationS === 'number'
+      && row.routeOrigin != null && row.routeDestination != null);
+    writeFileSync(resolve(dir, 'verification-audit.json'), JSON.stringify({
+      returnedRoutes: roadEvidence.length,
+      strictConfirmed: verification.filter(row => row.poiStatus !== 'pending' && row.poiStatus).length,
+      pending: verification.filter(row => row.poiStatus === 'pending').length,
+    }, null, 2));
+    expect(roadEvidence.length, '需要至少一条带实际端点和距离的路线，pending/deadline 不算实测').toBeGreaterThan(0);
 
     // 界面上必须真的报告了这一版：抽屉在完成时自动打开，指纹与修订都要对得上。
     const drawn = page.getByTestId('checkup-report');
@@ -194,13 +213,29 @@ for (const [engine, { label, version }] of Object.entries(ENGINES)) {
     await page.keyboard.press('Escape');
     await expect(drawn).toBeHidden();
 
-    // 真底图 + 真图层。打开热力再截一次：要的就是"这不是示意地图"。
+    // 真底图 + 真图层。要的就是"这不是示意地图"：默认的服务覆盖热力先截一张，
+    // 再换成设施密度截一张。
     await expectRealBasemap(page);
-    await page.getByRole('checkbox', { name: '热力采样点', exact: true }).check();
-    // 图例出现"共 N 个点"说明点图层已经画上去了，不是等一个固定的秒数。
-    await expect(page.getByTestId('checkup-legend')).toContainText('数据不截断');
-    await page.waitForTimeout(3000);
+    // 只数业务 Canvas 上画了多少像素，不能把百度底图或图表 Canvas 当作热力。
+    const painted = (id: string) => page.getByTestId(id).evaluate(el => {
+      const canvas = el as HTMLCanvasElement;
+      if (!canvas.width || !canvas.height) return 0;
+      const pixels = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+      let count = 0;
+      for (let i = 3; i < pixels.length; i += 4) if (pixels[i] > 0) count++;
+      return count;
+    });
+    await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).toBeChecked();
+    await expect(page.getByTestId('service-heat-canvas')).toBeVisible();
+    await expect.poll(() => painted('service-heat-canvas'), { timeout: 15000 }).toBeGreaterThan(0);
+    await expect(page.getByTestId('service-legend')).toContainText('模型估计');
     await page.locator('.api-map-shell').screenshot({ path: resolve(dir, 'map.png') });
     await page.screenshot({ path: resolve(dir, 'page.png') });
+
+    await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).check();
+    await expect(page.getByTestId('service-heat-canvas')).toHaveCount(0);
+    await expect(page.getByTestId('facility-density-canvas')).toBeVisible();
+    await expect.poll(() => painted('facility-density-canvas'), { timeout: 15000 }).toBeGreaterThan(0);
+    await page.locator('.api-map-shell').screenshot({ path: resolve(dir, 'map-density.png') });
   });
 }

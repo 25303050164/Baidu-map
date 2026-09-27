@@ -28,7 +28,7 @@ function fakeContext(calls: string[]): Ctx {
     save: record('save'),
     restore: record('restore'),
     beginPath: record('beginPath'),
-    moveTo: record('moveTo'),
+    moveTo: (...args: number[]) => { record('moveTo')(...args); recordedMoves.push(args); },
     lineTo: record('lineTo'),
     closePath: record('closePath'),
     clip: (...args: unknown[]) => { calls.push(`clip:${args[0] === 'evenodd' ? 'evenodd' : 'nonzero'}`); },
@@ -39,6 +39,7 @@ function fakeContext(calls: string[]): Ctx {
 
 /** 所有画布共用一个调用记录，断言时不必关心是主画布还是离屏缓冲。 */
 let recorded: string[] = [];
+let recordedMoves: number[][] = [];
 
 function fakeCanvas() {
   const context = fakeContext(recorded);
@@ -153,6 +154,7 @@ const flush = () => { const pending = frames; frames = []; for (const callback o
 beforeEach(() => {
   frames = [];
   recorded = [];
+  recordedMoves = [];
   (globalThis as unknown as { document: unknown }).document = {
     createElement: (tag: string) => {
       if (tag !== 'canvas') throw new Error(`unexpected element ${tag}`);
@@ -200,6 +202,12 @@ describe('Canvas 热力覆盖物', () => {
     expect(recorded.filter(call => call === 'drawImage:5')).toHaveLength(1);
     expect(recorded).toContain('save:0');
     expect(recorded).toContain('restore:0');
+    const canvas = env.augmented.get(layer.overlay) as { style: Record<string, string> };
+    // 本替身的地图中心投到 (0,0)，不是视口中心。真实 SDK 也可能如此。
+    expect(canvas.style.left).toBe('-400px');
+    expect(canvas.style.top).toBe('-300px');
+    expect(recordedMoves[0][0]).toBeCloseTo(340, 4);
+    expect(recordedMoves[0][1]).toBeCloseTo(360, 4);
   });
 
   it('没有真实设施就不生成热力点', () => {

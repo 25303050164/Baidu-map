@@ -316,8 +316,8 @@ export function verificationView(snapshot: CheckupSnapshot): VerificationView {
     checked: verification.checked, failed: verification.failed,
     unresolved: verification.unresolved, reason: verification.reason,
     notes: verification.notes ?? [],
-    summary: `已核验 ${verification.checked} 处设施，失败 ${verification.failed} 处，`
-      + `未能定论 ${verification.unresolved} 处。`,
+    summary: `已尝试核验 ${verification.checked} 处设施，其中 ${verification.failed} 处未取得严格路线结论，`
+      + `模型入口未确认 ${verification.unresolved} 处。`,
   };
 }
 

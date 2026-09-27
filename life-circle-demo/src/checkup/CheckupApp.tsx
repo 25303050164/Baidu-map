@@ -24,16 +24,28 @@ import { budgetFor, capabilityView, type CapabilityView } from './capabilities';
 import { isCheckupBusy, STAGE_LABELS } from './types';
 import type { CheckupState } from './types';
 import { LAYER_IDS, type LayerId, type Stage } from './validate';
-import { drawableLayer, LAYER_STYLES, type LayerDrawable } from './layers';
-import { CheckupMap, DEFAULT_CHECKUP_LAYERS, type CheckupLayerToggles } from './CheckupMap';
+import { drawableLayer, LAYER_STYLES, serviceSamples, type LayerDrawable } from './layers';
+import { CheckupMap, DEFAULT_CHECKUP_LAYERS, type CheckupLayerToggles, type HeatLayer } from './CheckupMap';
 import { CheckupReport } from './CheckupReport';
-import { evidenceNotes, percent } from './report';
+import { CATEGORY_ORDER, categoryLabel, evidenceNotes, percent } from './report';
+import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
 // 复用旧分析页的排布类：工作台与它是同一个版式，另起一套只会让两页慢慢长歪。
 import '../analysis/api.css';
 import './checkup.css';
 
 /** 地图上的六层；报告是文档，不占图层开关，从这里打开。 */
 const MAP_LAYERS = LAYER_IDS.filter(id => id !== 'report') as LayerId[];
+
+/** 两种热力各自要先取到的图层：打开热力时，即使这些图层本身没勾选也要取。 */
+const HEAT_DEPENDENCIES: Record<HeatLayer, LayerId[]> = {
+  service: ['heatmap', 'isochrone'],
+  density: ['facilities', 'isochrone'],
+};
+
+const SERVICE_MODES = [
+  { value: SERVICE_COMPOSITE, label: '综合（三类均已知处）' },
+  ...CATEGORY_ORDER.map(category => ({ value: category, label: categoryLabel(category) })),
+];
 
 const BUSINESS_LABELS: Record<string, string> = {
   complete: '证据完整', partial: '部分证据', insufficient: '证据不足',
@@ -88,6 +100,7 @@ export default function CheckupApp() {
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
   const [state, setState] = useState<CheckupState>({ phase: 'idle' });
   const [toggles, setToggles] = useState<CheckupLayerToggles>({ ...DEFAULT_CHECKUP_LAYERS });
+  const [serviceMode, setServiceMode] = useState<string>(SERVICE_COMPOSITE);
   const [layerErrors, setLayerErrors] = useState<Partial<Record<LayerId, string>>>({});
   /** 哪一层在哪一版上失败过：同一版不反复重试，换版再试。 */
   const [failed, setFailed] = useState<Partial<Record<LayerId, number>>>({});
@@ -133,7 +146,9 @@ export default function CheckupApp() {
    */
   useEffect(() => {
     if (state.phase !== 'completed' || revision === undefined) return;
-    const pending = MAP_LAYERS.find(id => toggles[id]
+    const pending = MAP_LAYERS.find(id => (toggles[id]
+      || (Object.keys(HEAT_DEPENDENCIES) as HeatLayer[])
+        .some(heat => toggles[heat] && HEAT_DEPENDENCIES[heat].includes(id)))
       && state.layers?.[id]?.revision !== revision && failed[id] !== revision);
     if (pending === undefined) return;
     controller.current?.layer(pending).catch((error: unknown) => {
@@ -153,6 +168,17 @@ export default function CheckupApp() {
     }
     return result;
   }, [state.layers, revision]);
+
+  /** 服务覆盖热力的输入：同样只认这一版的模型网格。 */
+  const heatmapLayer = state.layers?.heatmap;
+  const coverage = useMemo(() => heatmapLayer && heatmapLayer.revision === revision
+    ? serviceSamples(heatmapLayer) : null, [heatmapLayer, revision]);
+
+  /** 两种热力互斥（§8.1）：打开一种就关掉另一种，两张半透明画布叠在一起谁也读不清。 */
+  function toggleHeat(heat: HeatLayer, on: boolean) {
+    setToggles(current => ({ ...current, [heat]: on,
+      ...(on ? { [heat === 'service' ? 'density' : 'service']: false } : {}) }));
+  }
 
   const selectedPoint = useMemo(() => selected === null ? null
     : (drawables.facilities?.points ?? []).find(item => item.key === selected) ?? null,
@@ -226,6 +252,16 @@ export default function CheckupApp() {
           </Space>
         </Card>
         <Card title="地图图层">
+          <Checkbox checked={!!toggles.service}
+            onChange={event => toggleHeat('service', event.target.checked)}>
+            服务覆盖热力</Checkbox>
+          <p className="api-muted checkup-layer-note">后端评估格的结论连成渐变面：已覆盖按最近设施步行距离着色，服务不足为灰，数据未知为淡紫。模型估计，不是实测。</p>
+          {toggles.service && <label className="api-label checkup-layer-note">覆盖类别<Select
+            aria-label="覆盖类别" value={serviceMode} onChange={setServiceMode} options={SERVICE_MODES} /></label>}
+          <Checkbox checked={!!toggles.density}
+            onChange={event => toggleHeat('density', event.target.checked)}>
+            设施密度热力</Checkbox>
+          <p className="api-muted checkup-layer-note">圈内已接收设施等权计算，120 米核半径；颜色表示密度，不表示覆盖率。与服务覆盖热力二选一。</p>
           <div className="api-layer-list">{MAP_LAYERS.map(id => <div key={id}>
             <Checkbox checked={!!toggles[id]}
               onChange={event => setToggles({ ...toggles, [id]: event.target.checked })}>
@@ -240,7 +276,8 @@ export default function CheckupApp() {
         {snapshot && stale && <Alert type="warning" showIcon
           title="条件已修改。地图与报告仍是上一次体检的结果，需重新体检才会更新。" />}
         <CheckupMap center={center} onPick={choose} resultCenter={snapshot?.center}
-          layers={toggles} drawables={drawables} selectedId={selected} onSelect={setSelected} />
+          layers={toggles} drawables={drawables} coverage={coverage} serviceMode={serviceMode}
+          selectedId={selected} onSelect={setSelected} />
       </section>
       <section className="api-results" aria-label="体检结果">
         <Card title="体检进度">

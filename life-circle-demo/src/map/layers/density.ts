@@ -73,20 +73,23 @@ export function perHectare(weightPerM2: number): number {
   return weightPerM2 * 10_000;
 }
 
-const RAMP: { at: number; rgb: [number, number, number] }[] = [
+export type Rgb = [number, number, number];
+export type RampStop = { at: number; rgb: Rgb };
+
+const RAMP: RampStop[] = [
   { at: 0.00, rgb: [44, 127, 184] },
   { at: 0.33, rgb: [65, 171, 93] },
   { at: 0.66, rgb: [254, 178, 76] },
   { at: 1.00, rgb: [227, 26, 28] },
 ];
 
-/** 固定色带取值：t 为 0—1 的归一化密度，超出即截断。 */
-export function rampRgb(t: number): [number, number, number] {
+/** 任一固定色带取值：t 为 0—1，超出即截断。密度与服务覆盖两层共用这一个插值。 */
+export function rampAt(stops: readonly RampStop[], t: number): Rgb {
   const value = Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0;
-  for (let i = 1; i < RAMP.length; i++) {
-    const right = RAMP[i];
+  for (let i = 1; i < stops.length; i++) {
+    const right = stops[i];
     if (value <= right.at) {
-      const left = RAMP[i - 1];
+      const left = stops[i - 1];
       const span = right.at - left.at;
       const k = span <= 0 ? 0 : (value - left.at) / span;
       return [
@@ -96,7 +99,12 @@ export function rampRgb(t: number): [number, number, number] {
       ];
     }
   }
-  return RAMP[RAMP.length - 1].rgb;
+  return stops[stops.length - 1].rgb;
+}
+
+/** 固定色带取值：t 为 0—1 的归一化密度，超出即截断。 */
+export function rampRgb(t: number): Rgb {
+  return rampAt(RAMP, t);
 }
 
 /**
@@ -114,11 +122,11 @@ export function densityRgba(density: number, scaleMax: number = DENSITY_SCALE_MA
 }
 
 /** CSS 渐变串，图例与色带用同一个函数，避免两处色标不一致。 */
-export function rampCss(stops = 12): string {
+export function rampCss(stops = 12, color: (t: number) => Rgb = rampRgb): string {
   const parts: string[] = [];
   for (let i = 0; i <= stops; i++) {
     const t = i / stops;
-    const [r, g, b] = rampRgb(t);
+    const [r, g, b] = color(t);
     parts.push(`rgb(${r}, ${g}, ${b}) ${Math.round(t * 100)}%`);
   }
   return `linear-gradient(90deg, ${parts.join(', ')})`;

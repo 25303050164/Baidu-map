@@ -27,6 +27,9 @@ function holed(offset = 0): Record<string, unknown> {
 }
 
 type Options = {
+  densityBoundary?: boolean;
+  /** 模型网格：西半边三类都覆盖，东半边购物是缺口（其余两类覆盖）。 */
+  serviceCells?: boolean;
   facilityCount?: number;
   holedGaps?: boolean;
   gapsNotReady?: boolean;
@@ -94,7 +97,11 @@ async function setup(page: Page, options: Options = {}) {
 /** 每层的载荷都按后端实际返回的形态给：等时圈是单个面，其余五层是要素集合。 */
 function layerFor(id: string, options: Options): unknown {
   const base = { revision: REVISION, resultHash: HASH, document: null };
-  if (id === 'isochrone') return layer({ ...base, layerId: 'isochrone', geometry: polygon(),
+  if (id === 'isochrone') return layer({ ...base, layerId: 'isochrone', geometry: options.densityBoundary
+    ? { type: 'Polygon', coordinates: [
+      [[116.403, 39.914], [116.407, 39.914], [116.407, 39.918], [116.403, 39.918], [116.403, 39.914]],
+      [[116.4053, 39.9158], [116.4057, 39.9158], [116.4057, 39.9162], [116.4053, 39.9162], [116.4053, 39.9158]],
+    ] } : polygon(),
     displayGeometry: polygon() });
   if (id === 'accessibility') return layer({ ...base, layerId: 'accessibility', displayGeometry: null,
     geometry: collection([feature(polygon(0.03), { id: 'domain' })]) });
@@ -115,12 +122,37 @@ function layerFor(id: string, options: Options): unknown {
         { id: `f-${index}`, name: `设施 ${index}`,
           majorCategory: index % 3 === 2 ? 'shopping' : 'medical' }))) });
   }
+  if (id === 'heatmap' && options.serviceCells) {
+    return layer({ ...base, layerId: 'heatmap', displayGeometry: null,
+      geometry: collection(serviceCells(), { metric: 'walking_route', estimated: true, stepM: 50,
+        domain: { type: 'Polygon', coordinates: [[[116.403, 39.914], [116.407, 39.914], [116.407, 39.918],
+          [116.403, 39.918], [116.403, 39.914]]] } }) });
+  }
   if (id === 'verification') {
     return layer({ ...base, layerId: 'verification', displayGeometry: null, geometry: collection([
       feature(point(116.405, 39.916), { facilityId: 'f-0', status: 'verified_reachable' }),
       feature(point(116.406, 39.9165), { facilityId: 'f-1', status: 'verified_unreachable' })]) });
   }
   return layer({ ...base, layerId: id, displayGeometry: null, geometry: collection([]) });
+}
+
+/** 50 米格铺满密度测试用的方形圈面；格编号带层级，前端据此还原格边长。 */
+function serviceCells(): Record<string, unknown>[] {
+  const dLng = 50 / (111_320 * Math.cos((39.916 * Math.PI) / 180));
+  const dLat = 50 / 111_320;
+  const cells: Record<string, unknown>[] = [];
+  for (let i = 0; i < 7; i++) {
+    for (let j = 0; j < 9; j++) {
+      const lng = 116.403 + (i + 0.5) * dLng;
+      const lat = 39.914 + (j + 0.5) * dLat;
+      for (const category of ['shopping', 'medical', 'education']) {
+        const gap = category === 'shopping' && lng > 116.405;
+        cells.push(feature(point(+lng.toFixed(7), +lat.toFixed(7)), { category, cell: `0:${i}:${j}`,
+          status: gap ? 'gap' : 'covered', distanceM: gap ? 1400 : 150, nearestFacility: 'f-0' }));
+      }
+    }
+  }
+  return cells;
 }
 
 function snapshotFor(options: Options, submitted: { center: { lng: number; lat: number } }) {
@@ -159,6 +191,105 @@ const pickAndStart = async (page: Page) => {
   await page.keyboard.press('Escape');
 };
 
+test('设施密度绘出非透明像素、孔洞保持透明，切换与缩放后仍正确', async ({ page }) => {
+  await setup(page, { densityBoundary: true, facilityCount: 1 });
+  await page.goto('/');
+  // 设施密度不是默认热力：要自己打开，打开后服务覆盖热力随之关闭（两者互斥）。
+  await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).check();
+  await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).not.toBeChecked();
+  // 关闭独立点位与圈面显示后，密度仍须获取依赖数据。
+  await page.getByRole('checkbox', { name: '设施点位', exact: true }).uncheck();
+  await page.getByRole('checkbox', { name: '步行等时圈', exact: true }).uncheck();
+  await pickAndStart(page);
+  const canvas = page.getByTestId('facility-density-canvas');
+  const alphaAt = (lng: number, lat: number) => canvas.evaluate((el, pos) => {
+    const audit = (window as unknown as { __mapAudit: {
+      project: (lng: number, lat: number) => { x: number; y: number } } }).__mapAudit;
+    const pixel = audit.project(pos.lng, pos.lat);
+    const c = el as HTMLCanvasElement;
+    const x = (pixel.x - parseFloat(c.style.left)) * c.width / parseFloat(c.style.width);
+    const y = (pixel.y - parseFloat(c.style.top)) * c.height / parseFloat(c.style.height);
+    return c.getContext('2d')!.getImageData(Math.round(x), Math.round(y), 1, 1).data[3];
+  }, { lng, lat });
+  await expect(canvas).toBeVisible();
+  await expect.poll(() => alphaAt(116.405, 39.916)).toBeGreaterThan(0);
+  expect(await alphaAt(116.4055, 39.916)).toBe(0);
+  expect(await alphaAt(116.4075, 39.916)).toBe(0);
+  const pans = (await audit(page)).pans.length;
+  await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).uncheck();
+  await expect(canvas).toHaveCount(0);
+  await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).check();
+  await expect.poll(() => alphaAt(116.405, 39.916)).toBeGreaterThan(0);
+  await page.evaluate(() => {
+    const audit = (window as unknown as { __mapAudit: { views: Record<string, (() => void)[]> } }).__mapAudit;
+    for (const type of ['moveend', 'zoomend', 'resize']) for (const handler of audit.views[type] ?? []) handler();
+  });
+  await expect.poll(() => alphaAt(116.405, 39.916)).toBeGreaterThan(0);
+  expect(await alphaAt(116.4055, 39.916)).toBe(0);
+  expect((await audit(page)).pans.length).toBe(pans);
+  await page.locator('.api-map-shell').screenshot({ path: 'output/checkup-ui/density-regression.png' });
+});
+
+/** 画布上某个经纬度处的 RGBA：与覆盖物用同一个投影，按画布的 CSS 位置与设备像素比换算。 */
+const rgbaAt = (canvas: ReturnType<Page['getByTestId']>, lng: number, lat: number) => canvas.evaluate((el, pos) => {
+  const audit = (window as unknown as { __mapAudit: {
+    project: (lng: number, lat: number) => { x: number; y: number } } }).__mapAudit;
+  const pixel = audit.project(pos.lng, pos.lat);
+  const c = el as HTMLCanvasElement;
+  const x = (pixel.x - parseFloat(c.style.left)) * c.width / parseFloat(c.style.width);
+  const y = (pixel.y - parseFloat(c.style.top)) * c.height / parseFloat(c.style.height);
+  return [...c.getContext('2d')!.getImageData(Math.round(x), Math.round(y), 1, 1).data];
+}, { lng, lat });
+
+const near = (actual: number[], expected: number[], tolerance = 6) =>
+  expected.every((value, index) => Math.abs(actual[index] - value) <= tolerance);
+
+test('服务覆盖热力默认打开：评估格连成渐变面，圈外与孔洞透明，切类别、切热力都各归其位', async ({ page }) => {
+  await setup(page, { densityBoundary: true, serviceCells: true });
+  await page.goto('/');
+  // 模型网格采样点位本身不勾：热力仍须取到模型网格（与密度热力取设施同理）。
+  await expect(page.getByRole('checkbox', { name: '模型网格采样', exact: true })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).toBeChecked();
+  await pickAndStart(page);
+  const canvas = page.getByTestId('service-heat-canvas');
+  await expect(canvas).toBeVisible();
+  await expect(page.getByTestId('facility-density-canvas')).toHaveCount(0);
+  // 综合：西半边三类都覆盖 → 满分绿；东半边购物缺口 → 三分之二处的黄。
+  await expect.poll(async () => (await rgbaAt(canvas, 116.4035, 39.915))[3]).toBeGreaterThan(0);
+  const west = await rgbaAt(canvas, 116.4035, 39.915);
+  const east = await rgbaAt(canvas, 116.4065, 39.915);
+  expect(near(west, [26, 152, 80]), `west ${west}`).toBe(true);
+  expect(near(east, [254, 224, 139]), `east ${east}`).toBe(true);
+  // 计算圈的孔洞与圈外一律透明：热力不越过圈面。
+  expect((await rgbaAt(canvas, 116.4055, 39.916))[3]).toBe(0);
+  expect((await rgbaAt(canvas, 116.4075, 39.916))[3]).toBe(0);
+  await expect(page.getByTestId('service-legend')).toContainText('三类均已知');
+  await expect(page.getByTestId('service-legend')).toContainText('模型估计');
+  // 开着热力时等时圈只描边：面填色会透过半透明热力把整圈染成一片。
+  const fills = async () => (await page.evaluate(() => (window as unknown as { __mapAudit: {
+    fills: { fillOpacity: number | null }[] } }).__mapAudit.fills)).map(fill => fill.fillOpacity);
+  await expect.poll(fills).toContain(0);
+  expect(await fills()).not.toContain(0.26);
+
+  // 单看购物：东半边是缺口灰，西半边按距离着色（150 米，偏绿）。
+  await page.getByRole('combobox', { name: '覆盖类别' }).click();
+  await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: '购物' }).first().click();
+  await expect.poll(async () => near(await rgbaAt(canvas, 116.4065, 39.915), [107, 114, 128])).toBe(true);
+  const shoppingWest = await rgbaAt(canvas, 116.4035, 39.915);
+  expect(shoppingWest[1]).toBeGreaterThan(shoppingWest[0]);
+  await expect(page.getByTestId('service-legend')).toContainText('购物');
+
+  // 两种热力互斥：打开密度，服务覆盖画布摘掉；两种都关掉，圈面恢复填色。
+  await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).check();
+  await expect(canvas).toHaveCount(0);
+  await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).not.toBeChecked();
+  await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).uncheck();
+  await expect.poll(fills).toContain(0.26);
+  await page.getByRole('checkbox', { name: '服务覆盖热力', exact: true }).check();
+  await expect.poll(async () => near(await rgbaAt(canvas, 116.4065, 39.915), [107, 114, 128])).toBe(true);
+  await page.locator('.api-map-shell').screenshot({ path: 'output/checkup-ui/service-heat.png' });
+});
+
 /**
  * 图层是一层一层取的，报告先出来、图后画完。所以断言图上的东西之前要先等到位 ——
  * 直接读审计数组测的是"此刻画到哪了"，不是"最终画成了什么"。
@@ -186,7 +317,7 @@ test('a published revision draws its layers, opens the report and keeps the view
   await expect(page.getByTestId('coverage-shopping')).toContainText('70.0%');
   // 灰区清单照抄后端给的说法：它是"要做的事"，不是界面重新措辞的提示。
   await expect(page.getByTestId('zone-zone-1')).toContainText('设施检索未完成，先补采再判定。');
-  await expect(page.getByTestId('verification-summary')).toContainText('已核验 4 处设施');
+  await expect(page.getByTestId('verification-summary')).toContainText('已尝试核验 4 处设施');
 
   const drawn = await audit(page);
   // 等时圈 1 + 评估域 1 + 灰区 1：三层各画各的，谁也不清空谁。

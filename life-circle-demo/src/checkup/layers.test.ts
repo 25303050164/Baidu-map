@@ -3,7 +3,7 @@
  * 有没有被分开。
  */
 import { describe, expect, it } from 'vitest';
-import { LAYER_STYLES, drawableLayer } from './layers';
+import { LAYER_STYLES, drawableLayer, serviceSamples } from './layers';
 import { collection, feature, layer, point, polygon } from './fixtures';
 
 describe('layer states', () => {
@@ -71,20 +71,58 @@ describe('feature collection layers', () => {
   it('colours verification points by what the route actually said', () => {
     const verification = layer({ layerId: 'verification', displayGeometry: null,
       geometry: collection([
-        feature(point(116.4, 39.9), { facilityId: 'f-1', status: 'verified_reachable' }),
-        feature(point(116.41, 39.91), { facilityId: 'f-2', status: 'verified_unreachable' }),
+        feature(point(116.4, 39.9), { facilityId: 'f-1', poiStatus: 'verified_reachable' }),
+        feature(point(116.41, 39.91), { facilityId: 'f-2', poiStatus: 'verified_unreachable' }),
       ]) });
     const drawable = drawableLayer('verification', verification);
     expect(drawable.points.map(item => item.color)).toEqual(['#147d70', '#b54708']);
     expect(drawable.points[1].title).toContain('f-2');
   });
 
-  it('shows a heat point distance as the measured value it is', () => {
+  it('shows model distances and keeps distinct categories at the same cell', () => {
     const heat = layer({ layerId: 'heatmap', displayGeometry: null, geometry: collection([
       feature(point(116.4, 39.9), { cell: '0:1:2', category: 'medical', distanceM: 320.4,
         status: 'covered' }),
+      feature(point(116.4, 39.9), { cell: '0:1:2', category: 'shopping', distanceM: 900,
+        status: 'unknown' }),
     ]) });
     expect(drawableLayer('heatmap', heat).points[0].title).toContain('320 米');
+    expect(new Set(drawableLayer('heatmap', heat).points.map(p => p.key)).size).toBe(2);
+  });
+});
+
+describe('service coverage samples', () => {
+  it('reads the cell size from the level and the grid step, and keeps the domain', () => {
+    const heat = layer({ layerId: 'heatmap', displayGeometry: null, geometry: collection([
+      feature(point(116.4, 39.9), { cell: '0:1:2', category: 'medical', distanceM: 320.4, status: 'covered' }),
+      feature(point(116.4001, 39.9), { cell: '1:3:4', category: 'shopping', distanceM: 900, status: 'unknown' }),
+      feature(point(116.4002, 39.9), { cell: '2:9:9', category: 'education', status: 'gap' }),
+    ], { stepM: 40, domain: polygon() }) });
+    const { samples, domain, dropped } = serviceSamples(heat);
+    expect(samples.map(sample => sample.sizeM)).toEqual([40, 20, 10]);
+    expect(samples[1]).toMatchObject({ category: 'shopping', status: 'unknown', distanceM: 900 });
+    // 没有距离就是没有：不补 0，不补"很远"。
+    expect(samples[2].distanceM).toBeNull();
+    expect(domain).toEqual(polygon());
+    expect(dropped).toBe(0);
+  });
+
+  it('drops cells it cannot read and says how many, instead of guessing', () => {
+    const heat = layer({ layerId: 'heatmap', displayGeometry: null, geometry: collection([
+      feature(point(116.4, 39.9), { cell: 'x:1:2', category: 'medical', status: 'covered', distanceM: 1 }),
+      feature(point(116.4, 39.9), { cell: '0:1:2', category: 'medical', status: 'maybe' }),
+      feature(point(116.4, 39.9), { cell: '0:1:2', status: 'gap' }),
+      feature(point(116.4, 39.9), { cell: '0:1:3', category: 'medical', status: 'gap' }),
+    ]) });
+    const result = serviceSamples(heat);
+    expect(result.dropped).toBe(3);
+    // 图层没报步长时按后端的基准步长 50 米；没有评估域就不做域内未知。
+    expect(result.samples).toEqual([expect.objectContaining({ sizeM: 50, status: 'gap' })]);
+    expect(result.domain).toBeNull();
+  });
+
+  it('has nothing to draw before the layer is fetched', () => {
+    expect(serviceSamples(undefined)).toEqual({ samples: [], domain: null, dropped: 0 });
   });
 });
 

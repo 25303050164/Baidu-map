@@ -9,6 +9,8 @@
  *
  * - `paths` 是**当前挂在图上**的多边形环，`removeOverlay` 会同步摘掉它 —— 因此"取消勾选
  *   某一层之后图上还剩什么"可以断言，而 `clearOverlays()` 清空的痕迹同样看得见；
+ * - `fills` 与 `paths` 同进同出，记下每片多边形的填充不透明度：开热力时圈面只描边，
+ *   这件事只能从这里看出来；
  * - `markers` 里同一枚标记的 `uid` 只在重建时变化，用来分辨"重画"与"新建"；
  * - `pointToOverlayPixel` 同时供覆盖物定位与测试取样使用，所以像素断言和图层看到的是
  *   同一个坐标系（`DEG_PER_PX` 是它的换算率，不是真实地图比例尺）。
@@ -18,6 +20,7 @@ import type { Page } from '@playwright/test';
 export async function installMapSdk(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const audit = { creations: 0, active: 0, paths: [] as string[][],
+      fills: [] as { rings: string[]; fillOpacity: number | null }[],
       polylines: [] as { lng: number; lat: number }[][],
       markers: [] as Marker[], click: undefined as undefined | ((e: unknown) => void),
       panes: {} as Record<string, HTMLElement>,
@@ -39,7 +42,7 @@ export async function installMapSdk(page: Page): Promise<void> {
     class Icon { seq = ++iconSeq; constructor(public url: string, public size: Size, public options: { anchor?: Size }) {} }
     // uid 是标记的身份：图层没有重建时，同一枚标记必须保持同一个 uid。
     class Marker extends Overlay { uid = ++markerSeq; constructor(public point: Point, public options: { title: string; icon?: Icon }) { super(); } }
-    class Polygon extends Overlay { constructor(public rings: string[]) { super(); } }
+    class Polygon extends Overlay { constructor(public rings: string[], public options: { fillOpacity?: number } = {}) { super(); } }
     class Label extends Overlay { setStyle() {} }
     class Polyline extends Overlay {
       path: { lng: number; lat: number }[];
@@ -86,7 +89,10 @@ export async function installMapSdk(page: Page): Promise<void> {
       /** 测试里模拟真实平移/缩放结束：图层必须据此重新投影。 */
       fireView(type: string) { for (const handler of [...(audit.views[type] ?? [])]) handler(); }
       addOverlay(overlay: Polygon | Marker) {
-        if (overlay instanceof Polygon) audit.paths.push(overlay.rings);
+        if (overlay instanceof Polygon) {
+          audit.paths.push(overlay.rings);
+          audit.fills.push({ rings: overlay.rings, fillOpacity: overlay.options.fillOpacity ?? null });
+        }
         if (overlay instanceof Marker) audit.markers.push(overlay);
         // 自定义覆盖物（如热力 Canvas）由 SDK 调 initialize 并接管返回的元素。
         const custom = overlay as { initialize?: (map: Map) => HTMLElement | undefined };
@@ -99,7 +105,10 @@ export async function installMapSdk(page: Page): Promise<void> {
       removeOverlay(overlay: unknown) {
         this.overlays = this.overlays.filter(item => item !== overlay);
         const rings = (overlay as { rings?: string[] }).rings;
-        if (rings) audit.paths = audit.paths.filter(path => path !== rings);
+        if (rings) {
+          audit.paths = audit.paths.filter(path => path !== rings);
+          audit.fills = audit.fills.filter(fill => fill.rings !== rings);
+        }
         audit.markers = audit.markers.filter(marker => marker !== overlay);
         const path = (overlay as { path?: { lng: number; lat: number }[] }).path;
         if (path) audit.polylines = audit.polylines.filter(item => item !== path);
@@ -107,7 +116,7 @@ export async function installMapSdk(page: Page): Promise<void> {
       }
       clearOverlays() {
         this.overlays.forEach(overlay => overlay.remove?.());
-        this.overlays = []; audit.paths = []; audit.markers = []; audit.polylines = [];
+        this.overlays = []; audit.paths = []; audit.fills = []; audit.markers = []; audit.polylines = [];
       }
       destroy() { audit.active--; }
     }

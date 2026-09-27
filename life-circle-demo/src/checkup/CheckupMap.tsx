@@ -11,20 +11,35 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Center } from '../types';
 import { useBaiduMap } from '../map/useBaiduMap';
-import type { BMapIcon, BMapMap, BMapOverlay, BMapViewEventType } from '../map/baiduMapTypes';
+import type { BMapMap, BMapOverlay, BMapViewEventType } from '../map/baiduMapTypes';
 import { createDotIcon } from '../map/mapIcons';
 import { drawGeometry } from '../analysis/geometry';
 import { aggregateByCell, FACILITY_CLUSTER_CELL_PX } from '../map/layers/aggregate';
-import { LAYER_STYLES, type LayerDrawable, type LayerPoint } from './layers';
+import { createDensityOverlay, type DensityOverlay } from '../map/layers/heatmapOverlay';
+import { DENSITY_SCALE_MAX, DENSITY_UNIT, HEAT_KERNEL_RADIUS_M, rampCss } from '../map/layers/density';
+import { createServiceOverlay, type ServiceOverlay } from '../map/layers/serviceOverlay';
+import {
+  SERVICE_COMPOSITE, SERVICE_DISTANCE_MAX_M, SERVICE_GAP_RGB, SERVICE_SCORE_MAX, SERVICE_UNKNOWN_RGB,
+  serviceRampCss,
+} from '../map/layers/serviceField';
+import { LAYER_STYLES, type LayerDrawable, type LayerPoint, type ServiceSamples } from './layers';
+import { CATEGORY_ORDER, categoryLabel } from './report';
 import type { LayerId } from './validate';
 
-export type CheckupLayerToggles = Partial<Record<LayerId, boolean>>;
+/** 两种热力（§8.1）：服务覆盖与设施密度互斥，同一时刻只开一种。 */
+export type HeatLayer = 'service' | 'density';
+export type CheckupLayerToggles = Partial<Record<LayerId | HeatLayer, boolean>>;
 
-/** 默认打开的是"结论"层；热力与核验是证据层，按需打开。 */
-export const DEFAULT_CHECKUP_LAYERS: Record<LayerId, boolean> = {
+/**
+ * 默认显示圈面、服务覆盖热力和核验；模型网格采样按需打开。
+ * 服务覆盖是体检的结论本身；设施密度只说"设施扎不扎堆"，不说覆盖，所以不默认打开。
+ */
+export const DEFAULT_CHECKUP_LAYERS: Record<LayerId | HeatLayer, boolean> = {
   isochrone: true, accessibility: true, service_gaps: true, facilities: true,
-  heatmap: false, verification: true, report: false,
+  heatmap: false, verification: true, report: false, density: false, service: true,
 };
+
+const rgbCss = ([r, g, b]: readonly number[]) => `rgb(${r}, ${g}, ${b})`;
 
 type Group = 'vector' | 'point' | 'label';
 
@@ -40,13 +55,18 @@ function dominant(points: LayerPoint[]): LayerPoint {
   return best;
 }
 
-export function CheckupMap({ center, onPick, resultCenter, layers, drawables, selectedId, onSelect }: {
+export function CheckupMap({ center, onPick, resultCenter, layers, drawables, coverage = null,
+  serviceMode = SERVICE_COMPOSITE, selectedId, onSelect }: {
   center: Center;
   onPick: (center: Center) => void;
   /** 已发布那一版修订的中心点；与选点分开，避免把"待分析选点"当成"结果中心"。 */
   resultCenter?: Center;
   layers: CheckupLayerToggles;
   drawables: Partial<Record<LayerId, LayerDrawable>>;
+  /** 这一版的模型网格（服务覆盖热力的输入）；null 表示还没取到。 */
+  coverage?: ServiceSamples | null;
+  /** 服务覆盖热力看哪一类；综合要求三类都已知。 */
+  serviceMode?: string;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 }) {
@@ -62,6 +82,8 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, se
   const initialCenter = useRef(center);
   initialCenter.current = center;
   const overlays = useRef<Record<Group, BMapOverlay[]>>({ vector: [], point: [], label: [] });
+  const density = useRef<DensityOverlay | null>(null);
+  const serviceHeat = useRef<ServiceOverlay | null>(null);
 
   const replaceGroup = (instance: BMapMap, group: Group, build: () => BMapOverlay[]) => {
     for (const overlay of overlays.current[group]) instance.removeOverlay?.(overlay);
@@ -87,6 +109,50 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, se
   }, [api]);
 
   useEffect(() => {
+    if (!api || !map) return;
+    const overlay = createDensityOverlay(api, {
+      viewport: () => ({ width: container.current?.clientWidth ?? 0,
+        height: container.current?.clientHeight ?? 0 }),
+    });
+    density.current = overlay;
+    return () => { overlay?.destroy(); density.current = null; };
+  }, [api, map]);
+
+  useEffect(() => {
+    const overlay = density.current;
+    if (!overlay || !map) return;
+    // v2 facilities 仅包含按计算圈面接收的设施；隔离项与圈外记录不在该图层。
+    // 采用原始设施而非聚合标记或模型网格，UID 去重由密度模块完成。
+    overlay.setFacilities((drawables.facilities?.points ?? []).map(p => ({
+      id: p.key, lng: p.lng, lat: p.lat,
+    })));
+    overlay.setBoundary(drawables.isochrone?.shapes[0]?.geometry ?? null);
+    if (layers.density) overlay.attach(map); else overlay.detach();
+  }, [api, map, layers.density, drawables.facilities, drawables.isochrone]);
+
+  useEffect(() => {
+    if (!api || !map) return;
+    const overlay = createServiceOverlay(api, {
+      categories: CATEGORY_ORDER,
+      viewport: () => ({ width: container.current?.clientWidth ?? 0,
+        height: container.current?.clientHeight ?? 0 }),
+    });
+    serviceHeat.current = overlay;
+    return () => { overlay?.destroy(); serviceHeat.current = null; };
+  }, [api, map]);
+
+  useEffect(() => {
+    const overlay = serviceHeat.current;
+    if (!overlay || !map) return;
+    // 画的是后端的评估格本身（结论与模型距离），不是设施点的核叠加；
+    // 评估域给出"域内无格即未知"，计算圈给出裁剪。
+    overlay.setSamples(coverage?.samples ?? [], coverage?.domain ?? null);
+    overlay.setMode(serviceMode);
+    overlay.setBoundary(drawables.isochrone?.shapes[0]?.geometry ?? null);
+    if (layers.service) overlay.attach(map); else overlay.detach();
+  }, [api, map, layers.service, coverage, serviceMode, drawables.isochrone]);
+
+  useEffect(() => {
     if (!map) return;
     let frame = 0;
     const onView = () => { cancelAnimationFrame(frame);
@@ -97,9 +163,16 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, se
   }, [map]);
 
   // 面：等时圈、评估域与灰区。每次重绘只摘本组自己加进去的覆盖物。
+  //
+  // 开着热力时圈面只描边：BMapGL 的面画在 WebGL 底层，热力画布在其上的 DOM 容器里，
+  // 面填色不会盖住热力，却会透过半透明热力把整圈染成一片青绿，渐变就看不出来了。
+  // 服务覆盖热力自己就把缺口画成灰，所以灰区此时也只留边线和编号对应的轮廓。
+  const heatOn = !!(layers.service || layers.density);
   useEffect(() => {
     const instance = map;
     if (!instance || !api) return;
+    const outlineOnly = new Set<LayerId>(heatOn ? ['isochrone'] : []);
+    if (layers.service) outlineOnly.add('service_gaps');
     try {
       replaceGroup(instance, 'vector', () => {
         const created: BMapOverlay[] = [];
@@ -109,7 +182,8 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, se
           for (const shape of drawable.shapes) {
             created.push(...drawGeometry(instance, api, shape.geometry, {
               strokeColor: shape.style.strokeColor, fillColor: shape.style.fillColor,
-              fillOpacity: shape.style.fillOpacity, strokeWeight: shape.style.strokeWeight,
+              fillOpacity: outlineOnly.has(id) ? 0 : shape.style.fillOpacity,
+              strokeWeight: shape.style.strokeWeight,
               ...(shape.style.strokeStyle ? { strokeStyle: shape.style.strokeStyle } : {}),
             }));
           }
@@ -117,7 +191,8 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, se
         return created;
       });
     } catch { setError(true); }
-  }, [api, map, layers, drawables]);
+  }, [api, map, layers.isochrone, layers.accessibility, layers.service_gaps, heatOn, layers.service,
+    drawables.isochrone, drawables.accessibility, drawables.service_gaps]);
 
   // 点：设施、热力采样、核验记录。按屏幕像素分格合并，数量写在标记上，一条也不丢。
   useEffect(() => {
@@ -155,7 +230,8 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, se
         return created;
       });
     } catch { setError(true); }
-  }, [api, map, layers, drawables, selectedId, viewTick]);
+  }, [api, map, layers.heatmap, layers.verification, layers.facilities,
+    drawables.heatmap, drawables.verification, drawables.facilities, selectedId, viewTick]);
 
   // 中心标记独立成组：平移、勾选图层都不会让它跟着重建。
   useEffect(() => {
@@ -219,7 +295,31 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, se
         {resultCenter && <><br />图层与报告中心：{resultCenter.lng.toFixed(6)}, {resultCenter.lat.toFixed(6)}</>}
       </div>
     </div>
-    {legend.length > 0 && <div className="api-map-legend" data-testid="checkup-legend" aria-label="体检图层图例">
+    {(legend.length > 0 || heatOn) && <div className="api-map-legend" data-testid="checkup-legend" aria-label="体检图层图例">
+      {layers.service && <span className="api-legend-item" data-testid="service-legend"
+        style={{ whiteSpace: 'normal', flexWrap: 'wrap' }}>
+        {api && !api.Overlay ? '当前地图不支持服务覆盖热力' : <>
+          <i style={{ display: 'inline-block', width: 80, height: 10, background: serviceRampCss(serviceMode) }} />
+          {serviceMode === SERVICE_COMPOSITE
+            ? `三类均已知处覆盖类别占比 0–${SERVICE_SCORE_MAX}%`
+            : `${categoryLabel(serviceMode)}：已覆盖处最近设施步行 0–${SERVICE_DISTANCE_MAX_M} 米`}
+          <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_GAP_RGB) }} />服务不足
+          <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_UNKNOWN_RGB) }} />数据未知
+          · 模型估计，不是实测
+          {coverage === null && ' · 等待模型网格'}
+          {coverage !== null && coverage.samples.length === 0 && ' · 本次没有可绘制的网格'}
+          {coverage !== null && coverage.dropped > 0 && ` · ${coverage.dropped} 个格数据不全未绘制`}
+        </>}
+      </span>}
+      {layers.density && <span className="api-legend-item" data-testid="density-legend">
+        {api && !api.Overlay ? '当前地图不支持设施密度热力' : <>
+          <i style={{ display: 'inline-block', width: 80, height: 10, background: rampCss() }} />
+          设施密度 0–{DENSITY_SCALE_MAX} {DENSITY_UNIT} · 核半径 {HEAT_KERNEL_RADIUS_M} 米
+          （不代表服务覆盖率）
+          {drawables.facilities?.state === 'empty' && ' · 本次没有可绘制设施'}
+          {!drawables.facilities && ' · 等待设施结果'}
+        </>}
+      </span>}
       {Object.entries(LAYER_STYLES).filter(([id]) => layers[id as LayerId])
         .map(([id, style]) => <span key={id} className="api-legend-item">
           <i className="api-legend-dot" style={{ background: style.fillColor }} />{style.label}</span>)}

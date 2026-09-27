@@ -16,6 +16,7 @@
 import type { CheckupLayer } from './contract';
 import { readLayerGeometry, type LayerId } from './validate';
 import type { DrawableGeometry } from '../analysis/geometry';
+import type { ServiceSample, ServiceStatus } from '../map/layers/serviceField';
 
 export type LayerStyle = {
   label: string;
@@ -38,8 +39,8 @@ export const LAYER_STYLES: Record<LayerId, LayerStyle> = {
     fillOpacity: 0.38, strokeWeight: 1, note: '步行超出服务标准的连片区域，按面积降序编号。' },
   facilities: { label: '设施点位', strokeColor: '#ffffff', fillColor: '#64748b',
     fillOpacity: 1, strokeWeight: 2, note: '检索并被接受的设施；审核候选与隔离记录不上图。' },
-  heatmap: { label: '热力采样点', strokeColor: '#ffffff', fillColor: '#c78b36',
-    fillOpacity: 1, strokeWeight: 2, note: '每个点是一次实测步行距离，不是覆盖判定。' },
+  heatmap: { label: '模型网格采样', strokeColor: '#ffffff', fillColor: '#c78b36',
+    fillOpacity: 1, strokeWeight: 2, note: '路网模型估计的最近设施距离与覆盖状态，不是百度路线实测。' },
   verification: { label: '核验设施', strokeColor: '#ffffff', fillColor: '#147d70',
     fillOpacity: 1, strokeWeight: 2, note: '问过路的那几家设施及其结论。' },
   report: { label: '体检报告', strokeColor: '#147d70', fillColor: '#147d70',
@@ -86,14 +87,15 @@ function pointView(layerId: LayerId, index: number, feature: Record<string, unkn
     }
     return null;
   };
-  const classification = pick('majorCategory', 'status');
+  const classification = pick('poiStatus', 'majorCategory', 'status');
   const name = pick('name', 'facilityId', 'cell');
   const detail = pick('category', 'distanceM');
   const distance = properties.distanceM;
   const title = [name ?? `第 ${index + 1} 个点`, classification ?? '未分类',
     typeof distance === 'number' ? `${distance.toFixed(0)} 米` : detail].filter(Boolean).join(' · ');
   return {
-    key: String(properties.id ?? properties.facilityId ?? properties.cell ?? `${layerId}-${index}`),
+    key: layerId === 'heatmap' ? `${layerId}:${properties.category}:${properties.cell ?? index}`
+      : String(properties.id ?? properties.facilityId ?? `${layerId}-${index}`),
     lng, lat,
     color: (classification && POINT_COLORS[classification]) ?? LAYER_STYLES[layerId].fillColor,
     title, properties,
@@ -138,4 +140,55 @@ export function drawableLayer(layerId: LayerId, layer: CheckupLayer | undefined)
   });
   return { state: shapes.length + points.length === 0 ? 'empty' : 'ready', shapes, points,
     note: style.note };
+}
+
+/** 后端网格的基准步长（米）；图层没报 stepM 时用它。它只决定平滑带宽，不改变任何格的值。 */
+const DEFAULT_STEP_M = 50;
+const SERVICE_STATUSES = new Set(['covered', 'gap', 'unknown']);
+
+export type ServiceSamples = {
+  samples: ServiceSample[];
+  /** 评估域：域内没有格的地方也是未知，不能画成"什么都没有"。 */
+  domain: { type: string; coordinates: unknown } | null;
+  /** 格点坐标、结论或格编号不可用而被丢弃的个数；不为 0 时界面要说出来。 */
+  dropped: number;
+};
+
+/**
+ * 模型网格图层 → 服务覆盖热力的输入。
+ *
+ * 格编号是 `层级:ix:iy`，层级 k 的格边长是 stepM / 2^k：边长决定插值核的地面半径，
+ * 细分过的格核更小，粗格与细格混排时各自只影响自己一格宽的范围。
+ */
+export function serviceSamples(layer: CheckupLayer | undefined): ServiceSamples {
+  const empty: ServiceSamples = { samples: [], domain: null, dropped: 0 };
+  if (!layer) return empty;
+  const geometry = readLayerGeometry(layer);
+  if (!geometry || geometry.kind !== 'collection') return empty;
+  const stepM = typeof geometry.properties.stepM === 'number' && geometry.properties.stepM > 0
+    ? geometry.properties.stepM : DEFAULT_STEP_M;
+  const domainValue = geometry.properties.domain as { type?: unknown; coordinates?: unknown } | undefined;
+  const domain = domainValue && (domainValue.type === 'Polygon' || domainValue.type === 'MultiPolygon')
+    ? { type: domainValue.type, coordinates: domainValue.coordinates } : null;
+  const samples: ServiceSample[] = [];
+  let dropped = 0;
+  for (const feature of geometry.features) {
+    const shape = feature.geometry as { type: string };
+    if (shape.type !== 'Point') continue;
+    const properties = propertiesOf(feature);
+    const { lng, lat } = pointOf(feature);
+    const level = typeof properties.cell === 'string' ? Number(properties.cell.split(':')[0]) : NaN;
+    const status = properties.status;
+    const distance = properties.distanceM;
+    if (!Number.isInteger(level) || level < 0 || typeof properties.category !== 'string'
+      || typeof status !== 'string' || !SERVICE_STATUSES.has(status)
+      || !Number.isFinite(lng) || !Number.isFinite(lat)) {
+      dropped++;
+      continue;
+    }
+    samples.push({ lng, lat, category: properties.category, status: status as ServiceStatus,
+      distanceM: typeof distance === 'number' && Number.isFinite(distance) ? distance : null,
+      sizeM: stepM / 2 ** level });
+  }
+  return { samples, domain, dropped };
 }

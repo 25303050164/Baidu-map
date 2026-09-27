@@ -165,7 +165,7 @@ describe('verification', () => {
   it('counts what was actually checked', () => {
     const view = verificationView(snapshot());
     expect(view.available).toBe(true);
-    expect(view.summary).toBe('已核验 4 处设施，失败 0 处，未能定论 0 处。');
+    expect(view.summary).toBe('已尝试核验 4 处设施，其中 0 处未取得严格路线结论，模型入口未确认 0 处。');
   });
 });
 
