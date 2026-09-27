@@ -3,7 +3,7 @@
  * 有没有被分开。
  */
 import { describe, expect, it } from 'vitest';
-import { LAYER_STYLES, drawableLayer, serviceSamples } from './layers';
+import { LAYER_STYLES, densityFacilities, drawableLayer, serviceSamples } from './layers';
 import { collection, feature, layer, point, polygon } from './fixtures';
 
 describe('layer states', () => {
@@ -142,5 +142,38 @@ describe('styles', () => {
     }
     // 评估域只有边界、没有面积含义：给它填色会被读成"这一片也是覆盖的"。
     expect(LAYER_STYLES.accessibility.fillOpacity).toBe(0);
+  });
+});
+
+describe('facility density input', () => {
+  const facilities = drawableLayer('facilities', layer({ layerId: 'facilities', displayGeometry: null,
+    geometry: collection([
+      feature(point(116.4, 39.9), { id: 'f-1', majorCategory: 'shopping' }),
+      // 同名同址、相距不到 20 米的两个 UID：后端标成同一组，密度只算一个。
+      feature(point(116.41, 39.91), { id: 'f-2', majorCategory: 'medical', possibleDuplicateGroup: 'possible:ab' }),
+      feature(point(116.41001, 39.91001), { id: 'f-3', majorCategory: 'medical', possibleDuplicateGroup: 'possible:ab' }),
+      feature(point(116.42, 39.92), { id: 'f-4', majorCategory: 'education' }),
+      feature(point(116.43, 39.93), { id: 'f-5' }),
+    ]) }));
+
+  it('counts a possible-duplicate group once, at its first record', () => {
+    const all = densityFacilities(facilities);
+    expect(all.points.map(p => p.id)).toEqual(['f-1', 'possible:ab', 'f-4', 'f-5']);
+    expect(all.points[1]).toMatchObject({ lng: 116.41, lat: 39.91 });
+    expect(all).toMatchObject({ records: 5, merged: 1 });
+  });
+
+  it('filters by major category and never guesses one for an unclassified record', () => {
+    expect(densityFacilities(facilities, 'medical')).toEqual({ records: 2, merged: 1,
+      points: [{ id: 'possible:ab', lng: 116.41, lat: 39.91 }] });
+    expect(densityFacilities(facilities, 'education').points.map(p => p.id)).toEqual(['f-4']);
+    expect(densityFacilities(facilities, 'shopping').points.map(p => p.id)).toEqual(['f-1']);
+  });
+
+  it('has nothing to draw before the layer is fetched or when the category is empty', () => {
+    expect(densityFacilities(undefined)).toEqual({ points: [], records: 0, merged: 0 });
+    const onlyShops = drawableLayer('facilities', layer({ layerId: 'facilities', displayGeometry: null,
+      geometry: collection([feature(point(116.4, 39.9), { id: 'f-1', majorCategory: 'shopping' })]) }));
+    expect(densityFacilities(onlyShops, 'medical')).toEqual({ points: [], records: 0, merged: 0 });
   });
 });

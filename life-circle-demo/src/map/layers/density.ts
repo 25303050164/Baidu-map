@@ -107,18 +107,46 @@ export function rampRgb(t: number): Rgb {
   return rampAt(RAMP, t);
 }
 
+/** 单个设施在自己位置上的密度（个/公顷）：核常数，图例上标出来，读者才知道"一个店"是什么颜色。 */
+export const SINGLE_FACILITY_PEAK = perHectare(kernelWeight(0));
+/** 有贡献处的不透明度下限：单个设施（约 0.66 个/公顷）在浅色底图上也要看得出。 */
+export const DENSITY_ALPHA_FLOOR = 0.34;
+/** 色标顶端的不透明度：再高就压住道路与路名。 */
+export const DENSITY_ALPHA_MAX = 0.62;
+/** 核支撑最外缘的羽化宽度（个/公顷）：约是单个设施在 0.92 倍核半径处的密度，只柔化边线。 */
+export const DENSITY_FEATHER = 0.03;
+
 /**
  * 密度（个/公顷）→ RGBA。
  *
- * **零密度完全透明。** 核支撑之外没有任何设施贡献，必须不着色：只要给零密度留一点底色，
- * 整片计算区域（圈内全部，甚至裁剪面的外接矩形）都会被涂上色带低端，被读成"处处都有
- * 一点设施"。有贡献的格点则保留下限透明度，核边缘的单个设施仍然看得见。
+ * **颜色（色相）是读数，按固定色标线性取值**；不透明度只负责"看得见"：
+ *
+ * * **零密度完全透明。** 核支撑之外没有任何设施贡献，必须不着色：只要给零密度留一点底色，
+ *   整片计算区域都会被涂上色带低端，被读成"处处都有一点设施"。
+ * * **有贡献处有下限。** 线性不透明度下单个设施只有两成，在百度浅色底图上几乎看不出；
+ *   这里按 √t 抬高低端，下限 0.34。只在支撑最外缘（< 0.03 个/公顷）羽化到 0，
+ *   避免 120 米处出现一圈硬边。
+ * * **顶端有上限。** 0.62 以上会盖住道路，底图就不能读了。
  */
 export function densityRgba(density: number, scaleMax: number = DENSITY_SCALE_MAX): [number, number, number, number] {
   if (!(density > 0)) return [RAMP[0].rgb[0], RAMP[0].rgb[1], RAMP[0].rgb[2], 0];
   const t = scaleMax > 0 ? Math.min(1, Math.max(0, density / scaleMax)) : 0;
   const [r, g, b] = rampRgb(t);
-  return [r, g, b, Math.round(255 * (0.08 + 0.72 * t))];
+  const alpha = (DENSITY_ALPHA_FLOOR + (DENSITY_ALPHA_MAX - DENSITY_ALPHA_FLOOR) * Math.sqrt(t))
+    * Math.min(1, density / DENSITY_FEATHER);
+  return [r, g, b, Math.round(255 * alpha)];
+}
+
+/** 图例渐变：与地图同一个 densityRgba，连不透明度一起，浅色底上看到的就是图上的颜色。 */
+export function densityLegendCss(stops = 12, scaleMax: number = DENSITY_SCALE_MAX): string {
+  const parts: string[] = [];
+  for (let i = 0; i <= stops; i++) {
+    const t = i / stops;
+    // 0 处取羽化后的第一档，而不是透明：图例左端要看得出色带从哪一色开始。
+    const [r, g, b, a] = densityRgba(Math.max(DENSITY_FEATHER, t * scaleMax), scaleMax);
+    parts.push(`rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)}) ${Math.round(t * 100)}%`);
+  }
+  return `linear-gradient(90deg, ${parts.join(', ')})`;
 }
 
 /** CSS 渐变串，图例与色带用同一个函数，避免两处色标不一致。 */

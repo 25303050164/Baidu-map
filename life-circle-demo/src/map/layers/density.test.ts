@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DENSITY_SCALE_MAX, DENSITY_UNIT, HEAT_CELL_PX, HEAT_KERNEL_RADIUS_M, computeDensity,
-  dedupePoints, densityRgba, intersectRect, kernelWeight, perHectare, pixelRings, rampCss,
-  rampRgb, ringBounds,
+  DENSITY_ALPHA_FLOOR, DENSITY_ALPHA_MAX, DENSITY_FEATHER, DENSITY_SCALE_MAX, DENSITY_UNIT, HEAT_CELL_PX,
+  HEAT_KERNEL_RADIUS_M, SINGLE_FACILITY_PEAK, computeDensity, dedupePoints, densityLegendCss, densityRgba,
+  intersectRect, kernelWeight, perHectare, pixelRings, rampCss, rampRgb, ringBounds,
 } from './density';
 
 const ORIGIN = { lng: 121.513925, lat: 31.313079 };
@@ -160,10 +160,34 @@ describe('色标', () => {
     expect(densityRgba(0)[3]).toBe(0);
     expect(densityRgba(-1)[3]).toBe(0);
     expect(densityRgba(Number.NaN)[3]).toBe(0);
-    // 核边缘的单个设施：透明度取下限而不是消失，否则支撑边缘会被读成"没有设施"。
-    expect(densityRgba(1e-9)[3]).toBe(20);
-    expect(densityRgba(1e-9)[3]).toBeLessThan(densityRgba(DENSITY_SCALE_MAX / 2)[3]);
-    expect(densityRgba(DENSITY_SCALE_MAX)[3]).toBeLessThanOrEqual(204);
+    // 单个设施的峰值（≈0.66 个/公顷）在浅色底图上要看得出：不透明度不低于 0.4。
+    expect(SINGLE_FACILITY_PEAK).toBeCloseTo(0.663, 3);
+    expect(densityRgba(SINGLE_FACILITY_PEAK)[3]).toBeGreaterThanOrEqual(Math.round(255 * 0.4));
+    // 离单个设施 0.9 倍核半径处（≈0.024 个/公顷）仍可见，只是在羽化带里变淡。
+    const nearEdge = SINGLE_FACILITY_PEAK * (1 - 0.9 ** 2) ** 2;
+    expect(densityRgba(nearEdge)[3]).toBeGreaterThan(0);
+    expect(densityRgba(nearEdge)[3]).toBeLessThan(densityRgba(DENSITY_FEATHER)[3]);
+    // 羽化带之外一律不低于下限，且随密度单调增加。
+    expect(densityRgba(DENSITY_FEATHER)[3]).toBe(Math.round(255 * (DENSITY_ALPHA_FLOOR
+      + (DENSITY_ALPHA_MAX - DENSITY_ALPHA_FLOOR) * Math.sqrt(DENSITY_FEATHER / DENSITY_SCALE_MAX))));
+    const alphas = [0.05, 0.3, SINGLE_FACILITY_PEAK, 1, 2, 3, DENSITY_SCALE_MAX].map(d => densityRgba(d)[3]);
+    expect(alphas).toEqual([...alphas].sort((a, b) => a - b));
+    // 顶端不遮挡底图道路。
+    expect(densityRgba(DENSITY_SCALE_MAX)[3]).toBe(Math.round(255 * DENSITY_ALPHA_MAX));
+  });
+
+  it('颜色只由密度决定：不透明度的调整不改变色相读数', () => {
+    for (const d of [0.01, SINGLE_FACILITY_PEAK, 2, DENSITY_SCALE_MAX]) {
+      expect(densityRgba(d).slice(0, 3)).toEqual(rampRgb(d / DENSITY_SCALE_MAX));
+    }
+  });
+
+  it('图例渐变连不透明度一起取自 densityRgba，左端从羽化后的第一档开始', () => {
+    const css = densityLegendCss(4);
+    const [r, g, b, a] = densityRgba(DENSITY_SCALE_MAX);
+    expect(css).toContain(`rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)}) 100%`);
+    const low = densityRgba(DENSITY_FEATHER);
+    expect(css).toContain(`rgba(${low[0]}, ${low[1]}, ${low[2]}, ${(low[3] / 255).toFixed(3)}) 0%`);
   });
 
   it('图例渐变与色带取值同源', () => {

@@ -1,6 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { installMapSdk } from './mapSdk';
 import { resultFixture } from '../src/analysis/testFixtures';
+import { LEGACY_EXPIRED_MESSAGE } from '../src/legacyController';
+
+/** 旧版 E8.2 页面在主入口里的地址（默认页是体检 v2）。 */
+const E82 = '/#/legacy/e82';
 
 /** Contract-only browser tests. All external requests are blocked; no backend/AK is used. */
 async function setup(page: Page, options: { failOnce?: boolean; unavailable?: boolean; mismatch?: boolean;
@@ -8,6 +12,7 @@ async function setup(page: Page, options: { failOnce?: boolean; unavailable?: bo
   withFacilities?: boolean; facilityCount?: number } = {}) {
   let submitted: { center: { lng: number; lat: number }; budget: number };
   let count = 0;
+  let createFailed = false;
   await installMapSdk(page);
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
@@ -15,9 +20,15 @@ async function setup(page: Page, options: { failOnce?: boolean; unavailable?: bo
     if (!url.pathname.startsWith('/api/analyses')) return route.continue();
     if (url.pathname === '/api/analyses') {
       submitted = route.request().postDataJSON(); count++;
+      createFailed = true;
       await options.createGate;
       if (options.createError) return route.fulfill({ status: options.createError, body: 'private upstream details' });
       if (options.failOnce) { options.failOnce = false; return route.fulfill({ status: 503, json: {} }); }
+      createFailed = false;
+    }
+    // 创建没成功时，按请求标识也查不到任务（与后端一致）。
+    if (url.pathname.startsWith('/api/analyses/by-request/') && createFailed) {
+      return route.fulfill({ status: 404, json: { detail: '任务不存在或已过期' } });
     }
     const taskId = `task-${count}`;
     if (url.pathname.endsWith('/result')) {
@@ -79,7 +90,7 @@ test('validated partial result drives map and automatic report, preserving holes
   await setup(page);
   const errors: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   const report = page.getByTestId('analysis-report');
   await expect(report).toBeVisible();
@@ -103,7 +114,7 @@ test('validated partial result drives map and automatic report, preserving holes
 test('map selection and failed retry retain the old report until a valid replacement arrives', async ({ page }) => {
   const options = { failOnce: false };
   await setup(page, options);
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   const report = page.getByTestId('analysis-report');
   await expect(report).toBeVisible();
@@ -128,7 +139,7 @@ test('map selection and failed retry retain the old report until a valid replace
 test('insufficient evidence does not replace a prior report or automatically open a new one', async ({ page }) => {
   const options = { unavailable: false };
   await setup(page, options);
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   await expect(page.getByTestId('analysis-report')).toBeVisible();
   const originalPaths = await page.evaluate(() => (window as any).__mapAudit.paths);
@@ -155,7 +166,7 @@ test('creation, real polling stages and fetching have a single waiting flow with
   const options = { running: true, createGate: new Promise<void>(resolve => { created = resolve; }),
     resultGate: new Promise<void>(resolve => { fetched = resolve; }) };
   const calls = await setup(page, options);
-  await page.goto('/');
+  await page.goto(E82);
   const start = page.getByRole('button', { name: '开始分析', exact: true });
   await start.click();
   const progress = page.getByTestId('analysis-progress');
@@ -181,7 +192,7 @@ test('creation, real polling stages and fetching have a single waiting flow with
 test('cancel and backend task failure leave the waiting state explicitly', async ({ page }) => {
   const options = { running: true, failed: false };
   await setup(page, options);
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   await expect(page.getByTestId('analysis-progress')).toContainText('边界细化与补测');
   await page.getByRole('button', { name: '取消任务', exact: true }).click();
@@ -196,14 +207,14 @@ test('cancel and backend task failure leave the waiting state explicitly', async
 
 for (const scenario of [
   { createError: 404, message: '分析 API 地址或服务配置异常，请检查服务地址' },
-  { statusError: 404, message: '任务不存在或已过期，请重新分析' },
+  { statusError: 404, message: LEGACY_EXPIRED_MESSAGE },
   { createError: 422, message: '分析参数无效，请检查中心坐标和调用预算' },
   { createError: 503, message: '分析服务当前不可用，请联系管理员检查步行服务配置' },
   { createError: 500, message: '分析服务异常，请稍后重试' },
 ]) {
   test(`request errors exit waiting: ${scenario.message}`, async ({ page }) => {
     await setup(page, scenario);
-    await page.goto('/');
+    await page.goto(E82);
     await page.getByRole('button', { name: '开始分析', exact: true }).click();
     await expect(page.getByText(scenario.message, { exact: true })).toBeVisible();
     await expect(page.getByTestId('analysis-progress')).not.toBeVisible();
@@ -215,7 +226,7 @@ for (const scenario of [
 
 test('a structurally valid response for different input is rejected before rendering', async ({ page }) => {
   await setup(page, { mismatch: true });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   await expect(page.getByText('分析结果与提交条件不一致，请检查服务版本', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '查看分析报告', exact: true })).toBeDisabled();
@@ -233,7 +244,7 @@ test('facility route requests stay on the same origin and draw the returned path
   });
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   await expect(page.getByTestId('analysis-report')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -308,7 +319,7 @@ test('the density layer paints real facilities inside the clip ring and survives
   await setup(page, { withFacilities: true });
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/');
+  await page.goto(E82);
   // 选点落在可达面内部、贴近第二个环（孔洞）下方：核半径跨过裁剪线，裁剪是否生效
   // 才可能被真正验证，而不是只验证"画了点东西"。
   await page.getByRole('spinbutton', { name: '经度', exact: true }).fill('116.430000');
@@ -348,7 +359,7 @@ test('over 100 facilities are aggregated rather than truncated and layer toggles
   await setup(page, { withFacilities: true, facilityCount: 240 });
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   await expect(page.getByTestId('analysis-report')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -394,7 +405,7 @@ test('narrow screens keep the facility flow usable without horizontal overflow',
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   const report = page.getByTestId('analysis-report');
   await expect(report).toBeVisible();
@@ -433,7 +444,7 @@ test('parsed but offset endpoints never render a valid route or verified POI', a
     endpoint_verified: true, distance_m: 600, duration_s: null, reason: 'endpoint_offset',
     path: [[116.404, 39.915], [116.405, 39.916]],
   } }));
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   await expect(page.getByTestId('analysis-report')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -465,7 +476,7 @@ for (const [status, label, counts] of [
         routeDestination: pending ? [116.405,39.915] : [116.404,39.915],
         originOffsetM: 0, destinationOffsetM: pending ? 80 : 0 },
     } }));
-    await page.goto('/');
+    await page.goto(E82);
     await page.getByRole('button', { name: '开始分析', exact: true }).click();
     await expect(page.getByTestId('analysis-report')).toBeVisible();
     await page.keyboard.press('Escape');

@@ -199,8 +199,13 @@ class AnalysisManager:
                 if job.payload.fingerprint() != payload.fingerprint():
                     raise HTTPException(409, "请求标识已用于不同分析")
                 return job
-        if any(job.task and not job.task.done() for job in self.jobs.values()):
-            raise HTTPException(409, "分析服务忙，请等待当前任务完成或取消后重试")
+        running = next((job for job in self.jobs.values() if job.task and not job.task.done()), None)
+        if running:
+            # Say what holds the single slot so the page can explain it, without leaking
+            # another caller's task ID, request key or center.
+            view = running.view()
+            raise HTTPException(409, f"分析服务忙：另一项分析正在进行（已运行 {view['elapsedSeconds']:.0f} 秒，"
+                                     f"已用 {view['requests']}/{view['budget']} 次调用）。请等待其完成或取消后重试")
         if self.settings.analysis_provider == "baidu" and not self.provider_factory:
             if not self.settings.ak_configured or self.settings.analysis_qps is None:
                 raise HTTPException(503, "请在后端配置步行服务 AK 和 ANALYSIS_QPS")
@@ -350,6 +355,15 @@ def analysis_router(manager):
     @router.get("/{task_id}", response_model=TaskStatusResponse)
     async def status(task_id: str):
         return manager.get(task_id).view()
+
+    @router.get("/by-request/{client_request_id}", response_model=TaskStatusResponse)
+    async def by_request(client_request_id: str):
+        # Find a task whose create response was lost without replaying POST.
+        manager.prune()
+        for job in manager.jobs.values():
+            if job.payload.clientRequestId == client_request_id:
+                return job.view()
+        raise HTTPException(404, "任务不存在或已过期")
 
     @router.post("/by-request/{client_request_id}/cancel", status_code=202, response_model=TaskStatusResponse)
     async def cancel_by_request(client_request_id: str):

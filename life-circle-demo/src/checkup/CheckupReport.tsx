@@ -157,7 +157,8 @@ export function CheckupReport({ snapshot, stale }: { snapshot: CheckupSnapshot; 
   const notes = useMemo(() => evidenceNotes(snapshot), [snapshot]);
   const domainAreaM2 = snapshot.accessibility?.domainAreaM2 ?? snapshot.report?.domainAreaM2 ?? null;
 
-  return <article className="checkup-report" data-testid="checkup-report">
+  return <article className="checkup-report" data-testid="checkup-report"
+    data-task-id={snapshot.taskId} data-revision={snapshot.revision}>
     <div className="checkup-eyebrow">COMMUNITY CHECKUP / 服务覆盖体检</div>
     <h1>15 分钟生活圈体检报告</h1>
     {stale && <Alert type="warning" showIcon title="条件已修改，本报告仍属于原中心点的那一次体检。" />}

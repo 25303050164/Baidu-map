@@ -36,3 +36,6 @@
 .checkup-stages li[data-reached="yes"] .checkup-stage-index{background:#147d70;color:#fff}
 .checkup-layer-note{margin:2px 0 8px 24px}
 @media(max-width:760px){.checkup-charts{grid-template-columns:minmax(0,1fr)}}
+/* 设施密度图例：色带带着与地图相同的不透明度，竖线标出单个设施中心的读数。 */
+.density-ramp{position:relative;display:inline-block;width:96px;height:10px;flex:none;box-shadow:inset 0 0 0 1px #b9cacd}
+.density-ramp i{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:#233b48}

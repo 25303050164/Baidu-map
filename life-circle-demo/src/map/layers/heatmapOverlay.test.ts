@@ -99,7 +99,12 @@ function fakeApi() {
     zoomIn() {}, zoomOut() {}, enableScrollWheelZoom() {},
     addOverlay(overlay: BMapOverlayInstance) {
       if (!map.overlays.includes(overlay)) map.overlays.push(overlay);
+      // 与真实 BMapGL 的 Overlay.prototype._i 一致：只有覆盖物还没有 domElement 时才调
+      // initialize，返回值缓存成 domElement；清空它是基类 remove 的事。
+      const cached = overlay as BMapOverlayInstance & { domElement?: unknown };
+      if (cached.domElement) return;
       const element = overlay.initialize?.(map as unknown as BMapMap);
+      cached.domElement = element;
       if (element) augmented.set(overlay, element);
     },
     removeOverlay(overlay: BMapOverlayInstance) {
@@ -291,6 +296,27 @@ describe('Canvas 热力覆盖物', () => {
     expect(env.map.overlays).toHaveLength(1);
     expect(layer.stats().drawn).toBe(true);
     expect(env.mapPane.children).toHaveLength(1);
+  });
+
+  it('关掉再打开（detach → attach）重建画布：SDK 缓存的 domElement 不会挡住 initialize', () => {
+    const env = fakeApi();
+    const { layer } = makeLayer(env);
+    layer.setFacilities([{ id: 'a', lng: ORIGIN.lng, lat: ORIGIN.lat }]);
+    layer.setBoundary(boundary);
+    flush();
+    const first = env.augmented.get(layer.overlay);
+    for (let round = 0; round < 3; round += 1) {
+      layer.detach();
+      expect(env.mapPane.children).toHaveLength(0);
+      expect(layer.stats().drawn).toBe(false);
+      layer.attach(env.map as unknown as BMapMap);
+      flush();
+      expect(env.mapPane.children).toHaveLength(1);
+      expect(layer.stats().drawn).toBe(true);
+    }
+    expect(env.augmented.get(layer.overlay)).not.toBe(first);
+    // 监听不随开关次数叠加：每种视角事件仍只有一个处理器。
+    expect(['moveend', 'zoomend', 'resize'].map(type => env.listeners.get(type)?.size)).toEqual([1, 1, 1]);
   });
 
   it('画布被移出容器时自行补回', () => {

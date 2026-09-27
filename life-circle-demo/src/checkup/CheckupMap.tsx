@@ -16,13 +16,17 @@ import { createDotIcon } from '../map/mapIcons';
 import { drawGeometry } from '../analysis/geometry';
 import { aggregateByCell, FACILITY_CLUSTER_CELL_PX } from '../map/layers/aggregate';
 import { createDensityOverlay, type DensityOverlay } from '../map/layers/heatmapOverlay';
-import { DENSITY_SCALE_MAX, DENSITY_UNIT, HEAT_KERNEL_RADIUS_M, rampCss } from '../map/layers/density';
+import {
+  DENSITY_SCALE_MAX, DENSITY_UNIT, HEAT_KERNEL_RADIUS_M, SINGLE_FACILITY_PEAK, densityLegendCss,
+} from '../map/layers/density';
 import { createServiceOverlay, type ServiceOverlay } from '../map/layers/serviceOverlay';
 import {
   SERVICE_COMPOSITE, SERVICE_DISTANCE_MAX_M, SERVICE_GAP_RGB, SERVICE_SCORE_MAX, SERVICE_UNKNOWN_RGB,
   serviceRampCss,
 } from '../map/layers/serviceField';
-import { LAYER_STYLES, type LayerDrawable, type LayerPoint, type ServiceSamples } from './layers';
+import {
+  DENSITY_ALL, LAYER_STYLES, densityFacilities, type LayerDrawable, type LayerPoint, type ServiceSamples,
+} from './layers';
 import { CATEGORY_ORDER, categoryLabel } from './report';
 import type { LayerId } from './validate';
 
@@ -56,7 +60,7 @@ function dominant(points: LayerPoint[]): LayerPoint {
 }
 
 export function CheckupMap({ center, onPick, resultCenter, layers, drawables, coverage = null,
-  serviceMode = SERVICE_COMPOSITE, selectedId, onSelect }: {
+  serviceMode = SERVICE_COMPOSITE, densityCategory = DENSITY_ALL, selectedId, onSelect }: {
   center: Center;
   onPick: (center: Center) => void;
   /** 已发布那一版修订的中心点；与选点分开，避免把"待分析选点"当成"结果中心"。 */
@@ -67,6 +71,8 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
   coverage?: ServiceSamples | null;
   /** 服务覆盖热力看哪一类；综合要求三类都已知。 */
   serviceMode?: string;
+  /** 设施密度看哪一类；默认三类合算。 */
+  densityCategory?: string;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 }) {
@@ -118,17 +124,18 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
     return () => { overlay?.destroy(); density.current = null; };
   }, [api, map]);
 
+  // v2 facilities 仅包含按计算圈面接收的设施；隔离项与圈外记录不在该图层。
+  // 采用原始设施而非聚合标记或模型网格；疑似重复组合并、类别筛选在 densityFacilities。
+  const densityInput = useMemo(() => densityFacilities(drawables.facilities, densityCategory),
+    [drawables.facilities, densityCategory]);
+
   useEffect(() => {
     const overlay = density.current;
     if (!overlay || !map) return;
-    // v2 facilities 仅包含按计算圈面接收的设施；隔离项与圈外记录不在该图层。
-    // 采用原始设施而非聚合标记或模型网格，UID 去重由密度模块完成。
-    overlay.setFacilities((drawables.facilities?.points ?? []).map(p => ({
-      id: p.key, lng: p.lng, lat: p.lat,
-    })));
+    overlay.setFacilities(densityInput.points);
     overlay.setBoundary(drawables.isochrone?.shapes[0]?.geometry ?? null);
     if (layers.density) overlay.attach(map); else overlay.detach();
-  }, [api, map, layers.density, drawables.facilities, drawables.isochrone]);
+  }, [api, map, layers.density, densityInput, drawables.isochrone]);
 
   useEffect(() => {
     if (!api || !map) return;
@@ -311,13 +318,23 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
           {coverage !== null && coverage.dropped > 0 && ` · ${coverage.dropped} 个格数据不全未绘制`}
         </>}
       </span>}
-      {layers.density && <span className="api-legend-item" data-testid="density-legend">
+      {layers.density && <span className="api-legend-item" data-testid="density-legend"
+        data-points={densityInput.points.length} style={{ whiteSpace: 'normal', flexWrap: 'wrap' }}>
         {api && !api.Overlay ? '当前地图不支持设施密度热力' : <>
-          <i style={{ display: 'inline-block', width: 80, height: 10, background: rampCss() }} />
-          设施密度 0–{DENSITY_SCALE_MAX} {DENSITY_UNIT} · 核半径 {HEAT_KERNEL_RADIUS_M} 米
-          （不代表服务覆盖率）
-          {drawables.facilities?.state === 'empty' && ' · 本次没有可绘制设施'}
+          {/* 色带连同不透明度与地图同源；竖线标出单个设施中心的读数。 */}
+          <span className="density-ramp" style={{ background: densityLegendCss() }}>
+            <i data-testid="density-single-tick"
+              style={{ left: `${(SINGLE_FACILITY_PEAK / DENSITY_SCALE_MAX) * 100}%` }} /></span>
+          {densityCategory === DENSITY_ALL ? '设施' : categoryLabel(densityCategory)}密度
+          0–{DENSITY_SCALE_MAX} {DENSITY_UNIT}（竖线：单个设施中心 {SINGLE_FACILITY_PEAK.toFixed(2)}）
+          · 核半径 {HEAT_KERNEL_RADIUS_M} 米 · 不代表服务覆盖率
           {!drawables.facilities && ' · 等待设施结果'}
+          {drawables.facilities?.state === 'empty' && ' · 本次没有可绘制设施'}
+          {drawables.facilities?.state === 'ready' && densityInput.records === 0
+            && ` · 本次没有${categoryLabel(densityCategory)}设施`}
+          {densityInput.points.length > 0 && ` · ${densityInput.points.length} 处设施参与`}
+          {densityInput.merged > 0 && `（${densityInput.merged} 条疑似重复已合并）`}
+          {densityInput.points.length > 0 && !drawables.isochrone?.shapes.length && ' · 等待计算圈面'}
         </>}
       </span>}
       {Object.entries(LAYER_STYLES).filter(([id]) => layers[id as LayerId])

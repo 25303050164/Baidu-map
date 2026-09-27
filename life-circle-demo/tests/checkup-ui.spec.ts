@@ -31,6 +31,8 @@ type Options = {
   /** 模型网格：西半边三类都覆盖，东半边购物是缺口（其余两类覆盖）。 */
   serviceCells?: boolean;
   facilityCount?: number;
+  /** 前两个设施标成同一个疑似重复组（同名同址、相距 20 米内）。 */
+  duplicateGroup?: boolean;
   holedGaps?: boolean;
   gapsNotReady?: boolean;
   graphConfigured?: boolean;
@@ -120,7 +122,8 @@ function layerFor(id: string, options: Options): unknown {
         point(+(116.405 + (index % 10) * 0.00002).toFixed(6),
           +(39.916 + Math.floor(index / 10) * 0.00002).toFixed(6)),
         { id: `f-${index}`, name: `设施 ${index}`,
-          majorCategory: index % 3 === 2 ? 'shopping' : 'medical' }))) });
+          majorCategory: index % 3 === 2 ? 'shopping' : 'medical',
+          possibleDuplicateGroup: options.duplicateGroup && index < 2 ? 'possible:f0f1' : null }))) });
   }
   if (id === 'heatmap' && options.serviceCells) {
     return layer({ ...base, layerId: 'heatmap', displayGeometry: null,
@@ -244,6 +247,44 @@ const rgbaAt = (canvas: ReturnType<Page['getByTestId']>, lng: number, lat: numbe
 const near = (actual: number[], expected: number[], tolerance = 6) =>
   expected.every((value, index) => Math.abs(actual[index] - value) <= tolerance);
 
+
+test('设施密度按类别筛选、疑似重复只算一处，空类别明说，刷新后筛选仍在', async ({ page }) => {
+  await setup(page, { densityBoundary: true, facilityCount: 3, duplicateGroup: true });
+  await page.goto('/');
+  await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).check();
+  await pickAndStart(page);
+  const legend = page.getByTestId('density-legend');
+  const canvas = page.getByTestId('facility-density-canvas');
+  // f-0 与 f-1 是同一组疑似重复：三条记录只画两处，图例说出合并了几条。
+  await expect(legend).toContainText('2 处设施参与（1 条疑似重复已合并）');
+  await expect(legend).toContainText('竖线：单个设施中心 0.66');
+  await expect(legend).toHaveAttribute('data-points', '2');
+  await expect.poll(async () => (await rgbaAt(canvas, 116.405, 39.916))[3]).toBeGreaterThan(0);
+
+  const choose = async (label: string) => {
+    await page.getByRole('combobox', { name: '密度类别' }).click();
+    await page.locator('.ant-select-dropdown:visible').getByTitle(label, { exact: true }).click();
+  };
+  // 本次没有教育设施：说出来，画布清空，而不是留着上一类的颜色。
+  await choose('教育');
+  await expect(legend).toContainText('教育密度');
+  await expect(legend).toContainText('本次没有教育设施');
+  await expect(legend).toHaveAttribute('data-points', '0');
+  await expect.poll(async () => (await rgbaAt(canvas, 116.405, 39.916))[3]).toBe(0);
+  // 只看购物：只剩 f-2 这一处；单个设施中心的颜色在浅底上也看得出（不透明度 ≥ 0.4）。
+  await choose('购物');
+  await expect(legend).toContainText('1 处设施参与');
+  await expect(legend).not.toContainText('疑似重复');
+  await expect.poll(async () => (await rgbaAt(canvas, 116.40504, 39.916))[3]).toBeGreaterThanOrEqual(100);
+  // 刷新：任务按保存的标识恢复，筛选按离开时的样子。
+  await page.reload();
+  await expect(page.getByRole('combobox', { name: '密度类别' })).toBeVisible();
+  await expect(page.locator('.ant-select').filter({ has: page.getByRole('combobox', { name: '密度类别' }) }))
+    .toContainText('购物');
+  await expect(legend).toContainText('1 处设施参与');
+  await expect.poll(async () => (await rgbaAt(canvas, 116.40504, 39.916))[3]).toBeGreaterThanOrEqual(100);
+  await page.locator('.api-map-shell').screenshot({ path: 'output/checkup-ui/density-category.png' });
+});
 test('服务覆盖热力默认打开：评估格连成渐变面，圈外与孔洞透明，切类别、切热力都各归其位', async ({ page }) => {
   await setup(page, { densityBoundary: true, serviceCells: true });
   await page.goto('/');
@@ -421,8 +462,11 @@ test('stages advance as the backend reports them, and the engines come from the 
   // 选项正文只有数字，"次"在无障碍标签上 —— 断言两者，免得哪天单位丢了也没人发现。
   expect(await page.getByRole('option').allTextContents()).toEqual(['200', '400', '800']);
   await page.keyboard.press('Escape');
-  // 两个引擎都列着：路网没配好只影响后端的取舍，界面不替它隐藏其中一个。
-  await page.getByRole('combobox', { name: '引擎' }).click();
-  await expect(page.getByRole('option', { name: '百度边界搜索（E8.2）' })).toBeAttached();
-  await expect(page.getByRole('option', { name: 'OSM＋百度' })).toBeAttached();
+  // 两个引擎都列着（页面顶部的算法切换）：路网没配好只影响后端的取舍，界面不替它隐藏其中一个。
+  // 引擎名取自能力表，不是界面写死的。
+  await expect(page.getByTestId('checkup-engine')).toContainText('引擎：百度边界搜索（E8.2）');
+  await page.getByTestId('algorithm-hybrid').click();
+  await expect(page).toHaveURL(/#\/checkup\/hybrid$/);
+  await expect(page.getByTestId('checkup-engine')).toContainText('引擎：OSM＋百度');
+  await expect(page.getByRole('button', { name: '开始体检', exact: true })).toBeEnabled();
 });

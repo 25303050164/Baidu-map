@@ -10,13 +10,34 @@ export type CheckupInput = {
   clientRequestId: string;
 };
 
+/**
+ * 刷新后找回任务所需的全部信息。只存标识和输入，不存结果：结果、报告和图层一律
+ * 回后端按任务 ID 与修订号重取，本地存的旧结果可能已经不是服务端认的那一版。
+ */
+export type CheckupHandle = {
+  input: CheckupInput;
+  taskId?: string;
+  cancelRequested?: boolean;
+  savedAt: number;
+};
+
 /** 阶段是后端说的，界面只按它排序和显示进度；没有百分比，也没有"预计剩余"。 */
 export type CheckupPhase =
-  | 'idle' | 'submitting' | 'queued' | 'running' | 'fetching' | 'cancelling'
+  | 'idle' | 'submitting' | 'restoring' | 'queued' | 'running' | 'fetching' | 'cancelling'
   | 'completed' | 'cancelled' | 'error';
 
 export type CheckupState = {
   phase: CheckupPhase;
+  /** 这一轮任务提交时的条件：刷新后还没取到结果时，界面靠它说明"在算哪个点"。 */
+  input?: CheckupInput;
+  /** 与后端的连接中断、正在退避重连；任务本身没有因此失败。 */
+  connection?: 'lost';
+  /**
+   * 恢复时遇到的两种"找不回来"：`unconfirmed` 是创建请求没送达（按请求标识查不到），
+   * `expired` 是任务 ID 服务端已不认识。两者的出路不同：前者可沿用同一请求标识重提，
+   * 后者只能重新体检。
+   */
+  recovery?: 'unconfirmed' | 'expired';
   task?: CheckupTaskView;
   snapshot?: CheckupSnapshot;
   /** 已取到的图层，按 "图层:修订" 缓存：同一次体检里重开面板不该再发一次请求。 */
@@ -26,7 +47,7 @@ export type CheckupState = {
   error?: string;
 };
 
-export const BUSY_PHASES: CheckupPhase[] = ['submitting', 'queued', 'running', 'fetching', 'cancelling'];
+export const BUSY_PHASES: CheckupPhase[] = ['submitting', 'restoring', 'queued', 'running', 'fetching', 'cancelling'];
 
 export function isCheckupBusy(state: CheckupState): boolean {
   return BUSY_PHASES.includes(state.phase);

@@ -487,7 +487,8 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
             "/api/v2/checkups/{task_id}/routes/{facility_id}",
             "/api/v2/capabilities"} <= set(paths)
     # Every legacy surface is still declared next to the versioned one.
-    assert {"/api/analyses", "/api/analyses/by-request/{client_request_id}/cancel",
+    assert {"/api/analyses", "/api/analyses/by-request/{client_request_id}",
+            "/api/analyses/by-request/{client_request_id}/cancel",
             "/api/analyses/{task_id}", "/api/analyses/{task_id}/cancel",
             "/api/analyses/{task_id}/result", "/api/analyses/{task_id}/routes/{facility_id}",
             "/api/v1/analysis/hybrid", "/api/v1/analysis/hybrid/by-request/{client_request_id}",

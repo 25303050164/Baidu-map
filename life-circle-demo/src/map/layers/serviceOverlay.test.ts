@@ -51,7 +51,12 @@ function fakeEnv() {
   const map = {
     overlays: [] as BMapOverlayInstance[],
     getCenter: () => ({ ...ORIGIN }),
-    addOverlay(overlay: BMapOverlayInstance) { map.overlays.push(overlay); overlay.initialize?.(map as unknown as BMapMap); },
+    // 与真实 BMapGL 的 _i 一致：已有 domElement 就不再 initialize。
+    addOverlay(overlay: BMapOverlayInstance) {
+      map.overlays.push(overlay);
+      const cached = overlay as BMapOverlayInstance & { domElement?: unknown };
+      if (!cached.domElement) cached.domElement = overlay.initialize?.(map as unknown as BMapMap);
+    },
     removeOverlay(overlay: BMapOverlayInstance) { map.overlays = map.overlays.filter(o => o !== overlay); overlay.remove?.(); },
     addEventListener() {}, removeEventListener() {},
     pointToOverlayPixel: project,
@@ -102,6 +107,19 @@ describe('服务覆盖热力覆盖物', () => {
     expect(canvas.attributes['data-testid']).toBe('service-heat-canvas');
     expect(canvas.attributes['data-map-layer']).toBe('heat');
     expect(canvas.style.pointerEvents).toBe('none');
+  });
+
+  it('关掉再打开后画布重建并重画，不因 SDK 缓存的 domElement 而空白', () => {
+    const { env, layer } = makeLayer();
+    layer.setMode('shopping');
+    layer.setBoundary(square(300));
+    layer.setSamples(cells('shopping', 'covered'), null);
+    expect(layer.stats().drawn).toBe(true);
+    layer.detach();
+    expect(env.pane.children).toHaveLength(0);
+    layer.attach(env.map as unknown as BMapMap);
+    expect(env.pane.children).toHaveLength(1);
+    expect(layer.stats()).toMatchObject({ drawn: true, mode: 'shopping', samples: 16 });
   });
 
   it('有评估格与圈面才绘制；没有圈面或没有格时什么也不画', () => {

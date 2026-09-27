@@ -192,3 +192,41 @@ export function serviceSamples(layer: CheckupLayer | undefined): ServiceSamples 
   }
   return { samples, domain, dropped };
 }
+
+/** 设施密度看哪一类；「全部」即三类合在一起算。 */
+export const DENSITY_ALL = 'all';
+
+export type DensityFacilities = {
+  /** 交给密度模块的点：一组疑似重复只留一个，id 用组号。 */
+  points: { id: string; lng: number; lat: number }[];
+  /** 本类（筛选后、合并前）的已接收记录数。 */
+  records: number;
+  /** 因同一 UID 或同一疑似重复组而合并掉的记录数。 */
+  merged: number;
+};
+
+/**
+ * 设施图层 → 设施密度的输入。
+ *
+ * - 按大类筛选；「全部」不筛。缺大类的记录只在「全部」里出现，不猜它属于哪一类。
+ * - 后端把同名同址、相距 20 米内的记录标成同一个疑似重复组：两个 UID 指的是同一家店时，
+ *   密度不该因此翻倍，所以一组只算一个，位置取组内第一条（后端输出顺序固定）。
+ * - 只读后端接收的设施：审核候选与隔离记录本来就不在这一层。
+ */
+export function densityFacilities(drawable: LayerDrawable | undefined, category: string = DENSITY_ALL): DensityFacilities {
+  const points: DensityFacilities['points'] = [];
+  const seen = new Set<string>();
+  let records = 0;
+  let merged = 0;
+  for (const point of drawable?.points ?? []) {
+    if (category !== DENSITY_ALL && point.properties.majorCategory !== category) continue;
+    if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat)) continue;
+    records++;
+    const group = point.properties.possibleDuplicateGroup;
+    const id = typeof group === 'string' && group ? group : point.key;
+    if (seen.has(id)) { merged++; continue; }
+    seen.add(id);
+    points.push({ id, lng: point.lng, lat: point.lat });
+  }
+  return { points, records, merged };
+}

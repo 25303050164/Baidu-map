@@ -32,10 +32,13 @@ export async function installMapSdk(page: Page): Promise<void> {
     // 简化投影：像素网格与真实 SDK 无关，但同一份 pointToOverlayPixel 同时供覆盖物
     // 定位和测试取样使用，因此像素断言与图层看到的是同一个坐标系。
     const DEG_PER_PX = 0.00005;
+    // 与真实 BMapGL 同构：addOverlay 缓存 initialize 的返回值为 domElement，基类 remove 负责清空它。
     class Overlay {
       handlers: Record<string, () => void> = {};
+      domElement: HTMLElement | null = null;
       addEventListener(type: string, handler: () => void) { this.handlers[type] = handler; }
       removeEventListener() {}
+      remove() { this.domElement?.parentNode?.removeChild(this.domElement); this.domElement = null; }
     }
     class Point { constructor(public lng: number, public lat: number) {} }
     class Size { constructor(public width: number, public height: number) {} }
@@ -94,10 +97,14 @@ export async function installMapSdk(page: Page): Promise<void> {
           audit.fills.push({ rings: overlay.rings, fillOpacity: overlay.options.fillOpacity ?? null });
         }
         if (overlay instanceof Marker) audit.markers.push(overlay);
-        // 自定义覆盖物（如热力 Canvas）由 SDK 调 initialize 并接管返回的元素。
-        const custom = overlay as { initialize?: (map: Map) => HTMLElement | undefined };
+        // 自定义覆盖物（如热力 Canvas）由 SDK 调 initialize 并接管返回的元素。真实 SDK 的
+        // Overlay.prototype._i 只在还没有 domElement 时才调 initialize —— 覆盖物自己的 remove
+        // 若不清空它，再次 addOverlay 就什么也不会发生；这里照做，好让回归套件抓到这类问题。
+        const custom = overlay as { initialize?: (map: Map) => HTMLElement | undefined; domElement?: HTMLElement | null };
         this.overlays.push(custom);
+        if (custom.domElement) return;
         const element = typeof custom.initialize === 'function' ? custom.initialize(this) : undefined;
+        if (element) custom.domElement = element;
         if (element && !element.parentNode) this.panes.overlayPane.appendChild(element);
       }
       // 真实 SDK 的 removeOverlay 只摘掉这一枚覆盖物；审计数组必须同步，否则"取消勾选后

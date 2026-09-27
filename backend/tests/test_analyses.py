@@ -124,7 +124,11 @@ def test_busy_cancel_no_late_result():
     with TestClient(create_app(config(), provider_factory=lambda _: SlowProvider())) as client:
         task = client.post("/api/analyses", json=body()).json()["taskId"]
         assert client.get(f"/api/analyses/{task}/result").status_code == 409
-        assert client.post("/api/analyses", json=body("request-2")).status_code == 409
+        busy = client.post("/api/analyses", json=body("request-2"))
+        assert busy.status_code == 409
+        # The refusal explains the occupant but never hands out its task ID.
+        assert busy.json()["detail"].startswith("分析服务忙：另一项分析正在进行（已运行 ")
+        assert task not in busy.text and "request-1" not in busy.text
         assert client.post(f"/api/analyses/{task}/cancel").status_code == 202
         assert finished(client, task)["status"] == "cancelled"
         count = len(calls)
@@ -144,8 +148,13 @@ def test_cancel_lost_response_by_request_key_never_creates_work():
 
     with TestClient(create_app(config(), provider_factory=lambda _: Slow())) as client:
         assert client.post('/api/analyses/by-request/missing/cancel').status_code == 404
+        assert client.get('/api/analyses/by-request/missing').status_code == 404
         assert len(client.app.state.analyses.jobs) == 0
         task = client.post('/api/analyses', json=body('lost-key')).json()['taskId']
+        # Looking a lost create up by its key reports the same task and starts nothing.
+        found = client.get('/api/analyses/by-request/lost-key')
+        assert found.status_code == 200 and found.json()['taskId'] == task
+        assert len(client.app.state.analyses.jobs) == 1
         response = client.post('/api/analyses/by-request/lost-key/cancel')
         assert response.status_code == 202 and response.json()['taskId'] == task
         assert finished(client, task)['status'] == 'cancelled'

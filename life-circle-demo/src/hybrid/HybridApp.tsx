@@ -1,109 +1,56 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Button, Card, Checkbox, InputNumber, Select, Space, Tag } from 'antd';
 import type { Center } from '../types';
-import type { HybridResultResponse, TaskStatusResponse } from '../api-contract';
+import type { HybridResultResponse } from '../api-contract';
 import { ApiMap, type Layers } from '../analysis/ApiMap';
 import { LocationControls } from '../analysis/LocationControls';
-import { createHybridClient, HybridApiError } from './client';
 import '../analysis/api.css';
 import { getHybridSession, saveHybridSession } from '../algorithmSessions';
+import { hybridTasks, useLegacyState } from '../legacyTasks';
+import { isLegacyBusy } from '../legacyController';
 
-const api = createHybridClient();
-const terminal = (task: TaskStatusResponse) => ['completed', 'cancelled', 'failed'].includes(task.status);
 const quality = { usable: '可用', partial: '部分结果', insufficient: '证据不足' };
 const stopReasons: Record<string, string> = { budget: '达到验证预算', deadline: '达到时间上限',
   refinement_complete: '完成本轮细化', no_candidates: '没有可继续核验的候选点',
   synthetic_contract_fixture: '离线演示数据', cancelled: '已取消', upstream_failure: '步行服务暂不可用' };
-const errorMessages: Record<string, string> = { baidu_walking_not_configured: '后端尚未配置百度步行服务',
-  hybrid_busy: '服务正在处理其他分析，请稍后重试', hybrid_execution_failed: '分析执行失败，请检查数据配置',
-  hybrid_invalid_response: '服务返回的结果格式异常', hybrid_task_mismatch: '结果与当前任务不匹配',
-  hybrid_invalid_request: '分析参数无效，请检查坐标和预算' };
+const taskLabels = { running: '运行中', cancelling: '取消中', cancelled: '已取消', completed: '已完成', failed: '失败' };
 
 export default function HybridApp() {
   const session = getHybridSession();
+  // 任务在模块里的控制器上：这个组件卸载（换页面、换算法）只是退订，任务照跑。
+  const tasks = hybridTasks();
+  const controller = tasks.controller;
+  const state = useLegacyState(tasks);
   const [center, setCenter] = useState<Center>(session.center);
   const [lng, setLng] = useState<number | null>(session.lng);
   const [lat, setLat] = useState<number | null>(session.lat);
   const [budget, setBudget] = useState(session.budget);
-  const [task, setTask] = useState<TaskStatusResponse>();
-  const [result, setResult] = useState<HybridResultResponse | undefined>(session.result);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [dirty, setDirty] = useState(session.dirty);
+  const [result, setResult] = useState<HybridResultResponse | undefined>(() => session.result
+    ?? (state.phase === 'completed' ? state.result : undefined));
   const [layers, setLayers] = useState<Layers>(session.layers);
-  const active = useRef<{ requestId: string; taskId?: string; cancelled: boolean; controller: AbortController } | null>(null);
-  useEffect(() => () => {
-    const run = active.current;
-    active.current = null;
-    if (run) {
-      run.cancelled = true;
-      run.controller.abort();
-      void api.cancelByRequest(run.requestId).catch(() => {});
-    }
-  }, []);
   useEffect(() => {
-    saveHybridSession({ center, lng, lat, budget, result, dirty, layers });
-  }, [center, lng, lat, budget, result, dirty, layers]);
+    if (state.phase === 'completed' && state.result) setResult(state.result);
+  }, [state.phase, state.result]);
+  useEffect(() => {
+    saveHybridSession({ center, lng, lat, budget, result, layers });
+  }, [center, lng, lat, budget, result, layers]);
+  const task = state.task;
+  const busy = isLegacyBusy(state);
+  const live = controller.hasLiveTask;
   const valid = lng !== null && lat !== null && Number.isFinite(lng) && Number.isFinite(lat)
     && lng >= -180 && lng <= 180 && lat > -85 && lat < 85;
+  // "条件已修改"按内容算：左栏的中心或预算与地图上这份结果的不同。
+  const dirty = !!result && (lng === null || lat === null || result.center.lng !== +lng.toFixed(6)
+    || result.center.lat !== +lat.toFixed(6) || result.isochrone.config.max_baidu_requests !== budget);
+  // 选点、改坐标、改预算只改左栏的草稿，不碰正在跑的任务。
   function pick(next: Center) {
-    if (active.current) return;
-    setCenter(next); setLng(next.lng); setLat(next.lat); setDirty(true);
+    setCenter(next); setLng(next.lng); setLat(next.lat);
   }
-  async function start() {
-    if (!valid || active.current) return;
+  function start() {
+    if (!valid || busy || live) return;
     const origin = { lng: +lng!.toFixed(6), lat: +lat!.toFixed(6) };
-    setCenter(origin); setError(''); setTask(undefined); setBusy(true);
-    const run = { requestId: crypto.randomUUID(), taskId: undefined as string | undefined,
-      cancelled: false, controller: new AbortController() };
-    active.current = run;
-    let finished = false;
-    try {
-      let current: TaskStatusResponse;
-      try {
-        current = await api.create({ origin, coordinate_system: 'bd09ll',
-          config: { max_baidu_requests: budget }, client_request_id: run.requestId });
-      } catch (createError) {
-        // A lost create response must not create a duplicate billed task.
-        try { current = await api.byRequest(run.requestId); } catch { throw createError; }
-      }
-      run.taskId = current.taskId;
-      if (active.current !== run) { await api.cancel(current.taskId); return; }
-      if (run.cancelled) current = await api.cancel(current.taskId);
-      while (active.current === run) {
-        setTask(current);
-        if (terminal(current)) { finished = true; break; }
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        if (active.current !== run) return;
-        current = await api.status(current.taskId, run.controller.signal);
-      }
-      if (current.status === 'completed' && !run.cancelled) {
-        const value = await api.result(current.taskId, run.controller.signal);
-        if (active.current === run) { setResult(value); setDirty(false); }
-      } else if (current.status === 'failed') {
-        throw new Error(current.error || '分析失败');
-      }
-    } catch (reason) {
-      if (active.current === run) {
-        setError(`分析未完成：${reason instanceof Error ? errorMessages[reason.message] || '请检查服务连接或重试取消当前任务' : '请检查服务连接'}`);
-        // Preserve uncertain task handles; known rejections and terminal failures can retry.
-        if (!finished && !(reason instanceof HybridApiError && !run.taskId && [409, 422, 503].includes(reason.status))) return;
-      }
-    } finally {
-      if (active.current === run) setBusy(false);
-    }
-    if (active.current === run) { active.current = null; setBusy(false); }
-  }
-  async function cancel() {
-    const run = active.current;
-    if (!run) return;
-    run.cancelled = true;
-    try {
-      const value = run.taskId ? await api.cancel(run.taskId) : await api.cancelByRequest(run.requestId);
-      setTask(value);
-      if (terminal(value)) { run.controller.abort(); active.current = null; setBusy(false); }
-      else if (!busy) { setError('已请求取消。可再次点击取消以确认任务终态。'); }
-    } catch { setError('取消尚未确认，请重试取消。'); }
+    setCenter(origin); setLng(origin.lng); setLat(origin.lat);
+    void controller.start({ center: origin, budget });
   }
   const core = result?.isochrone;
   return <div className="api-app">
@@ -113,18 +60,20 @@ export default function HybridApp() {
         <Card title="选择分析中心">
           <p className="api-muted">默认使用项目固定测试点。请在已配置的 OSM 数据覆盖范围内选点。</p>
           <LocationControls center={center} onPick={pick} />
-          <label className="api-label">经度<InputNumber aria-label="经度" disabled={busy || !!active.current} value={lng} onChange={v => { setLng(v); setDirty(true); }} /></label>
-          <label className="api-label">纬度<InputNumber aria-label="纬度" disabled={busy || !!active.current} value={lat} onChange={v => { setLat(v); setDirty(true); }} /></label>
-          <label className="api-label">百度验证预算<Select aria-label="百度验证预算" disabled={busy || !!active.current} value={budget} onChange={v => { setBudget(v); setDirty(true); }} options={[200, 400].map(value => ({ value, label: `${value} 次` }))} /></label>
+          <label className="api-label">经度<InputNumber aria-label="经度" value={lng} onChange={setLng} /></label>
+          <label className="api-label">纬度<InputNumber aria-label="纬度" value={lat} onChange={setLat} /></label>
+          <label className="api-label">百度验证预算<Select aria-label="百度验证预算" value={budget} onChange={setBudget} options={[200, 400].map(value => ({ value, label: `${value} 次` }))} /></label>
           <p className="api-muted">步行阈值 900 秒 · 坐标系 BD09LL</p>
           {!valid && <Alert type="error" title="请输入有效经纬度" />}
-          <Space><Button type="primary" aria-label="开始分析" disabled={!valid || busy || !!active.current} loading={busy} onClick={() => void start()}>开始分析</Button>
-            {(busy || active.current) && <Button onClick={() => void cancel()}>取消任务</Button>}</Space>
+          <Space><Button type="primary" aria-label="开始分析" disabled={!valid || busy || live} loading={busy} onClick={start}>开始分析</Button>
+            {live && <Button onClick={() => void controller.cancel()} disabled={state.phase === 'cancelling'}>取消任务</Button>}</Space>
+          {live && <p className="api-muted" data-testid="legacy-live-note">当前任务尚未结束：切换页面、切换算法或刷新都不会取消它。
+            要按新条件分析，请等它完成，或先点"取消任务"。</p>}
         </Card>
         <Card title="地图图层"><Checkbox checked={layers.reachable} onChange={e => setLayers({ ...layers, reachable: e.target.checked })}>15 分钟圈外轮廓</Checkbox><p className="api-muted">仅展示外轮廓，圈内不代表每处均可步行到达。</p></Card>
         <Alert type="info" title="设施统计尚未接入" description="当前仅展示生活圈及步行验证证据，不将空设施列表解释为缺少服务。" />
       </section>
-      <section className="api-map-section">
+      <section className="api-map-section" data-testid="legacy-map-section" data-task-id={result?.taskId ?? ''}>
         {dirty && result && <Alert type="warning" title="条件已修改，地图仍显示上次分析结果" />}
         <ApiMap center={center} onPick={pick} layers={layers} resultCenter={result?.center}
           result={core ? { geometry: core.geometry, outlineOnly: true,
@@ -132,9 +81,19 @@ export default function HybridApp() {
             uncertainRegion: null, computationExtent: core.computation_extent } : undefined} />
       </section>
       <section className="api-results" aria-label="分析结果"><Card title="分析结果">
-        {error && <Alert type="error" title={error} />}
-        {task && <p role="status">任务：{({ running: '运行中', cancelling: '取消中', cancelled: '已取消', completed: '已完成', failed: '失败' })[task.status]} · 调用 {task.requests}/{task.budget} · {task.elapsedSeconds.toFixed(1)} 秒</p>}
-        {!task && <p>选择中心后开始分析。</p>}
+        {state.connection === 'lost' && <Alert type="warning" showIcon data-testid="legacy-connection"
+          title="与分析服务的连接中断，正在自动重连"
+          description="任务仍在服务端继续，不会因为断网被取消或重复提交；连上后自动接着显示进度与结果。" />}
+        {state.phase === 'restoring' && <Alert type="info" showIcon title="正在向后端核对上次的分析任务" />}
+        {state.notice && <Alert type="info" showIcon data-testid="legacy-notice" title={state.notice} />}
+        {state.error && <Alert type="error" title={state.error} data-testid="legacy-error" action={<Button aria-label="重试" size="small"
+          onClick={() => void controller.retry()}>{state.recovery === 'unconfirmed' ? '重新提交'
+            : state.recovery === 'expired' || task?.status === 'failed' ? '重新分析' : '重试'}</Button>} />}
+        {state.phase === 'cancelled' && <Alert type="info" title="任务已取消" description="取消只停住后续请求；已经发出的调用仍计入步行服务额度。" />}
+        {task && <p role="status" data-testid="legacy-phase" data-phase={state.phase}>任务 <span data-testid="legacy-task-id">{task.taskId}</span>：{taskLabels[task.status]} · 调用 {task.requests}/{task.budget} · {task.elapsedSeconds.toFixed(1)} 秒
+          {state.input && <><br />中心 {state.input.center.lng.toFixed(6)}, {state.input.center.lat.toFixed(6)} · 预算 {state.input.budget} 次</>}</p>}
+        {!task && state.phase === 'submitting' && <p role="status" data-testid="legacy-phase" data-phase={state.phase}>正在提交任务…</p>}
+        {!task && state.phase === 'idle' && <p>选择中心后开始分析。</p>}
         {core && <>
           <Alert type="warning" title={`结果质量：${quality[core.quality]}`} description="任务完成不等于独立精度验收通过；推断填充与已核验证据需区别解读。" />
           {core.readiness.mode === 'degraded' && <Alert type="warning" title="OSM 或辅助数据不完整，当前为降级结果" description="路网、覆盖边界或辅助图层未全部就绪，请结合证据范围使用结果。" />}

@@ -1,4 +1,5 @@
 import type { Center } from '../types';
+import { isLegacyBusy, type LegacyState } from '../legacyController';
 import type { TaskResultResponse as ContractTaskResult, TaskStatusResponse as ContractTaskStatus } from '../api-contract';
 
 export type Budget = 200 | 400 | 800;
@@ -31,13 +32,11 @@ export interface AnalysisService {
   status(id: string, signal?: AbortSignal): Promise<TaskStatus>;
   result(id: string, signal?: AbortSignal): Promise<AnalysisResult>;
   cancel(id: string): Promise<TaskStatus>;
+  byRequest(clientRequestId: string, signal?: AbortSignal): Promise<TaskStatus>;
   cancelByRequest(clientRequestId: string): Promise<TaskStatus>;
 }
-export type AnalysisState = {
-  phase: 'idle' | 'submitting' | 'running' | 'fetching' | 'cancelling' | 'completed' | 'cancelled' | 'error';
-  task?: TaskStatus; result?: AnalysisResult; error?: string;
-};
+export type AnalysisState = LegacyState<AnalysisInput, TaskStatus, AnalysisResult>;
 
 export function isAnalysisBusy(state: AnalysisState) {
-  return ['submitting', 'running', 'fetching', 'cancelling'].includes(state.phase);
+  return isLegacyBusy(state);
 }

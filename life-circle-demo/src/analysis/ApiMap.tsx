@@ -4,7 +4,9 @@ import { useBaiduMap } from '../map/useBaiduMap';
 import type { BMapIcon, BMapMap, BMapOverlay, BMapViewEventType } from '../map/baiduMapTypes';
 import { createDotIcon } from '../map/mapIcons';
 import { drawGeometry, drawOutline, type DrawableGeometry } from './geometry';
-import { DENSITY_SCALE_MAX, DENSITY_UNIT, HEAT_KERNEL_RADIUS_M, rampCss } from '../map/layers/density';
+import {
+  DENSITY_SCALE_MAX, DENSITY_UNIT, HEAT_KERNEL_RADIUS_M, SINGLE_FACILITY_PEAK, densityLegendCss,
+} from '../map/layers/density';
 import { aggregateByCell, FACILITY_CLUSTER_CELL_PX } from '../map/layers/aggregate';
 import { createDensityOverlay, type DensityOverlay } from '../map/layers/heatmapOverlay';
 import type { Facility, AssessmentPoint } from '../api-contract';
@@ -245,7 +247,7 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
         {resultCenter && <><br />图层与报告中心：{resultCenter.lng.toFixed(6)}, {resultCenter.lat.toFixed(6)}</>}
       </div>
       {layers.heatmap && result && <div className="api-heat-legend" data-testid="heat-legend" aria-label="设施密度图例">
-        <span className="api-legend-item"><i className="api-legend-ramp" style={{ background: rampCss() }} />设施密度（{DENSITY_UNIT}）固定色标 0—{DENSITY_SCALE_MAX}</span>
+        <span className="api-legend-item"><i className="api-legend-ramp" style={{ background: densityLegendCss() }} />设施密度（{DENSITY_UNIT}）固定色标 0—{DENSITY_SCALE_MAX} · 单个设施中心 {SINGLE_FACILITY_PEAK.toFixed(2)}</span>
         <span className="api-legend-item"><i className="api-legend-ring" />核半径 {HEAT_KERNEL_RADIUS_M} 米 · 圈内设施等权去重 {heatPoints.length} 条</span>
         {!heatSupported && <span className="api-legend-note">当前地图脚本没有自定义覆盖物能力，热力层未启用。</span>}
         {heatSupported && heatPoints.length === 0 && <span className="api-legend-note">本次结果没有已确认在圈内的设施，未生成热力分布。</span>}

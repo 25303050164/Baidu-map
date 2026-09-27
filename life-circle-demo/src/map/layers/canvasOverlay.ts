@@ -280,7 +280,14 @@ export function createCanvasField(
     frame = handle === SYNC_FRAME ? null : handle;
   };
 
+  const unlisten = () => {
+    for (const [type, handler] of viewHandlers) map?.removeEventListener?.(type, handler);
+    viewHandlers.clear();
+  };
+
   const listen = (instance: BMapMap) => {
+    // 重复 initialize（假 SDK 每次 addOverlay 都调）不叠加监听。
+    unlisten();
     for (const type of VIEW_EVENTS) {
       const handler = () => schedule();
       viewHandlers.set(type, handler);
@@ -290,12 +297,15 @@ export function createCanvasField(
 
   const teardown = () => {
     if (frame !== null) { cancelFrame(frame); frame = null; }
-    for (const [type, handler] of viewHandlers) map?.removeEventListener?.(type, handler);
-    viewHandlers.clear();
+    unlisten();
     canvas?.parentNode?.removeChild(canvas);
     if (canvas) { canvas.width = 0; canvas.height = 0; }
     canvas = null; ctx = null; buffer = null; bufferCtx = null; pane = null;
     drawn = false;
+    // 真实 BMapGL 的 addOverlay 只在覆盖物没有 domElement 时才调 initialize，并把返回值
+    // 缓存成 domElement；清空它的是基类 remove，而这里覆盖了 remove。不清掉的话，
+    // 关掉热力再打开时 SDK 以为画布还在，不再调 initialize，图层就再也画不出来。
+    (overlay as { domElement?: unknown }).domElement = null;
   };
 
   const attach = (instance: BMapMap) => {
