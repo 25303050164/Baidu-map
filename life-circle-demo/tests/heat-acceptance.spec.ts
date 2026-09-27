@@ -9,7 +9,9 @@
  * - 读数用地图自己的 `pointToOverlayPixel`：同一个经纬度，平移、缩放、改窗口之后应当读出
  *   同一个颜色，这就是"不错位"。
  * - 只挑读得准的点：服务覆盖只在"核半径内全是同一种结论、离圈边与评估域边都够远"的地方
- *   判颜色；圈外与孔洞只判透明。混合地带不判，不去猜两种颜色该混成什么样。
+ *   判颜色；圈外与孔洞只判透明。混合地带（综合模式的过渡带、河道两岸）另按
+ *   serviceField.ts 头注释的规则在地面米上独立重算混合色，并按几个屏幕像素的定位误差
+ *   在邻近位置里找对应 —— 支持度处于淡入区间的点不判。
  * - 不花服务额度：两条任务都是存档里的真实体检（百度边界搜索 E8.2 与 OSM＋百度各一条），
  *   页面凭 localStorage 里的任务标识恢复；创建、取消、路线核验请求一律挡掉并记账。
  * - 高密度场景真实数据给不出来（这一处只有 4 家设施），用明确标注的合成设施补：只替换
@@ -18,13 +20,14 @@
  * 输出：截图与 `summary.json`（不含任何 URL 与 AK）写到 `HEAT_OUTPUT_DIR`。
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   DENSITY_SCALE_MAX, HEAT_KERNEL_RADIUS_M, SINGLE_FACILITY_PEAK, densityRgba,
 } from '../src/map/layers/density';
 import {
-  SERVICE_ALPHA, SERVICE_DISTANCE_MAX_M, SERVICE_GAP_RGB, SERVICE_UNKNOWN_RGB, distanceRgb,
+  SERVICE_ALPHA, SERVICE_COMPOSITE, SERVICE_DISTANCE_MAX_M, SERVICE_GAP_RGB, SERVICE_UNKNOWN_RGB,
+  distanceRgb, scoreRgb,
 } from '../src/map/layers/serviceField';
 
 const API = process.env.HEAT_API ?? 'http://127.0.0.1:8019';
@@ -44,6 +47,20 @@ const CENTER = { lng: 121.513925, lat: 31.313079 };
 const REVISION = 5;
 /** 医疗一类三种结论都有（已覆盖、服务不足、数据未知），用它判颜色。 */
 const SERVICE_CATEGORY = 'medical';
+/** 综合模式要求"均已知"的三类（与后端 heatmap.categories 一致）。 */
+const CATEGORIES = ['education', 'medical', 'shopping'];
+
+/**
+ * E8.2 评估域里唯一的一块水面（BD-09）：OSM 硬障碍层 data/osm/shanghai.obstacles.geojson
+ * （geofabrik-shanghai-20260912）与这条任务第 5 版评估域的交集，约 330 平方米 —— 河道被
+ * 等时圈东南边斜切进来的一角，东端宽约 8 米。由 backend/scripts/heat_obstacle_scan.py 从
+ * 存档复算（只读、不联网）；OSM＋百度那条任务的域内水面只有 35 平方米的四条细缝，读不准，不判。
+ */
+const E82_WATER: Polygons = [[[
+  [121.5146461, 31.3077767], [121.5146461, 31.3077644], [121.5146461, 31.3077073], [121.5145626, 31.307686],
+  [121.5144791, 31.3076647], [121.5143956, 31.3076434], [121.5143122, 31.3076221], [121.5142287, 31.3076008],
+  [121.5141452, 31.3075795], [121.5140617, 31.3075582], [121.5140014, 31.3075729], [121.5146461, 31.3077767],
+]]];
 
 // ---------------------------------------------------------------- 地理小工具（地面米）
 
@@ -114,7 +131,9 @@ function ringArea(ring: number[][]): number {
 type Expect =
   | { kind: 'colour'; rgba: number[]; tolRgb: number; tolAlpha: number;
       /** 仅密度：探针周围 slackM 米内解析密度的 [最小, 最大]，用来吸收一个屏幕像素级的定位误差。 */
-      spread?: (slackM: number) => [number, number] }
+      spread?: (slackM: number) => [number, number];
+      /** 仅服务覆盖的混合地带：探针周围 slackM 米内各处的期望色。 */
+      around?: (slackM: number) => number[][] }
   | { kind: 'clear' }
   | { kind: 'visible'; minAlpha: number };
 type Probe = { name: string; point: LngLat; expect: Expect; note?: string };
@@ -152,6 +171,109 @@ function serviceExpect(p: LngLat, samples: ServiceSample[], iso: Polygons, domai
   if (status === 'gap') return pure(SERVICE_GAP_RGB, SERVICE_ALPHA.gap);
   if (status === 'unknown') return pure(SERVICE_UNKNOWN_RGB, SERVICE_ALPHA.unknown);
   return pure(distanceRgb(distance / covered / SERVICE_DISTANCE_MAX_M), SERVICE_ALPHA.covered);
+}
+
+/**
+ * 支持度（核权重之和）在这一段里前端按平滑台阶淡入（头注释：0.25 起显色、0.5 满色），
+ * 两端各留一点余量；混合色期望只在它明确为 0 或 1 的地方给。
+ */
+const SUPPORT_FADE: [number, number] = [0.2, 0.6];
+/** 混合色期望离圈边、评估域边至少这么远（米）：画布按圈裁剪、按缓冲格判域内外。 */
+const BLEND_EDGE_M = 3;
+
+type Tally = { covered: number; gap: number; unknown: number; distance: number; total: number };
+
+function tally(p: LngLat, samples: ServiceSample[]): Tally {
+  const sum: Tally = { covered: 0, gap: 0, unknown: 0, distance: 0, total: 0 };
+  for (const s of samples) {
+    // 覆盖格没有距离时前端丢弃它，这里也不算。
+    if (s.status === 'covered' && s.distanceM === null) continue;
+    const d = meters(p, s);
+    if (d >= s.sizeM) continue;
+    const w = (3 / Math.PI) * (1 - (d / s.sizeM) ** 2) ** 2;
+    sum.total += w;
+    if (s.status === 'covered') { sum.covered += w; sum.distance += w * (s.distanceM ?? 0); }
+    else if (s.status === 'gap') sum.gap += w;
+    else sum.unknown += w;
+  }
+  return sum;
+}
+
+const mix = (parts: [readonly number[], number][]) => {
+  const weight = parts.reduce((s, [, w]) => s + w, 0);
+  return [0, 1, 2].map(k => parts.reduce((s, [rgb, w]) => s + rgb[k] * w, 0) / weight);
+};
+
+type Blend = { rgba: number[]; known: number; score: number; coveredShare: number };
+
+/**
+ * 混合地带的期望色，按 serviceField.ts 头注释的规则在地面米上独立重算：三态各自按核权重
+ * 累计、按不透明度预乘混合（单类）；三类都已知的份额 × 覆盖类别占比色、其余是未知（综合）；
+ * 评估域内没有支持的地方是未知。支持度在淡入区间里、或离圈边与域边太近时返回 null。
+ */
+function blendAt(p: LngLat, plan: Plan, mode: string): Blend | null {
+  if (!inside(p, plan.iso) || edgeDistance(p, plan.iso) < BLEND_EDGE_M) return null;
+  if (!plan.domain.length || !inside(p, plan.domain) || edgeDistance(p, plan.domain) < BLEND_EDGE_M) return null;
+  const categories = mode === SERVICE_COMPOSITE ? CATEGORIES : [mode];
+  const tallies = categories.map(c => tally(p, plan.byCategory[c] ?? []));
+  if (tallies.some(s => s.total > SUPPORT_FADE[0] && s.total < SUPPORT_FADE[1])) return null;
+  const present = tallies.map(s => s.total >= SUPPORT_FADE[1]);
+  const coveredShare = tallies.reduce((m, s) => Math.max(m, s.total > 0 ? s.covered / s.total : 0), 0);
+  let rgb: number[], alpha: number, known = 0, score = 0;
+  if (!present.some(Boolean)) {
+    rgb = [...SERVICE_UNKNOWN_RGB];
+    alpha = SERVICE_ALPHA.unknown;
+  } else if (mode !== SERVICE_COMPOSITE) {
+    const s = tallies[0];
+    const near = s.covered > 0 ? distanceRgb(s.distance / s.covered / SERVICE_DISTANCE_MAX_M) : SERVICE_GAP_RGB;
+    const parts: [readonly number[], number][] = [[near, s.covered * SERVICE_ALPHA.covered],
+      [SERVICE_GAP_RGB, s.gap * SERVICE_ALPHA.gap], [SERVICE_UNKNOWN_RGB, s.unknown * SERVICE_ALPHA.unknown]];
+    rgb = mix(parts);
+    alpha = parts.reduce((sum, [, w]) => sum + w, 0) / s.total;
+    known = (s.covered + s.gap) / s.total;
+    score = s.covered + s.gap > 0 ? s.covered / (s.covered + s.gap) : 0;
+  } else {
+    known = 1;
+    tallies.forEach((s, i) => {
+      const decided = s.covered + s.gap;
+      known *= present[i] ? decided / s.total : 0;
+      score += decided > 0 ? s.covered / decided / categories.length : 0;
+    });
+    const wk = known * SERVICE_ALPHA.covered, wu = (1 - known) * SERVICE_ALPHA.unknown;
+    rgb = mix([[scoreRgb(score), wk], [SERVICE_UNKNOWN_RGB, wu]]);
+    alpha = wk + wu;
+  }
+  return { rgba: [...rgb.map(Math.round), Math.round(255 * alpha)], known, score, coveredShare };
+}
+
+/** 探针周围一圈（中心、三个半径 × 16 个方向）的期望色。 */
+function blendAround(p: LngLat, plan: Plan, mode: string, radiusM: number): number[][] {
+  const out: number[][] = [];
+  const centre = blendAt(p, plan, mode);
+  if (centre) out.push(centre.rgba);
+  for (const r of [radiusM / 3, (2 * radiusM) / 3, radiusM]) {
+    for (let k = 0; k < 16; k++) {
+      const b = blendAt(offset(p, r * Math.cos(k * Math.PI / 8), r * Math.sin(k * Math.PI / 8)), plan, mode);
+      if (b) out.push(b.rgba);
+    }
+  }
+  return out;
+}
+
+/** 混合色期望：中心色 + 定位误差圈内的候选色。 */
+function blendExpect(p: LngLat, plan: Plan, mode: string): Expect | null {
+  const centre = blendAt(p, plan, mode);
+  if (!centre) return null;
+  return { kind: 'colour', rgba: centre.rgba, tolRgb: 10, tolAlpha: 10,
+    around: slackM => blendAround(p, plan, mode, slackM) };
+}
+
+/** 15 米内期望色不变：核内结论一致，按"纯"点判，不需要定位余量。 */
+function flatAt(p: LngLat, plan: Plan, mode: string): boolean {
+  const centre = blendAt(p, plan, mode);
+  if (!centre) return false;
+  const ring = blendAround(p, plan, mode, 15);
+  return ring.length === 49 && ring.every(c => c.every((v, i) => Math.abs(v - centre.rgba[i]) <= 2));
 }
 
 /** 双权核的解析和（个/公顷）：K(d) = 3/(πr²)·(1−d²/r²)²，每平方米换算到每公顷。 */
@@ -202,7 +324,9 @@ function densityInput(layer: Layer, category = 'all'): { points: (LngLat & { id:
 }
 
 type Plan = {
-  slug: Slug; iso: Polygons; domain: Polygons; samples: ServiceSample[]; facilities: Layer;
+  slug: Slug; iso: Polygons; domain: Polygons; samples: ServiceSample[];
+  /** 三类各自的评估格（综合模式与混合色期望用）。 */
+  byCategory: Record<string, ServiceSample[]>; facilities: Layer;
   hashes: Record<string, string>; service: Probe[]; outside: Probe[];
   hole: { centre: LngLat; areaM2: number; probes: Probe[] } | null;
   counts: Record<string, number>;
@@ -215,17 +339,19 @@ function planFor(slug: Slug, layers: Record<string, Layer>): Plan {
   const stepM = typeof props.stepM === 'number' ? props.stepM : 50;
   const domain = polygonsOf(props.domain as { type?: string; coordinates?: unknown });
   const iso = polygonsOf(isoLayer.geometry as { type?: string; coordinates?: unknown });
-  const samples: ServiceSample[] = [];
+  const byCategory: Record<string, ServiceSample[]> = Object.fromEntries(CATEGORIES.map(c => [c, []]));
   const counts: Record<string, number> = {};
   for (const f of heat.geometry.features ?? []) {
-    if (f.geometry.type !== 'Point' || f.properties.category !== SERVICE_CATEGORY) continue;
+    const category = String(f.properties.category);
+    if (f.geometry.type !== 'Point' || !byCategory[category]) continue;
     const level = Number(String(f.properties.cell).split(':')[0]);
     const status = String(f.properties.status);
-    counts[status] = (counts[status] ?? 0) + 1;
-    samples.push({ lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], status,
+    if (category === SERVICE_CATEGORY) counts[status] = (counts[status] ?? 0) + 1;
+    byCategory[category].push({ lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], status,
       distanceM: typeof f.properties.distanceM === 'number' ? f.properties.distanceM : null,
       sizeM: stepM / 2 ** level });
   }
+  const samples = byCategory[SERVICE_CATEGORY];
   const byStatus: Record<string, Probe[]> = { gap: [], unknown: [], covered: [] };
   const ordered = [...samples].sort((a, b) => meters(a, CENTER) - meters(b, CENTER));
   for (const s of ordered) {
@@ -281,7 +407,7 @@ function planFor(slug: Slug, layers: Record<string, Layer>): Plan {
       hole = { centre: round6(centre), areaM2: Math.round(area), probes };
     }
   }
-  return { slug, iso, domain, samples, facilities: layers.facilities,
+  return { slug, iso, domain, samples, byCategory, facilities: layers.facilities,
     hashes: Object.fromEntries(Object.entries(layers).map(([id, layer]) => [id, layer.resultHash])),
     service: [...byStatus.gap, ...byStatus.unknown, ...byStatus.covered], outside, hole, counts };
 }
@@ -314,6 +440,79 @@ function densityProbes(plan: Plan, category = 'all'): { probes: Probe[]; points:
     if (hit) { probes.push({ name: 'zero-density', point: round6(hit), expect: { kind: 'clear' } }); break; }
   }
   return { probes, points };
+}
+
+/**
+ * 综合模式的判读点：按混合色期望分类 —— 三类全覆盖、未知、部分覆盖（三类都已知但有缺口）、
+ * 已知与未知之间的过渡。前两类只取 15 米内期望不变的"纯"点；后两类取混合点，按定位余量判。
+ */
+function compositeProbes(plan: Plan): { flat: Probe[]; blend: Probe[]; classes: Record<string, number> } {
+  const scan: LngLat[] = [];
+  for (let dx = -900; dx <= 900; dx += 20) for (let dy = -900; dy <= 900; dy += 20) scan.push(offset(CENTER, dx, dy));
+  scan.sort((p, q) => meters(p, CENTER) - meters(q, CENTER));
+  const classes: Record<string, number> = {};
+  const picked: Record<string, Probe[]> = {};
+  const classOf = (b: Blend) => b.known >= 0.95
+    ? (b.score >= 0.999 ? 'all-covered' : b.score <= 0.001 ? 'none-covered' : 'partial')
+    : b.known <= 0.05 ? 'unknown' : 'transition';
+  for (const p of scan) {
+    const b = blendAt(p, plan, SERVICE_COMPOSITE);
+    if (!b) continue;
+    const name = classOf(b);
+    classes[name] = (classes[name] ?? 0) + 1;
+    const list = (picked[name] ??= []);
+    if (list.length >= 2 || list.some(q => meters(q.point, p) < 150)) continue;
+    const flat = flatAt(p, plan, SERVICE_COMPOSITE);
+    if ((name === 'all-covered' || name === 'unknown' || name === 'none-covered') && !flat) continue;
+    const point = round6(p);
+    const expect = flat ? pure(b.rgba.slice(0, 3), b.rgba[3] / 255) : blendExpect(point, plan, SERVICE_COMPOSITE);
+    if (!expect) continue;
+    list.push({ name: `composite-${name}-${list.length + 1}`, point,
+      expect, note: `${name} known=${b.known.toFixed(2)} score=${b.score.toFixed(2)}` });
+  }
+  const all = Object.values(picked).flat();
+  const mixed = (probe: Probe) => probe.expect.kind === 'colour' && !!probe.expect.around;
+  return { flat: all.filter(p => !mixed(p)), blend: all.filter(mixed), classes };
+}
+
+/**
+ * 水面判读：1 米扫描域内水面，统计每个像素上各类覆盖格的权重份额（覆盖色能不能过河），
+ * 再挑离水边最远、彼此相距 ≥ 8 米的点，与两岸 40 米内的评估格格心一起判颜色。
+ */
+function waterProbes(plan: Plan, water: Polygons) {
+  const ring = water.flat(2);
+  const xs = ring.map(v => v[0]), ys = ring.map(v => v[1]);
+  const usable: { p: LngLat; shore: number; share: number }[] = [];
+  const covered = CATEGORIES.flatMap(c => plan.byCategory[c]).filter(s => s.status === 'covered');
+  let pixels = 0, coveredWeightMax = 0, nearestCovered = Infinity;
+  for (let lng = Math.min(...xs); lng <= Math.max(...xs); lng += 1 / mPerDegLng(ys[0])) {
+    for (let lat = Math.min(...ys); lat <= Math.max(...ys); lat += 1 / M_PER_DEG_LAT) {
+      const p = { lng, lat };
+      if (!inside(p, water)) continue;
+      pixels++;
+      // 全部水面像素（包括贴着圈边、判不了颜色的那些）：覆盖格的核权重与最近的覆盖格心。
+      for (const c of CATEGORIES) coveredWeightMax = Math.max(coveredWeightMax, tally(p, plan.byCategory[c]).covered);
+      for (const s of covered) nearestCovered = Math.min(nearestCovered, meters(p, s));
+      const b = blendAt(p, plan, SERVICE_COMPOSITE);
+      if (b && blendAt(p, plan, SERVICE_CATEGORY)) usable.push({ p, shore: edgeDistance(p, water), share: b.coveredShare });
+    }
+  }
+  const chosen: LngLat[] = [];
+  for (const u of [...usable].sort((a, b) => b.shore - a.shore)) {
+    if (chosen.length >= 4) break;
+    if (chosen.every(q => meters(q, u.p) >= 8)) chosen.push(u.p);
+  }
+  const shoreCells = plan.byCategory[SERVICE_CATEGORY]
+    .filter(s => (inside(s, water) || edgeDistance(s, water) < 40))
+    .sort((a, b) => edgeDistance(a, water) - edgeDistance(b, water));
+  const probesFor = (mode: string): Probe[] => [
+    ...chosen.map((p, i) => ({ name: `water-${i + 1}`, point: round6(p), expect: blendExpect(round6(p), plan, mode) })),
+    ...shoreCells.map((s, i) => ({ name: `shore-${s.status}-${i + 1}`, point: round6(s), expect: blendExpect(round6(s), plan, mode),
+      note: `${s.sizeM} 米格、离水 ${edgeDistance(s, water).toFixed(1)} 米` })),
+  ].filter((probe): probe is Probe => probe.expect !== null);
+  return { pixels, usable: usable.length, coveredShareMax: usable.reduce((m, u) => Math.max(m, u.share), 0),
+    coveredWeightMax, nearestCoveredM: Number(nearestCovered.toFixed(1)), centre: round6(chosen[0] ?? { lng: xs[0], lat: ys[0] }),
+    medical: probesFor(SERVICE_CATEGORY), composite: probesFor(SERVICE_COMPOSITE) };
 }
 
 // ---------------------------------------------------------------- 页面侧
@@ -471,7 +670,7 @@ async function panBy(page: Page, dx: number, dy: number) {
 
 type Reading = { name: string; point: LngLat; expected: Expect; actual: number[] | null; ok: boolean;
   /** 密度点只在"挪一个半像素"后才对上时记下：当时的米/像素与可接受的密度区间。 */
-  shifted?: { metersPerPixel: number; densityRange: [number, number] } };
+  shifted?: { metersPerPixel: number; densityRange?: [number, number]; slackM?: number } };
 
 /**
  * 定位容差（CSS 像素）：画布 left/top 是小数、浏览器按整像素落位（≤ 0.5 px），
@@ -479,6 +678,11 @@ type Reading = { name: string; point: LngLat; expected: Expect; actual: number[]
  * 扎堆设施的陡坡上一个像素就是好几米、零点几个/公顷，所以密度点按这一圈内的解析值判。
  */
 const POSITION_SLACK_PX = 1.5;
+/**
+ * 服务覆盖混合地带的定位容差（CSS 像素）：上面那 1.5 px，加上缓冲格（2–3 px）的中心偏移与
+ * 画布放大时的双线性插值。只用于混合点；纯点的 15 米余量已经远大于它。
+ */
+const BLEND_SLACK_PX = 3;
 
 function judge(expected: Expect, actual: number[] | null, mpp: number): { ok: boolean; shifted?: Reading['shifted'] } {
   if (!actual) return { ok: false };
@@ -492,6 +696,10 @@ function judge(expected: Expect, actual: number[] | null, mpp: number): { ok: bo
       && Math.abs(actual[3] - rgba[3]) <= expected.tolAlpha;
   };
   if (near(expected.rgba)) return { ok: true };
+  if (expected.around && mpp > 0) {
+    const slackM = Number((BLEND_SLACK_PX * mpp).toFixed(2));
+    return { ok: expected.around(slackM).some(near), shifted: { metersPerPixel: Number(mpp.toFixed(3)), slackM } };
+  }
   if (!expected.spread || !(mpp > 0)) return { ok: false };
   const [low, high] = expected.spread(POSITION_SLACK_PX * mpp);
   const shifted = { metersPerPixel: Number(mpp.toFixed(3)), densityRange: [Number(low.toFixed(3)), Number(high.toFixed(3))] as [number, number] };
@@ -564,7 +772,11 @@ async function shot(page: Page, name: string, testId?: string, marks: Mark[] = [
 }
 
 const LABELS: Record<string, string> = { gap: '缺口', unknown: '未知', covered: '覆盖', outside: '圈外',
-  'hole-centre': '孔心', 'hole-rim': '孔沿', facility: '设施', mid: '中点', 'zero-density': '零密度' };
+  'hole-centre': '孔心', 'hole-rim': '孔沿', facility: '设施', mid: '中点', 'zero-density': '零密度',
+  // 综合与河道的点挨得近，标签取短名；全称见验收报告。
+  'composite-all-covered': '全覆', 'composite-unknown': '综未', 'composite-partial': '部分',
+  'composite-none-covered': '全缺', 'composite-transition': '过渡', water: '水',
+  'shore-covered': '岸覆', 'shore-unknown': '岸未', 'shore-gap': '岸缺' };
 /** 判读点 → 图上标注：只标主要的点，偏移点不标，免得挤成一团。 */
 const marksOf = (probes: Probe[]): Mark[] => probes
   .filter(p => !/\+\d+m-/.test(p.name))
@@ -604,6 +816,7 @@ test.afterEach(() => {
 
 const SERVICE_ONLY: Prefs = { toggles: { service: true, density: false }, serviceMode: SERVICE_CATEGORY };
 const DENSITY_ONLY: Prefs = { toggles: { service: false, density: true }, densityCategory: 'all' };
+const COMPOSITE_ONLY: Prefs = { toggles: { service: true, density: false }, serviceMode: SERVICE_COMPOSITE };
 
 // ---------------------------------------------------------------- 用例
 
@@ -679,7 +892,240 @@ for (const slug of SLUGS) {
     record(`${slug}.density`, { facilities: points.length, legend: legendText, views, screenshots,
       educationFacilities: education.points.length });
   });
+
+  test(`${TASKS[slug].label}：综合模式 —— 三类均已知处按覆盖类别占比着色，缺一类即未知，切类别再切回不残留`, async ({ page, request }) => {
+    const plan = await planOf(request, slug);
+    const { flat, blend, classes } = compositeProbes(plan);
+    for (const name of ['all-covered', 'unknown']) {
+      expect(flat.filter(p => p.name.startsWith(`composite-${name}-`)).length, `${name} 至少一个纯点`).toBeGreaterThan(0);
+    }
+    // 三类都已知、但只覆盖了一两类的地方很少（扫描格上个位数），至少判一个。
+    expect(blend.filter(p => p.name.startsWith('composite-partial-')).length, '部分覆盖至少一个点').toBeGreaterThan(0);
+    await open(page, slug, { e82: COMPOSITE_ONLY, hybrid: COMPOSITE_ONLY });
+    const legend = page.getByTestId('service-legend');
+    await expect(legend).toContainText('三类均已知处覆盖类别占比 0–100%');
+    await expect(legend).toContainText('模型估计，不是实测');
+    await page.waitForTimeout(1500);
+    const probes = [...flat, ...plan.outside];
+    const views: Record<string, Reading[]> = {};
+    await setView(page, CENTER, 16);
+    views.z16 = await readProbes(page, 'service-heat-canvas', probes);
+    const screenshots = [await shot(page, `${slug}-service-composite-z16.png`, 'service-heat-canvas', marksOf([...flat, ...blend]))];
+    // 混合点在 z18 读：一个屏幕像素不到一米，定位余量小。
+    const near = [...flat, ...blend];
+    await setView(page, CENTER, 18);
+    views.z18 = await readProbes(page, 'service-heat-canvas', near, Math.min(3, near.length));
+    // 切到单类再切回综合：画布换内容而不叠加，读数回到综合。
+    await pick(page, '覆盖类别', '医疗');
+    await expect(legend).toContainText('医疗：已覆盖处最近设施步行 0–1000 米');
+    await pick(page, '覆盖类别', '综合');
+    await expect(legend).toContainText('三类均已知处覆盖类别占比 0–100%');
+    views.z18AfterSwitch = await readProbes(page, 'service-heat-canvas', near, Math.min(3, near.length));
+    // 混合点逐个居中再读：离中心远的部分覆盖点在上一个视图之外，不能靠"至少 3 个在视口里"放过去。
+    views.mixedCentred = [];
+    for (const probe of blend) {
+      await setView(page, probe.point, 18);
+      views.mixedCentred.push(...await readProbes(page, 'service-heat-canvas', [probe]));
+      if (probe.name === 'composite-partial-1') {
+        screenshots.push(await shot(page, `${slug}-service-composite-partial-z18.png`, 'service-heat-canvas', marksOf([probe])));
+      }
+    }
+    await setView(page, CENTER, 17);
+    views.z17 = await readProbes(page, 'service-heat-canvas', probes, 3);
+    screenshots.push(await shot(page, `${slug}-service-composite-z17.png`, 'service-heat-canvas', marksOf([...flat, ...blend])));
+    await expect(heatCanvases(page)).toHaveCount(1);
+    record(`${slug}.composite`, { classesOnScanGrid: classes, flatProbes: flat.length, blendProbes: blend.length,
+      views, screenshots });
+  });
 }
+
+test('百度边界搜索（E8.2）：河道（硬障碍）—— 压在水面上的格判未知，水面画成未知紫，覆盖色不过河', async ({ page, request }) => {
+  const plan = await planOf(request, 'e82');
+  const water = waterProbes(plan, E82_WATER);
+  expect(water.usable, '水面上有离圈边与域边都够远、能判颜色的像素').toBeGreaterThan(20);
+  // 覆盖格的核（半径 = 格边长）一格也伸不到水面上：医疗、购物、教育三类都一样，
+  // 整片水面（含贴着圈边、判不了颜色的像素）都如此。
+  expect(water.coveredWeightMax).toBe(0);
+  expect(water.coveredShareMax).toBe(0);
+  expect(water.nearestCoveredM).toBeGreaterThan(25);
+  expect(water.medical.filter(p => p.name.startsWith('water-')).length).toBeGreaterThan(1);
+  await open(page, 'e82', { e82: SERVICE_ONLY, hybrid: SERVICE_ONLY });
+  await page.waitForTimeout(1500);
+  const views: Record<string, Reading[]> = {};
+  await setView(page, water.centre, 19);
+  views.medicalZ19 = await readProbes(page, 'service-heat-canvas', water.medical);
+  const screenshots = [await shot(page, 'e82-water-medical-z19.png', 'service-heat-canvas', marksOf(water.medical))];
+  await setView(page, water.centre, 18);
+  views.medicalZ18 = await readProbes(page, 'service-heat-canvas', water.medical);
+  await pick(page, '覆盖类别', '综合');
+  await setView(page, water.centre, 19);
+  views.compositeZ19 = await readProbes(page, 'service-heat-canvas', water.composite);
+  screenshots.push(await shot(page, 'e82-water-composite-z19.png', 'service-heat-canvas', marksOf(water.composite)));
+  await expect(heatCanvases(page)).toHaveCount(1);
+  record('e82.water', { source: 'OSM geofabrik-shanghai-20260912 硬障碍层 ∩ 第 5 版评估域', areaM2: Math.round(ringArea(E82_WATER[0][0])),
+    scannedPixels1m: water.pixels, usablePixels: water.usable, coveredWeightMaxAllPixels: water.coveredWeightMax,
+    coveredShareMax: water.coveredShareMax,
+    nearestCoveredCellM: water.nearestCoveredM, views, screenshots });
+});
+
+/** 百度底图的水面色（关掉热力与覆盖物后的原色，按截图取样）与判定容差（RGB 欧氏距离）。 */
+const BAIDU_WATER_RGB = [117, 224, 249] as const;
+const BAIDU_WATER_TOLERANCE = 24;
+
+/**
+ * 障碍判定用的是 OSM 硬障碍层，底图是百度自己的水系，百度不提供水系矢量。
+ * 把前者（heat_obstacle_scan.py 导出的 nearbyWater，bd09ll）用红线叠到后者上出图；
+ * 再关掉热力与所有覆盖物截纯底图，沿每个 OSM 要素每 2 像素取一点，量到最近"百度水面色"像素的距离，
+ * 按地图自己的比例换成米。池塘是对照：两边都有、边界应重合，重合就说明坐标换算没问题；
+ * 虬江的偏离只记录不判。没给 HEAT_OSM_WATER 时跳过。
+ */
+test('百度边界搜索（E8.2）：OSM 水系叠到百度底图上 —— 池塘边界重合，河道中线的偏离量出来记录', async ({ page }) => {
+  const source = process.env.HEAT_OSM_WATER;
+  test.skip(!source, '需要 HEAT_OSM_WATER 指向 heat_obstacle_scan.py 的输出');
+  type Water = { osmId: number; name: string | null; width: string | null; inDomain: number; inDomainUnit: string;
+    distanceToDomainM: number; geometry: { type: string; coordinates: unknown } };
+  const scan = (JSON.parse(readFileSync(source!, 'utf8')) as Record<string, { osmDataVersion: string; nearbyWater: Water[] }>).e82;
+  const nearby = scan.nearbyWater;
+  expect(nearby.length).toBeGreaterThan(0);
+  await open(page, 'e82', { e82: COMPOSITE_ONLY, hybrid: COMPOSITE_ONLY });
+  const added = await page.evaluate(nearby => {
+    type Pt = [number, number];
+    const w = window as unknown as { __heatMap: () => { addOverlay: (o: unknown) => void }; __osmWater: unknown[];
+      BMapGL: Record<string, new (...args: unknown[]) => unknown> & { Point: new (lng: number, lat: number) => unknown } };
+    const map = w.__heatMap();
+    const points = (ring: Pt[]) => ring.map(([lng, lat]) => new w.BMapGL.Point(lng, lat));
+    w.__osmWater = [];
+    for (const { geometry: g } of nearby) {
+      const lines = g.type === 'LineString' ? [g.coordinates as Pt[]] : g.type === 'MultiLineString' ? g.coordinates as Pt[][] : [];
+      const rings = g.type === 'Polygon' ? [(g.coordinates as Pt[][])[0]]
+        : g.type === 'MultiPolygon' ? (g.coordinates as Pt[][][]).map(p => p[0]) : [];
+      for (const line of lines)
+        w.__osmWater.push(new w.BMapGL.Polyline(points(line), { strokeColor: '#e11d48', strokeWeight: 3, strokeOpacity: 0.95 }));
+      // 池塘只描边不填色，百度的水面色透得出来。
+      for (const ring of rings)
+        w.__osmWater.push(new w.BMapGL.Polygon(points(ring), { strokeColor: '#e11d48', strokeWeight: 2, fillOpacity: 0 }));
+    }
+    w.__osmWater.forEach(o => map.addOverlay(o));
+    return w.__osmWater.length;
+  }, nearby);
+  expect(added).toBeGreaterThan(0);
+  const VIEWS = [['z16', { lng: 121.5165, lat: 31.3105 }, 16], ['z17', { lng: 121.518, lat: 31.3095 }, 17]] as const;
+  const screenshots: string[] = [];
+  for (const [label, centre, zoom] of VIEWS) {
+    await setView(page, centre, zoom);
+    screenshots.push(await shot(page, `e82-osm-water-vs-basemap-${label}.png`));
+  }
+
+  // 纯底图：藏起热力画布与地图上所有覆盖物（含 OSM 线），截图只在内存里量，不落盘。
+  await page.evaluate(() => {
+    const map = (window as unknown as { __heatMap: () => { getOverlays?: () => { hide: () => void }[] } }).__heatMap();
+    map.getOverlays?.().forEach(o => o.hide());
+    document.querySelectorAll<HTMLCanvasElement>('canvas[data-testid]').forEach(c => { c.style.visibility = 'hidden'; });
+  });
+  type Stat = { osmId: number; name: string | null; kind: 'line' | 'polygon'; samples: number; noWaterWithin200px: number;
+    medianPx: number | null; medianM: number | null; p10M: number | null; p90M: number | null; maxM: number | null;
+    within3pxShare: number | null;
+    profile: { lng: number; lat: number; m: number | null }[] };
+  const offsets: Record<string, { mpp: number; waterPixels: number; features: Stat[] }> = {};
+  for (const [label, centre, zoom] of VIEWS) {
+    await setView(page, centre, zoom);
+    await page.waitForTimeout(6000);
+    const png = (await page.locator('.api-map-shell').screenshot()).toString('base64');
+    offsets[label] = await page.evaluate(async ({ png, nearby, water, tolerance }) => {
+      type Pt = [number, number];
+      type LngLat = { lng: number; lat: number };
+      const w = window as unknown as { __heatMap: () => { getContainer: () => HTMLElement; getCenter: () => LngLat;
+        pointToPixel: (p: unknown) => { x: number; y: number } }; BMapGL: { Point: new (lng: number, lat: number) => unknown } };
+      const map = w.__heatMap();
+      const shell = document.querySelector('.api-map-shell')!.getBoundingClientRect();
+      const container = map.getContainer();
+      const box = container.getBoundingClientRect();
+      const image = new Image();
+      image.src = `data:image/png;base64,${png}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d')!;
+      context.drawImage(image, 0, 0);
+      const { data } = context.getImageData(0, 0, image.width, image.height);
+      const k = image.width / shell.width;
+      const wx: number[] = [], wy: number[] = [];
+      for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
+        const i = (y * image.width + x) * 4;
+        if (Math.hypot(data[i] - water[0], data[i + 1] - water[1], data[i + 2] - water[2]) <= tolerance) {
+          wx.push(x / k);
+          wy.push(y / k);
+        }
+      }
+      const toShell = (lng: number, lat: number) => {
+        const p = map.pointToPixel(new w.BMapGL.Point(lng, lat));
+        return [p.x + box.left - shell.left, p.y + box.top - shell.top] as const;
+      };
+      // 每 CSS 像素多少米：与探针同一个量法。
+      const centre = map.getCenter();
+      const a = toShell(centre.lng, centre.lat), b = toShell(centre.lng + 0.001, centre.lat);
+      const mpp = (111_320 * Math.cos((centre.lat * Math.PI) / 180) * 0.001) / Math.hypot(b[0] - a[0], b[1] - a[1]);
+      // 只量露在地图上的点：图例、选点面板压住的地方不算。
+      const visible = (x: number, y: number) => x >= 4 && y >= 4 && x <= shell.width - 4 && y <= shell.height - 4
+        && container.contains(document.elementFromPoint(shell.left + x, shell.top + y));
+      const nearest = (x: number, y: number) => {
+        let best = Infinity;
+        for (let i = 0; i < wx.length; i++) {
+          const dx = wx[i] - x, dy = wy[i] - y;
+          if (Math.abs(dx) < best && Math.abs(dy) < best) best = Math.min(best, Math.hypot(dx, dy));
+        }
+        return best <= 200 ? best : null;
+      };
+      const quantile = (sorted: number[], q: number) =>
+        sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] : null;
+      const round = (v: number | null) => v === null ? null : Math.round(v * 10) / 10;
+      const metres = (v: number | null) => round(v === null ? null : v * mpp);
+      return { mpp: Math.round(mpp * 1000) / 1000, waterPixels: wx.length, features: nearby.map(({ osmId, name, geometry: g }) => {
+        const polygon = g.type.endsWith('Polygon');
+        const paths = g.type === 'LineString' ? [g.coordinates as Pt[]] : g.type === 'MultiLineString' ? g.coordinates as Pt[][]
+          : g.type === 'Polygon' ? [(g.coordinates as Pt[][])[0]] : (g.coordinates as Pt[][][]).map(p => p[0]);
+        const found: number[] = [];
+        const profile: { lng: number; lat: number; m: number | null }[] = [];
+        let samples = 0, missing = 0;
+        for (const path of paths) for (let s = 0; s + 1 < path.length; s++) {
+          const [p, q] = [toShell(...path[s]), toShell(...path[s + 1])];
+          const steps = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 2));
+          for (let t = 0; t < steps; t++) {
+            const x = p[0] + ((q[0] - p[0]) * t) / steps, y = p[1] + ((q[1] - p[1]) * t) / steps;
+            if (!visible(x, y)) continue;
+            const d = nearest(x, y);
+            // 沿线每 25 个取样点留一个，报告里画得出偏离随位置怎么变。
+            if (samples % 25 === 0) profile.push({ lng: +(path[s][0] + ((path[s + 1][0] - path[s][0]) * t) / steps).toFixed(6),
+              lat: +(path[s][1] + ((path[s + 1][1] - path[s][1]) * t) / steps).toFixed(6), m: metres(d) });
+            samples++;
+            if (d === null) missing++;
+            else found.push(d);
+          }
+        }
+        found.sort((x, y) => x - y);
+        return { osmId, name, kind: polygon ? 'polygon' as const : 'line' as const, samples, noWaterWithin200px: missing,
+          medianPx: round(quantile(found, 0.5)), medianM: metres(quantile(found, 0.5)), p10M: metres(quantile(found, 0.1)), p90M: metres(quantile(found, 0.9)),
+          maxM: metres(found.length ? found[found.length - 1] : null),
+          within3pxShare: found.length ? round(found.filter(d => d <= 3).length / found.length) : null, profile };
+      }).filter(f => f.samples > 0) };
+    }, { png, nearby, water: BAIDU_WATER_RGB, tolerance: BAIDU_WATER_TOLERANCE });
+  }
+  // 再只放出 OSM 线，截一张不带热力的对照图。
+  await page.evaluate(() => (window as unknown as { __osmWater: { show: () => void }[] }).__osmWater.forEach(o => o.show()));
+  await setView(page, VIEWS[1][1], VIEWS[1][2]);
+  screenshots.push(await shot(page, 'e82-osm-water-vs-basemap-z17-plain.png'));
+
+  record('e82.osmWater', { source: `OSM ${scan.osmDataVersion} 硬障碍层（地表水体），红线 / 红框`,
+    baiduWater: { rgb: BAIDU_WATER_RGB, tolerance: BAIDU_WATER_TOLERANCE }, overlays: added,
+    features: nearby.map(({ geometry, ...rest }) => ({ ...rest, type: geometry.type })), offsets, screenshots });
+  // 对照：两个视图里都得真的量到了百度水面，且每个露出来的 OSM 池塘边界都贴着百度水面：
+  // 中位偏离不到最细评估格（25 米）的一半，坐标换算的误差就不会把格判到水的另一边。
+  const ponds = Object.values(offsets).flatMap(v => v.features.filter(f => f.kind === 'polygon' && f.samples >= 20));
+  for (const view of Object.values(offsets)) expect(view.waterPixels).toBeGreaterThan(1000);
+  expect(ponds.length).toBeGreaterThan(0);
+  for (const pond of ponds) expect(pond.medianM!, `OSM 池塘 ${pond.osmId}`).toBeLessThanOrEqual(12.5);
+});
 
 test('两种算法的设施密度用同一把色标：图例文字与单个设施中心的颜色完全一致', async () => {
   const e82 = summary['e82.density'] as { legend: string; views: Record<string, Reading[]> } | undefined;

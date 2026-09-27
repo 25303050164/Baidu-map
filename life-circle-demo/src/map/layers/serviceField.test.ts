@@ -152,6 +152,41 @@ describe('评估域', () => {
   });
 });
 
+describe('硬障碍：河道', () => {
+  // 后端把压在水面上的格加密到 25 米并判未知（障碍两侧不连通，结论未定）。这里是它的
+  // 前端一半：南岸 50 米覆盖格、河道两排 25 米未知格（带着模型距离）、北岸 50 米缺口格。
+  const bank = (status: ServiceStatus) => block(0, 0, 10, 4, 50, 'shopping', status, status === 'covered' ? 200 : null);
+  const river = block(0, 200, 20, 2, 25, 'shopping', 'unknown', 150);
+  const far = block(0, 250, 10, 4, 50, 'shopping', 'gap', null);
+
+  it('南岸的覆盖结论过不了河：河心以北的颜色与南岸覆盖与否无关', () => {
+    const covered = field([...bank('covered'), ...river, ...far]);
+    const control = field([...bank('gap'), ...river, ...far]);
+    // 南岸格心最北在 175 米、核半径 50 米：影响止于河心 225 米，一格以外不外推。
+    for (const y of [226, 238, 250, 262, 300, 420]) {
+      for (const x of [60, 250, 440]) expect(at(covered, x, y)).toEqual(at(control, x, y));
+    }
+    // 河心是未知；河道格带的模型距离不着色（否则这里会是 150 米的绿）。
+    expect(at(covered, 250, 225)).toEqual([...SERVICE_UNKNOWN_RGB, alphaOf(SERVICE_ALPHA.unknown)]);
+    // 对岸一格以内是缺口灰，没有一丝覆盖色。
+    expect(at(covered, 250, 300)).toEqual([...SERVICE_GAP_RGB, alphaOf(SERVICE_ALPHA.gap)]);
+  });
+
+  it('加密的河道格只向南岸渗半个粗格：离河 12.5 米以外与没有河时一模一样', () => {
+    const result = field([...bank('covered'), ...river, ...far]);
+    const alone = field(bank('covered'));
+    // 河道格心最南在 212.5 米、核半径 25 米：影响止于 187.5 米。
+    for (const y of [60, 150, 180, 186]) {
+      for (const x of [60, 250, 440]) expect(at(result, x, y)).toEqual(at(alone, x, y));
+    }
+    expect(at(result, 250, 100)).toEqual([...distanceRgb(0.2), alphaOf(SERVICE_ALPHA.covered)]);
+    // 岸线上是覆盖与未知的过渡，不是任何一边的纯色。
+    const shore = at(result, 250, 200);
+    expect(shore.slice(0, 3)).not.toEqual(distanceRgb(0.2));
+    expect(shore.slice(0, 3)).not.toEqual(SERVICE_UNKNOWN_RGB);
+  });
+});
+
 describe('缩放', () => {
   it('核半径是地面上的格边长：放大一倍后同一地点的颜色不变', () => {
     const samples = [...block(0, 0, 10, 10, 50, 'shopping', 'covered', 200),
