@@ -149,7 +149,7 @@ class LimitedProvider:
         # Keep the shared slot through the response and start spacing afterwards.
         async with self.gate.attempt_lock:
             if not await self.gate.wait(deadline):
-                return RouteObservation(destination, reason="deadline")
+                return RouteObservation(destination, reason="deadline", endpoint_verified=False)
             reason = 'interrupted'
             try:
                 result = await self.provider.query_walking_time(origin, destination, deadline)

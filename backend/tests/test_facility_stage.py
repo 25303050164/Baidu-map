@@ -175,12 +175,12 @@ def test_a_deadline_that_has_passed_is_checked_before_the_request(tmp_path):
     with pytest.raises(Exception) as refusal:
         send(session, 0)
     assert type(refusal.value).__name__ == 'DeadlineReached'
-    # The refusal is on the near side of the send, and it is *not* refunded: the
-    # reservation is taken before the deadline check and stands, so an attempt
-    # that was never sent still costs its bucket slot and its daily unit. The
-    # ledger over-counts rather than under-counts, which is the safe direction.
-    assert budget.remaining(POI_POOL) == DEFAULT_POI_ATTEMPTS - 1
-    assert quota_.ledger.spent('place') == 1
+    # The refusal is on the near side of the send and before the reservation: an
+    # attempt that expired while waiting was never dispatched, so it costs neither
+    # its bucket slot nor a daily unit. Anything that *was* dispatched stays
+    # counted (see test_quota), so the ledger still never under-counts a send.
+    assert budget.remaining(POI_POOL) == DEFAULT_POI_ATTEMPTS
+    assert quota_.ledger.spent('place') == 0
 
 
 def test_one_attempt_is_one_documented_request(tmp_path):

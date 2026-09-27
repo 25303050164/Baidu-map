@@ -269,6 +269,51 @@ def test_only_one_attempt_per_service_is_in_flight(tmp_path):
     assert depths == [1, 1, 1, 1]
 
 
+def test_queued_expiry_does_not_spend_or_dispatch(tmp_path):
+    async def run():
+        service = make_pool(tmp_path, PLACE)
+        budget = TaskBudget(isochrone=400)
+        await service.gate.attempt_lock.acquire()
+        try:
+            with pytest.raises(DeadlineReached):
+                async with service.attempt(time.monotonic() + .03, budget=budget, pool='poi'):
+                    pytest.fail('expired request was dispatched')
+        finally:
+            service.gate.attempt_lock.release()
+        assert budget.remaining('poi') == 60
+        assert service.remaining_today() == 1600
+    asyncio.run(run())
+
+
+def test_queued_request_respects_previous_response_cooldown(tmp_path):
+    async def run():
+        now = [1000.0]
+        async def sleep(delay):
+            now[0] += delay
+        gate = RateGate(FAST, clock=lambda: now[0], sleep=sleep)
+        service = make_pool(tmp_path, DIRECTION, gate=gate)
+        started, release = asyncio.Event(), asyncio.Event()
+        sends = []
+        async def first():
+            async with service.attempt(1100) as attempt:
+                sends.append(now[0])
+                started.set()
+                await release.wait()
+                attempt.outcome('rate_limit')
+        async def second():
+            await started.wait()
+            async with service.attempt(1100) as attempt:
+                sends.append(now[0])
+                attempt.outcome(None)
+        a, b = asyncio.create_task(first()), asyncio.create_task(second())
+        await started.wait()
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(a, b)
+        assert sends[1] - sends[0] >= 1
+    asyncio.run(run())
+
+
 def test_a_rate_limit_cools_the_whole_service_down(tmp_path):
     now = [1000.0]
 

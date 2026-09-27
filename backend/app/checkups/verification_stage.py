@@ -1,8 +1,8 @@
 """§6.3 百度重点核验：把模型最不确定的那几处拿去问一条真实路线。
 
 这一阶段不重算覆盖、不改面积、不给分。它做的事只有一件：在标准 120 次路线预算里，按
-类别轮转挑出最值得问的设施，向百度要一条真实步行路线，把回答按证据层级记下来，并标出
-"模型与路线对不上"的地方。
+类别轮转挑出最值得问的设施，向百度要一条真实步行路线，把回答按证据层级记下来。
+当前路线起点是体检中心，与模型网格到最近设施的距离不可直接比较，暂不判网格冲突。
 
 四条口径决定了它长成这样：
 
@@ -11,8 +11,8 @@
 * **严格映射不放宽。** 原始 POI 的严格核验继续用现有 :func:`poi_evidence` 语义：端点必须
   几乎完全重合才算数。路线端点与原始目标有偏移时，那条证据留在"道路端点路线证据"这一层，
   绝不提升为严格核验 —— 否则一次端点偏移就能把整片灰区读成"已实测有服务"。
-* **单点不覆盖整格。** 一条路线只说明这条路线的两端。模型与路线冲突时，受影响的那一格
-  被标为待细化的冲突，而不是把整格改判、也不是取平均。
+* **单点不覆盖整格。** 一条路线只说明这条路线的两端。未来只有建立同起终点的模型证据后，
+  才能标记待细化的冲突，不把整格改判，也不取平均。
 * **失败不等于盲区。** 最近几家都问不到路线，说明的是"这几家没有证据"，不是"这里没有
   设施"。没有可解释的候选排除依据时，结论保留未知。
 """
@@ -94,7 +94,7 @@ def candidate_order(facilities, *, majors, zones, entrances, origin, projection=
     排序依据全部来自已经冻结的证据，不引入新的判断。档位决定**类别内**谁先被问：
 
     * **疑似灰区**：某一处灰区自己报出来的"最近已知设施"是第一档 —— 它就是模型说
-      "太远"的那个旁边最近的设施，一次真实路线能直接检验这句话。
+      "太远"的那个旁边最近的设施。此处仅提升核验优先级，中心到设施路线不能直接检验灰区距离。
     * **未知门禁**：入口解析不出合法接入的设施排在第二档：它的距离结论本来就带着未决项。
     * **决定边缘**：其余按 |直线距离 − 规则阈值| 升序 —— 最接近 1000 米的那些设施，一次
       路线最可能把结论从"覆盖"翻成"缺口"或反过来。同档内按设施 ID 稳定排序。
@@ -144,24 +144,6 @@ def candidate_order(facilities, *, majors, zones, entrances, origin, projection=
     return ordered
 
 
-def _model_status(cell, category, heatmap) -> str | None:
-    """模型对这一格说了什么：热力点带的就是同一批叶格和同一个结论（§5.4）。
-
-    找的是包含这个设施的叶格：细分过的格用它的四个 25 米子格再判一次，找不到就是
-    "这一格没有模型结论"，冲突也就无从谈起。
-    """
-    points = {point['cell']: point['status']
-              for point in ((heatmap or {}).get('categories', {}) or {}).get(category, [])}
-    if not points:
-        return None
-    ix, iy = cell
-    for key in [f'0:{ix}:{iy}'] + [f'1:{2 * ix + dx}:{2 * iy + dy}'
-                                   for dy in (0, 1) for dx in (0, 1)]:
-        if key in points:
-            return points[key]
-    return None
-
-
 async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, session, origin,
                             projection=None) -> VerificationOutcome:
     """跑完核验阶段。``session`` 为 None 表示这个部署没有路线服务。
@@ -182,14 +164,13 @@ async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, se
                 queries={'routeAttempts': session.attempts},
                 notes=['本次检索没有落在直线 1200 米内的设施，核验阶段没有可核验的对象。']),
             status='partial')
-    local = LocalProjection(origin) if projection is None else projection
     records, flags, failures, unresolved = [], [], 0, 0
     for item in candidates:
         observation = await session(item['facilityId'], origin, item['location'])
         if observation is None:
             # 池子用尽或撞上停止类原因：剩下的候选没有结论，不是"走不通"。
             break
-        record = _record(item, observation, origin, local, heatmap)
+        record = _record(item, observation, origin)
         records.append(record)
         if record['conflict']:
             flags.append({'facilityId': record['facilityId'], 'category': record['category'],
@@ -204,7 +185,8 @@ async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, se
     stopped = session.stop_reason
     notes = ['核验只对本次检索到的设施成立，不构成目录完整性证明。',
              '单条路线只证明这条路线的两端：它不把整格改判为已实测，也不把未知变成覆盖。',
-             '直线距离仅用于候选排序与保守筛选，所有"在服务范围内"的结论都来自返回路线距离。']
+             '直线距离仅用于候选排序与保守筛选，所有"在服务范围内"的结论都来自返回路线距离。',
+             '本次中心到设施路线与模型网格到最近同类设施的距离不可直接比较，未进行网格冲突判定。']
     if unverified:
         notes.append(f'{unverified} 处候选未取到路线'
                      f'（{stopped or "budget_exhausted"}）：未核验不等于走不通。')
@@ -228,7 +210,7 @@ async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, se
         status=status, network_requests=session.attempts)
 
 
-def _record(item, observation, origin, projection, heatmap) -> dict:
+def _record(item, observation, origin) -> dict:
     """一条路线观测 → 一份带层级的证据。
 
     ``poiEvidence`` 是严格那一层：端点不重合就是 ``pending``，绝不上浮成"可达"。判定用的
@@ -244,11 +226,10 @@ def _record(item, observation, origin, projection, heatmap) -> dict:
     within = within_rule(distance)
     # 返回的距离不管能不能判定都留着 —— 它是端点证据层里的那个数值，只是不带结论。
     returned = observation.distance_m if usable_route(observation, destination) else None
-    x, y = projection.to_local(destination)
-    cell_ix, cell_iy = int(x // 50), int(y // 50)
-    model_status = _model_status((cell_ix, cell_iy), major_of(item['category']), heatmap)
-    conflict = (within is not None and model_status in ('covered', 'gap')
-                and within != (model_status == 'covered'))
+    # 中心→某设施的路线与设施所在网格→最近同类设施不是同一个问题。
+    # 当前热力没有同起点、同目的设施的距离证据，不能据此生成模型冲突。
+    # 更不能把中心局部投影的格号当作 EPSG:32651 全局格号。
+    model_status, conflict = None, False
     return {
         'facilityId': item['facilityId'], 'category': item['category'],
         # 设施自己的位置：图层画的是它，不是被吸附过的路线端点。
@@ -259,12 +240,13 @@ def _record(item, observation, origin, projection, heatmap) -> dict:
         'withinRule': within,
         # 严格那一层要端点和原目标几乎完全重合；道路端点层留着实际起终点和偏移。
         'poiStatus': strict.status, 'poiReason': strict.reason,
-        'endpointVerified': bool(observation.endpoint_verified),
+        'endpointVerified': strict.endpoint_verified,
         'routeOrigin': observation.route_origin, 'routeDestination': observation.route_destination,
         'originOffsetM': observation.origin_offset_m,
         'destinationOffsetM': observation.destination_offset_m,
         'evidenceGrade': 'verified' if strict.status != 'pending' else 'model',
-        'modelCell': f'{cell_ix}:{cell_iy}', 'modelStatus': model_status, 'conflict': conflict,
+        'modelCell': None, 'modelStatus': model_status, 'conflict': conflict,
+        'modelComparison': 'not_comparable_origin_and_destination',
         'entranceStatus': item['entranceStatus'], 'entranceOffsetM': item['entranceOffsetM'],
         'reason': observation.reason,
     }

@@ -144,14 +144,14 @@ class BaiduProvider:
 
     def transport_failure(self, destination, reason, *, http_status=None, error_type=None):
         """Overridable diagnostics hook; legacy observation behavior is retained."""
-        return RouteObservation(destination, reason=reason)
+        return RouteObservation(destination, reason=reason, endpoint_verified=False)
 
     async def query_walking_time(self, origin, destination, deadline):
         if self.client is None:
             raise RuntimeError("请通过 async with BaiduProvider() 使用适配器")
         origin, destination = normalize(origin), normalize(destination)
         if time.monotonic() >= deadline:
-            return RouteObservation(destination, reason="deadline")
+            return RouteObservation(destination, reason="deadline", endpoint_verified=False)
         params = {
             "ak": self._ak, "origin": f"{origin[1]:.6f},{origin[0]:.6f}",
             "destination": f"{destination[1]:.6f},{destination[0]:.6f}",

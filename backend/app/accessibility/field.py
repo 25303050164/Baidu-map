@@ -23,8 +23,8 @@ from shapely.strtree import STRtree
 
 from ..rules import category_service, distance_within
 from .grid import COVERED, GAP, REFINE, UNKNOWN
-from .service_graph import (ALLOWED, POSSIBLE, SUPPORT_LIMIT_M, Entrance, ServiceViews,
-                            attach_point, entrance_seeds_with_owner, reverse_field_owners,
+from .service_graph import (ALLOWED, POSSIBLE, Entrance, ServiceViews,
+                            PointAttachments, entrance_seeds_with_owner, reverse_field_owners,
                             sample_distance, sample_nearest_facility)
 
 #: 判定用的度量名：必须与规则里的 metric 一致，否则 ``distance_within`` 一律返回 None。
@@ -68,10 +68,14 @@ class ServiceField:
     def __init__(self, *, category: str, rule, store, views: ServiceViews,
                  entrances: Iterable[Entrance], query_complete: bool = True,
                  boundary=None, obstacle_intersects: Callable[[object], bool] | None = None,
-                 verification_conflict: Callable[[object], bool] | None = None):
+                 verification_conflict: Callable[[object], bool] | None = None,
+                 attachments: PointAttachments | None = None):
         self.category = category
         self.rule = rule
         self.store = store
+        self.attachments = attachments if attachments is not None else PointAttachments(store)
+        if self.attachments.store is not store:
+            raise ValueError('attachment_cache_store_mismatch')
         self.views = views
         self.query_complete = query_complete
         self.boundary = boundary
@@ -114,7 +118,7 @@ class ServiceField:
                    for node in attachment.seeds)
 
     def assess_sample(self, point: Point) -> SampleAssessment:
-        attachment, reason = attach_point(self.store, (point.x, point.y), limit_m=SUPPORT_LIMIT_M)
+        attachment, reason = self.attachments.resolve((point.x, point.y))
         if attachment is None:
             return SampleAssessment(point=point, value=None, reason=reason)
         allowed_m = sample_distance(attachment, self.fields[ALLOWED])

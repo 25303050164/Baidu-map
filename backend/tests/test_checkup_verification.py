@@ -169,22 +169,20 @@ def test_an_offset_endpoint_stays_route_evidence_and_is_never_promoted():
     assert len(routes.sent) == 1
 
 
-def test_a_model_that_disagrees_with_the_route_flags_the_cell_and_never_averages():
+def test_route_to_facility_cannot_contradict_coverage_at_the_facility():
     facilities = [facility(0, 1150, "pharmacy"), facility(1, 300, "market")]
     heatmap = heatmap_for(facilities, status="covered")
     _routes, outcome = run(straight_routes(), facilities, heatmap=heatmap)
-    conflict = outcome.evidence.conflicts[0]
-    # 模型说这一格有覆盖，路线说 1322 米：两种结论都留下，不取平均、也不由一条路线
-    # 把整格改判。受影响的格被标为待细化。
-    assert conflict["facilityId"] == "f-0" and conflict["modelStatus"] == "covered"
-    assert conflict["routeDistanceM"] == pytest.approx(1322.4, abs=1.0)
-    assert outcome.status == "partial"
-    assert any("待细化" in note for note in outcome.evidence.notes)
     records = {item["facilityId"]: item for item in outcome.evidence.facilities}
-    assert records["f-0"]["conflict"] is True
-    # 300 米那一家和模型的"覆盖"没有分歧，所以它不带冲突标记。
-    assert records["f-1"]["conflict"] is False
-    assert len(outcome.evidence.conflicts) == 1
+    # A destination has nearby services even if the request centre is far away.
+    assert records["f-0"]["routeDistanceM"] == pytest.approx(1322.4, abs=1.0)
+    assert records["f-0"]["withinRule"] is False
+    assert outcome.evidence.conflicts == []
+    for record in records.values():
+        assert record["modelCell"] is None and record["modelStatus"] is None
+        assert record["modelComparison"] == "not_comparable_origin_and_destination"
+        assert record["conflict"] is False
+    assert any("未进行网格冲突判定" in note for note in outcome.evidence.notes)
 
 
 def test_a_zero_distance_route_counts_only_when_it_is_the_point_that_was_asked():

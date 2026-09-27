@@ -71,11 +71,12 @@ class OnlineRouteTransport:
         return RouteSession(self, pool, budget=budget, deadline=deadline)
 
     async def route(self, facility_id, origin, destination, timeout):
-        """一条路线的原始观测。``facility_id`` 作为导航点候选发给上游。"""
+        """timeout 是剩余秒数；Provider 接收单调时钟的绝对截止时间。"""
         silence_transport_logs()
+        uid = facility_id.removeprefix('baidu_place:') if facility_id.startswith('baidu_place:') else None
         provider = BaiduProvider(self.secret, client=self.client,
-                                 destination_uid=facility_id, route_metric='distance')
-        return await provider.query_walking_time(origin, destination, timeout)
+                                 destination_uid=uid or None, route_metric='distance')
+        return await provider.query_walking_time(origin, destination, time.monotonic() + timeout)
 
 
 class RouteSession:
@@ -112,10 +113,14 @@ class RouteSession:
             try:
                 async with self.pool.attempt(self.deadline, budget=self.budget,
                                              pool=pool) as attempt:
+                    timeout = self.deadline - time.monotonic()
+                    if timeout <= 0:
+                        attempt.outcome('deadline')
+                        raise DeadlineReached()
                     self.attempts += 1
                     value = await self.transport.route(
                         facility_id, origin, destination,
-                        max(.01, min(MAX_TIMEOUT_SECONDS, timeout)))
+                        min(MAX_TIMEOUT_SECONDS, timeout))
                     attempt.outcome(value.reason)
             # 桶用尽和到点都不是"这条路走不通"，而是"这次没有结论"：停下来，把原因
             # 带到证据里去，而不是让异常从阶段里冒出来变成一次失败。

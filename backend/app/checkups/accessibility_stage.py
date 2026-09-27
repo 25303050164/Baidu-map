@@ -30,7 +30,7 @@ from .. import catalog
 from ..accessibility.field import ServiceField
 from ..accessibility.grid import (COVERED, GAP, MAX_LEAF_CELLS, UNKNOWN, cells_covering,
                                   explore)
-from ..accessibility.service_graph import (ENTRANCE_LIMIT_M, SEARCH_CUTOFF_M, build_views,
+from ..accessibility.service_graph import (ENTRANCE_LIMIT_M, SEARCH_CUTOFF_M, PointAttachments, build_views,
                                            coverage_from_settled, resolve_entrances)
 from ..accessibility.zones import CellRecord, merge_zones
 from ..algorithms.hybrid_isochrone.hard_obstacles import load_obstacles
@@ -270,7 +270,7 @@ def evaluated_majors(majors, facilities, *, query_complete: bool) -> tuple[str, 
 
 
 def evaluate_category(major: str, facilities, *, store, views, domain, rule, query_complete,
-                      obstacles: _Obstacles) -> CategoryEvaluation:
+                      obstacles: _Obstacles, attachments=None) -> CategoryEvaluation:
     """一个类别的完整评估：入口 → 服务场 → 网格 → 面积 → 灰区输入与热力点。
 
     ``query_complete`` 为假时 :func:`category_service` 永远不会给出 gap —— 检索没跑完
@@ -283,6 +283,7 @@ def evaluate_category(major: str, facilities, *, store, views, domain, rule, que
         limit_m=ENTRANCE_LIMIT_M)
     field = ServiceField(category=major, rule=rule, store=store, views=views, entrances=entrances,
                          query_complete=query_complete, boundary=domain.boundary,
+                         attachments=attachments,
                          obstacle_intersects=obstacles.intersects if obstacles.available else None)
     # 判定与证据一次算完：网格只拿结论，评估对象留在这里给热力与灰区用。
     assessed: dict = {}
@@ -490,9 +491,10 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
     obstacles = _Obstacles(obstacles if obstacles is not None
                            else (local_obstacles(settings, store.projection, domain)
                                  if settings is not None else None))
+    attachments = PointAttachments(store)
     evaluated = [evaluate_category(
         major, facilities, store=store, views=views, domain=domain, rule=rule,
-        query_complete=query_complete, obstacles=obstacles) for major in majors_used]
+        query_complete=query_complete, obstacles=obstacles, attachments=attachments) for major in majors_used]
     issues = []
     for item in evaluated:
         if item.supported and not _areas_match(item.areas, domain_area_m2):

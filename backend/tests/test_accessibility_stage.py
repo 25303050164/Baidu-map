@@ -454,3 +454,27 @@ def test_views_are_built_once_for_the_whole_stage():
     store = road_store()
     views = build_views(store.graph, version="acc-stage-test")
     assert build_views(store.graph, version="acc-stage-test") is views
+
+
+def test_shared_attachment_cache_preserves_all_assessment_outputs(monkeypatch):
+    from app.accessibility import service_graph
+    real_attach = service_graph.attach_point
+    calls = []
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return real_attach(*args, **kwargs)
+    monkeypatch.setattr(service_graph, 'attach_point', counted)
+    arguments = dict(geometry=boundary(0, -60, 1600, 60), facilities=[
+        facility(100, facility_id='medical', category='pharmacy'),
+        facility(400, facility_id='shopping', category='market'),
+        facility(700, facility_id='education', category='school')])
+    cached = run(**arguments)
+    cached_calls = len(calls)
+    calls.clear()
+    monkeypatch.setattr(stage, 'PointAttachments',
+                        lambda store: service_graph.PointAttachments(store, max_entries=0))
+    uncached = run(**arguments)
+    assert cached_calls < len(calls) / 2
+    for section in ('accessibility', 'service_gaps', 'heatmap', 'scores'):
+        assert getattr(cached, section).model_dump(mode='json') == \
+            getattr(uncached, section).model_dump(mode='json'), section

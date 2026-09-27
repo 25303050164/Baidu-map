@@ -175,6 +175,27 @@ def attach_point(store, xy, *, limit_m: float = SUPPORT_LIMIT_M,
                       seeds={edge[1]: max(0.0, length - position), edge[0]: max(0.0, position)}), None
 
 
+class PointAttachments:
+    """Task-local bounded cache of category-independent support-point attachments.
+
+    Coordinates are exact (no rounding). The store is immutable for one assessment;
+    a fresh assessment gets a fresh cache, so graph/rule revisions cannot leak.
+    """
+
+    def __init__(self, store, *, max_entries=50_000):
+        self.store, self.max_entries = store, max_entries
+        self._items = {}
+
+    def resolve(self, xy):
+        key = tuple(xy)
+        if key not in self._items:
+            result = attach_point(self.store, key, limit_m=SUPPORT_LIMIT_M)
+            if len(self._items) < self.max_entries:
+                self._items[key] = result
+            return result
+        return self._items[key]
+
+
 @dataclass(frozen=True)
 class Entrance:
     """一个设施入口候选的接入结果。``status`` 为 unresolved 时带着原因进核验队列。

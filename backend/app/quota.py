@@ -6,9 +6,10 @@ is the existing response-paced ``RateGate`` — this module adds what it does no
 own: the per-task buckets, the application-wide daily budget and the tier that
 applies right now.
 
-An attempt passes one scheduling point that checks the task bucket, reserves the
-daily budget in a transaction, waits for its paced slot, and then holds the
-service's single in-flight slot. Reserving happens *before* the request is sent,
+An attempt checks allowances, acquires the service slot within its deadline,
+waits for response-paced scheduling, then reserves the daily and task budgets.
+Queue expiry does not consume a request; dispatched failures remain counted.
+Reserving happens *before* the request is sent,
 so failed, retried and sent-but-unclear attempts all stay counted and a process
 restart never clears the ledger. The day boundary is Asia/Shanghai.
 
@@ -27,6 +28,7 @@ until the per-service refactor lands, and moving it is a real traffic change
 that needs its own timing acceptance. The balance below therefore describes the
 stages that are metered, and says so.
 """
+import asyncio
 import sqlite3
 import time
 from contextlib import asynccontextmanager
@@ -257,32 +259,47 @@ class ServicePool:
     @asynccontextmanager
     async def attempt(self, deadline: float, *, budget: TaskBudget | None = None,
                       pool: str | None = None, cost: int = 1):
-        """Take every allowance, then hold the service's single in-flight slot."""
-        if budget is not None and pool is not None:
-            for _ in range(cost):
-                budget.consume(pool)
-        daily = self._daily_budget()
-        if daily is not None:
-            self.ledger.reserve(self.name, daily, cost=cost)
-        ceiling = self.ceiling()
-        # The service cap is authoritative for anything that passes through this
-        # pool, including a caller that asked for a looser request-level QPS. It
-        # is re-applied every attempt because the fallback instant can pass while
-        # a long task is still running.
-        self.gate.qps = ceiling
-        self.gate.interval = 1 / ceiling
-        if not await self.gate.wait(deadline, cost=cost):
+        """Wait under the service lock; reserve only immediately before dispatch."""
+        if type(cost) is not int or cost <= 0:
+            raise ValueError("attempt cost must be a positive integer")
+
+        def check_allowances():
+            if budget is not None and pool is not None and budget.remaining(pool) < cost:
+                raise BudgetExhausted(pool, budget.pools()[pool])
+            daily = self._daily_budget()
+            if daily is not None and self.ledger.remaining(self.name, daily) < cost:
+                raise DailyBudgetExhausted(self.name, daily)
+
+        check_allowances()
+        remaining = deadline - self.gate.clock()
+        if remaining <= 0:
             raise DeadlineReached()
-        handle = Attempt(service=self.name)
-        await self.gate.attempt_lock.acquire()
         try:
-            yield handle
+            await asyncio.wait_for(self.gate.attempt_lock.acquire(), timeout=remaining)
+        except asyncio.TimeoutError:
+            raise DeadlineReached() from None
+        try:
+            check_allowances()
+            self.gate.qps = self.ceiling()
+            self.gate.interval = 1 / self.gate.qps
+            # Waiting before acquiring this lock lets queued callers bypass the
+            # previous response's cooldown and can dispatch after their deadline.
+            if not await self.gate.wait(deadline, cost=cost):
+                raise DeadlineReached()
+            check_allowances()
+            daily = self._daily_budget()
+            if daily is not None:
+                self.ledger.reserve(self.name, daily, cost=cost)
+            if budget is not None and pool is not None:
+                for _ in range(cost):
+                    budget.consume(pool)
+            handle = Attempt(service=self.name)
+            try:
+                yield handle
+            finally:
+                self.gate.completed(handle.reason if handle.reported else "interrupted", cost=cost)
         finally:
             self.gate.attempt_lock.release()
-            # An attempt that never reported an outcome is treated as
-            # interrupted: silence must not read as a clean response.
-            self.gate.completed(handle.reason if handle.reported else "interrupted",
-                                cost=cost)
 
 
 class Quota:

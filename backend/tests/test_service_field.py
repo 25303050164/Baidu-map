@@ -58,6 +58,20 @@ def views_of(store, version="field-test"):
     return build_views(store.graph, version=version)
 
 
+def test_attachment_cache_is_exact_bounded_and_cannot_cross_graphs():
+    from app.accessibility.service_graph import PointAttachments
+    store = build_store(CORRIDOR, corridor_ways())
+    cached = PointAttachments(store, max_entries=1)
+    at_limit = cached.resolve((100, 50))
+    assert at_limit[0] is not None
+    assert cached.resolve((100, 50)) is at_limit
+    assert cached.resolve((100, 50 + 1e-8))[0] is None
+    assert len(cached._items) == 1
+    other = build_store(CORRIDOR, corridor_ways())
+    with pytest.raises(ValueError, match='attachment_cache_store_mismatch'):
+        field_for(other, [], attachments=cached)
+
+
 def field_for(store, entrances, *, query_complete=True, **kwargs):
     return ServiceField(category="medical", rule=RULE, store=store, views=views_of(store),
                         entrances=entrances, query_complete=query_complete, **kwargs)
