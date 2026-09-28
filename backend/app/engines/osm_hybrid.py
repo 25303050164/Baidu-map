@@ -12,6 +12,7 @@ from shapely.geometry import Point
 
 from ..algorithms.hybrid_isochrone import HybridConfig, HybridIsochroneProvider
 from ..algorithms.hybrid_isochrone.baidu_validator import StrictBaiduProvider
+from ..algorithms.hybrid_isochrone.cache import ReplayProvider
 from ..algorithms.hybrid_isochrone.extent import ALGORITHM_VERSION, computation_extent
 from ..algorithms.hybrid_isochrone.hard_obstacles import load_obstacles
 from ..algorithms.hybrid_isochrone.osm_guidance import OsmGuidance
@@ -25,6 +26,8 @@ DEFAULT_QPS = 3.0
 
 class OsmHybridEngine:
     engine_id = "osm_hybrid"
+    #: The task artifact a finished run can be rebuilt from (``compute(replay=...)``).
+    ledger_name = "hybrid-ledger.json"
 
     def __init__(self, settings, gate, offline, provider_factory=None):
         self.settings, self.gate, self.offline = settings, gate, offline
@@ -53,7 +56,7 @@ class OsmHybridEngine:
         extent = computation_extent(projection.origin(origin), config)
         obstacles = await asyncio.to_thread(
             load_obstacles, self.settings.hybrid_obstacle_path, projection,
-            self.settings.osm_data_version, extent)
+            self.settings.osm_data_version, extent, getattr(self.settings, "water_review_dir", None))
         ready = dict(
             graph_available=store is not None,
             data_version_matches=bool(
@@ -68,23 +71,44 @@ class OsmHybridEngine:
                               + guidance.warnings + obstacles.warnings))
         return projection, guidance, obstacles, ready, warnings
 
-    async def compute(self, ask: IsochroneAsk, context: EngineContext) -> IsochroneSnapshot:
-        config = self._config(ask.budget)
+    async def compute(self, ask: IsochroneAsk, context: EngineContext, *,
+                      replay: dict | None = None) -> IsochroneSnapshot:
+        """Run the engine, or rebuild a finished run from its ledger (``replay``).
+
+        A replay restores every paid sample and asks nothing: the boundary is
+        rebuilt from the same Baidu evidence against the current obstacle layer,
+        which is what a correction to the water data changes. The run's own
+        configuration is used, not today's defaults.
+        """
+        config = HybridConfig(**replay["config"]) if replay is not None else self._config(ask.budget)
         started = time.perf_counter()
         projection, guidance, obstacles, ready, readiness_warnings = await self._prepare(
             ask.origin, config)
         if context.token.cancelled:
             raise asyncio.CancelledError()
-        ledger_path = (context.artifact_dir / "hybrid-ledger.json"
-                       if context.artifact_dir is not None else None)
-        provider = (self.provider_factory(projection, config) if self.provider_factory
-                    else StrictBaiduProvider(self.settings.baidu_map_ak.get_secret_value(),
-                                             projection, config))
-        async with provider:
+        # A replay writes no ledger: the stored one stays the audit record of what was paid.
+        ledger_path = (context.artifact_dir / self.ledger_name
+                       if context.artifact_dir is not None and replay is None else None)
+        if replay is not None:
+            provider = ReplayProvider(replay)
             engine = HybridIsochroneProvider(projection, provider, self.gate, guidance,
                                              obstacles=obstacles)
-            result = await engine.compute(ask.origin, config, ledger_path=ledger_path,
-                                          token=context.token)
+            result = await engine.compute(ask.origin, config, token=context.token,
+                                          seed_ledger=replay)
+            # Every sample was restored, none continued: say "rebuilt from stored
+            # samples" rather than the continuation notice.
+            result["warnings"] = [w for w in result["warnings"]
+                                  if w != "explicit_continuation_prior_samples_retained"]
+            result["warnings"].append("rebuilt_from_stored_samples")
+        else:
+            provider = (self.provider_factory(projection, config) if self.provider_factory
+                        else StrictBaiduProvider(self.settings.baidu_map_ak.get_secret_value(),
+                                                 projection, config))
+            async with provider:
+                engine = HybridIsochroneProvider(projection, provider, self.gate, guidance,
+                                                 obstacles=obstacles)
+                result = await engine.compute(ask.origin, config, ledger_path=ledger_path,
+                                              token=context.token)
         warnings = sorted(set(result["warnings"] + readiness_warnings))
         quality = result["quality"]
         if readiness_warnings and quality == "usable":

@@ -63,7 +63,7 @@ def build_coverage(built, samples, config, obstacles=None, *, repair_gaps=True):
             # At least two actual reachable vertices must border the patch.
             witnesses = [s.point_id for s in samples if s.evidence.reachable is True
                          and patch.distance(Point(s.xy)) < .1]
-            if len(witnesses) < 2 or patch.intersects(obstacles.water) or any(patch.intersects(line) for line in obstacles.unresolved_lines):
+            if len(witnesses) < 2 or patch.intersects(obstacles.water) or any(patch.intersects(g) for g in obstacles.uncertain):
                 continue
             touching = [p for p in shell.geoms if patch.boundary.intersection(p.boundary.buffer(.05)).length > 1]
             # A nearby fragment split off by an invalid vertex may reconnect
@@ -94,7 +94,7 @@ def build_coverage(built, samples, config, obstacles=None, *, repair_gaps=True):
                         continue
                     if sum(patch.boundary.intersection(p.boundary.buffer(.05)).length > 1 for p in shell.geoms) != 1:
                         continue
-                    if patch.intersects(obstacles.water) or negative or any(patch.intersects(line) for line in obstacles.unresolved_lines):
+                    if patch.intersects(obstacles.water) or negative or any(patch.intersects(g) for g in obstacles.uncertain):
                         row['reason'] = 'hard_obstacle_or_valid_time_conflict'
                         unresolved.append(row)
                         continue

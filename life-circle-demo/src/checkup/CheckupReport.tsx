@@ -18,9 +18,11 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import { SVGRenderer } from 'echarts/renderers';
 import type { CheckupSnapshot } from './contract';
 import {
-  area, coverageBars, coverageItems, evidenceNotes, gapSummary, overallView, percent,
-  radarView, verificationView, type CoverageBar, type CoverageItem, type GapSummary, type RadarView,
+  area, coverageBars, coverageItems, dataSourcesView, evidenceNotes, gapSummary, overallView, percent,
+  radarView, verificationView, type CoverageBar, type CoverageItem, type DataSourcesView, type GapSummary,
+  type RadarView,
 } from './report';
+import { outdatedText, recomputedText, versionView, type WaterReviewRef } from './water';
 import './checkup.css';
 
 echarts.use([BarChart, RadarChart, GridComponent, LegendComponent, TooltipComponent, SVGRenderer]);
@@ -145,7 +147,40 @@ function ZoneList({ gaps }: { gaps: GapSummary }) {
   </>;
 }
 
-export function CheckupReport({ snapshot, stale }: { snapshot: CheckupSnapshot; stale?: boolean }) {
+function DataSources({ view }: { view: DataSourcesView }) {
+  return <section data-testid="report-data-sources">
+    <p className="checkup-muted">{view.obstacle}</p>
+    {view.available && view.reviews.length === 0 && <p className="checkup-muted">评估域不在任何水系复核范围内：
+      水系按 OSM 原样计算，未与影像或第二家地图核对。</p>}
+    {view.reviews.map(review => <article key={review.label} className="checkup-card"
+      data-testid={`water-review-${review.label}`}>
+      <header><strong>{review.title}</strong><Tag>{review.label}</Tag></header>
+      <dl className="checkup-facts">
+        {review.reviewedAt && <><dt>复核日期</dt><dd>{review.reviewedAt}</dd></>}
+        {review.scope && <><dt>适用范围</dt><dd>{review.scope}</dd></>}
+        {review.sources.length > 0 && <><dt>依据</dt><dd>{review.sources.join('；')}</dd></>}
+        {review.method && <><dt>方法</dt><dd>{review.method}</dd></>}
+        {review.reaches.length > 0 && <><dt>已核实河道</dt><dd>{review.reaches.join('；')}</dd></>}
+        <dt>已核实桥梁</dt><dd>{review.crossings} 座</dd>
+        <dt>底图误绘</dt><dd>{review.misdrawn} 处（已核实为陆地，按陆地计算）</dd>
+        <dt>数据冲突／未知</dt><dd>{review.conflicts.length === 0 ? '无' : review.conflicts.join('；')}</dd>
+      </dl>
+      {review.limitations.length > 0 && <ul className="checkup-notes">{review.limitations.map(item =>
+        <li key={item} className="checkup-note-warning">{item}</li>)}</ul>}
+    </article>)}
+    {view.areas && <p className="checkup-muted">{view.areas}</p>}
+    {view.rejected.map(item => <p key={item} className="checkup-muted">未采用的复核：{item}</p>)}
+  </section>;
+}
+
+const NO_REVIEWS: readonly WaterReviewRef[] = [];
+
+export function CheckupReport({ snapshot, stale, waterReviews = NO_REVIEWS }: {
+  snapshot: CheckupSnapshot;
+  stale?: boolean;
+  /** 当前部署采用的水系复核（能力表）；用来认出早于复核的旧版本。 */
+  waterReviews?: readonly WaterReviewRef[];
+}) {
   // 按修订记忆：`snapshot` 的身份只在取到新的一版时变化，所以这一组派生值在一次体检
   // 里是稳定的，图表也就不会因为父组件重渲染而重建。
   const items = useMemo(() => coverageItems(snapshot), [snapshot]);
@@ -155,6 +190,8 @@ export function CheckupReport({ snapshot, stale }: { snapshot: CheckupSnapshot; 
   const gaps = useMemo(() => gapSummary(snapshot), [snapshot]);
   const verification = useMemo(() => verificationView(snapshot), [snapshot]);
   const notes = useMemo(() => evidenceNotes(snapshot), [snapshot]);
+  const sources = useMemo(() => dataSourcesView(snapshot), [snapshot]);
+  const version = useMemo(() => versionView(snapshot, waterReviews), [snapshot, waterReviews]);
   const domainAreaM2 = snapshot.accessibility?.domainAreaM2 ?? snapshot.report?.domainAreaM2 ?? null;
 
   return <article className="checkup-report" data-testid="checkup-report"
@@ -162,6 +199,8 @@ export function CheckupReport({ snapshot, stale }: { snapshot: CheckupSnapshot; 
     <div className="checkup-eyebrow">COMMUNITY CHECKUP / 服务覆盖体检</div>
     <h1>15 分钟生活圈体检报告</h1>
     {stale && <Alert type="warning" showIcon title="条件已修改，本报告仍属于原中心点的那一次体检。" />}
+    {version.outdatedBy.length > 0 && <Alert type="warning" showIcon data-testid="report-outdated"
+      title="旧版本：水系数据已修订" description={outdatedText(version)} />}
     {snapshot.businessStatus !== 'complete' && <Alert type="warning" showIcon
       title={snapshot.businessStatus === 'insufficient' ? '证据不足：结论只覆盖已评估的部分'
         : '部分结果：有阶段未能完成，缺失的部分按"未知"计，不计入覆盖率。'} />}
@@ -175,6 +214,10 @@ export function CheckupReport({ snapshot, stale }: { snapshot: CheckupSnapshot; 
         {snapshot.rules.metric === 'walking_route' ? '步行路线' : snapshot.rules.metric} ·
         坐标系 BD09LL</dd>
       <dt>结果指纹</dt><dd>{snapshot.trace.resultHash}</dd>
+      <dt>水系数据</dt><dd data-testid="report-water-version">{version.applied === null ? '早于水系复核（无记录）'
+        : version.applied.length === 0 ? '未采用复核（OSM 原样）' : version.applied.join('、')}</dd>
+      {version.recomputed && <><dt>版本来源</dt>
+        <dd data-testid="report-recomputed">{recomputedText(version.recomputed)}</dd></>}
     </dl>
 
     <h2>01 / 总体覆盖率区间</h2>
@@ -221,6 +264,8 @@ export function CheckupReport({ snapshot, stale }: { snapshot: CheckupSnapshot; 
       <ul className="checkup-notes">{snapshot.warnings.map((warning, index) => <li key={index}>
         [{warning.severity}] {warning.code}：{warning.message}（{warning.scope}）</li>)}</ul>
     </details>}
+    <h2>06 / 数据来源与版本</h2>
+    <DataSources view={sources} />
     <details><summary>查看机器可读修订</summary><pre>{JSON.stringify(snapshot, null, 2)}</pre></details>
   </article>;
 }

@@ -60,6 +60,30 @@ class FacilityOutcome:
     issues: list[Issue] = field(default_factory=list)
 
 
+def stale_for(group: FacilityGroup, before: dict | None, after: dict | None, origin) -> str | None:
+    """Why a retrieval counted against boundary ``before`` cannot stand for ``after``.
+
+    A recompute keeps the paid retrieval only when the new boundary leaves every
+    record on the side it was counted on. A boundary that grew could take in a
+    record the run set aside as outside, so growth needs a new retrieval; one that
+    shrank must still hold every counted facility. None when the retrieval stands.
+    """
+    if before == after:
+        return None
+    if before is None or after is None:
+        return 'boundary_missing'
+    old, new = local_region(before, origin), local_region(after, origin)
+    if new.difference(old).area > 1.0:
+        return 'boundary_grew'
+    projection = LocalProjection(origin)
+    def counted(location):
+        return new.covers(Point(*projection.to_local((location['lng'], location['lat']))))
+    for item in group.facilities + group.review_candidates + group.excluded_candidates:
+        if not any(counted(o['location']) for o in item.get('observations') or [item]):
+            return 'counted_facility_left_boundary'
+    return None
+
+
 def _refusal(reason: str, major_categories, *, status: str = 'failed') -> FacilityOutcome:
     """A stage that could not run: null group, a named reason, no counts."""
     messages = {

@@ -101,7 +101,7 @@ def _quality_notes(accessibility: dict | None, gaps: dict | None, heatmap: dict 
 
 def build_report(*, task_id: str, revision: int, source_result_hash: str, generated_at: float,
                  domain, domain_area_m2, accessibility, service_gaps, heatmap, scores,
-                 facilities, verification=None) -> ReportEvidence:
+                 facilities, verification=None, water=None) -> ReportEvidence:
     """组装报告。``revision`` 是**将要发布**的那一版：报告描述的是它自己所在的那一版。
 
     ``source_result_hash`` 是报告所汇总的那一版（可达性/核验阶段的那一版）的结果摘要，
@@ -118,4 +118,31 @@ def build_report(*, task_id: str, revision: int, source_result_hash: str, genera
         verification=_verification_section(verification),
         evidence=_quality_notes(accessibility, service_gaps, heatmap, facilities,
                                 source_result_hash),
+        data_sources=_data_sources(water),
         limitations=list(LIMITATIONS))
+
+
+#: 报告数据来源栏从每份复核里带出的字段：足以复核，不含几何。
+REVIEW_FIELDS = ("label", "title", "reviewedAt", "scope", "sources", "method", "limitations")
+
+
+def _data_sources(water: dict | None) -> dict | None:
+    """数据来源栏。水系证据缺席（早于复核的修订）时整栏为 null，而不是一栏空的"无复核"。"""
+    if water is None:
+        return None
+    return {"water": {
+        "obstacleLayerAvailable": water.get("obstacleLayerAvailable"),
+        "osmDataVersion": water.get("osmDataVersion"),
+        "sourcePbfSha256": water.get("sourcePbfSha256"),
+        "reviews": [{**{k: review.get(k) for k in REVIEW_FIELDS},
+                     "reaches": [{k: reach.get(k) for k in ("osmId", "name", "widthM", "osmWidthTag")}
+                                 for reach in review.get("reaches", [])],
+                     "crossings": len(review.get("crossings", [])),
+                     "conflicts": [{k: item.get(k) for k in ("id", "status", "areaM2", "note")}
+                                   for item in review.get("conflicts", [])],
+                     "basemapMisdrawn": len(review.get("basemapMisdrawn", []))}
+                    for review in water.get("reviews", [])],
+        "rejectedReviews": water.get("rejectedReviews", []),
+        "domainAreaM2": water.get("domainAreaM2"), "reviewedAreaM2": water.get("reviewedAreaM2"),
+        "unreviewedAreaM2": water.get("unreviewedAreaM2"), "conflictAreaM2": water.get("conflictAreaM2"),
+        "statements": water.get("statements", [])}}

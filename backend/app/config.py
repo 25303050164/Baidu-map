@@ -52,8 +52,11 @@ class Settings(BaseSettings):
     quota_ledger_path: Path = BACKEND_DIR / ".quota/quota.sqlite3"
     hybrid_risk_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.risks.geojson"
     hybrid_obstacle_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.obstacles.geojson"
+    # Field-reviewed corrections to the obstacle layer (water_review.py). Each file
+    # applies to one OSM extract and only inside its own extent.
+    water_review_dir: Path | None = BACKEND_DIR.parent / "data/water-reviews"
 
-    @field_validator("osm_pbf_path", "osm_graph_cache_path", "osm_coverage_boundary_path", "hybrid_ledger_dir", "hybrid_risk_path", "hybrid_obstacle_path", "checkup_dir", "quota_ledger_path", mode="before")
+    @field_validator("osm_pbf_path", "osm_graph_cache_path", "osm_coverage_boundary_path", "hybrid_ledger_dir", "hybrid_risk_path", "hybrid_obstacle_path", "water_review_dir", "checkup_dir", "quota_ledger_path", mode="before")
     @classmethod
     def osm_paths(cls, value):
         if value is None or value == "":

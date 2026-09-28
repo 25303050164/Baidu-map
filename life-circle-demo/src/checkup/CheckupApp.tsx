@@ -29,6 +29,7 @@ import { CheckupMap, DEFAULT_CHECKUP_LAYERS, type CheckupLayerToggles, type Heat
 import { CheckupReport } from './CheckupReport';
 import { CATEGORY_ORDER, categoryLabel, evidenceNotes, percent } from './report';
 import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
+import { outdatedText, recomputedText, versionView, waterView } from './water';
 // 复用旧分析页的排布类：工作台与它是同一个版式，另起一套只会让两页慢慢长歪。
 import '../analysis/api.css';
 import './checkup.css';
@@ -245,6 +246,11 @@ export default function CheckupApp({ engine }: { engine: string }) {
     if (state.phase === 'completed' && sawLive.current) { sawLive.current = false; setReportOpen(true); }
   }, [state.phase]);
 
+  /** 水系标注与版本标识都只认当前这一版修订：换版就换，不留上一版的标注。 */
+  const water = useMemo(() => waterView(snapshot?.water), [snapshot]);
+  const version = useMemo(() => snapshot ? versionView(snapshot, view?.waterReviews ?? []) : null,
+    [snapshot, view]);
+
   const overall = snapshot?.report?.overall ?? snapshot?.scores?.overall ?? null;
   const notes = useMemo(() => snapshot ? evidenceNotes(snapshot) : [], [snapshot]);
 
@@ -299,6 +305,14 @@ export default function CheckupApp({ engine }: { engine: string }) {
           {toggles.density && <label className="api-label checkup-layer-note">密度类别<Select
             aria-label="密度类别" value={densityCategory} onChange={setDensityCategory}
             options={DENSITY_CATEGORIES} /></label>}
+          <Checkbox checked={!!toggles.water}
+            onChange={event => setToggles({ ...toggles, water: event.target.checked })}>
+            水系标注</Checkbox>
+          <p className="api-muted checkup-layer-note" data-testid="water-layer-note">
+            {snapshot && !water.available ? '这一版没有水系证据（早于水系复核），无可标注的内容。'
+              : '计算用的水系：复核范围（虚线框）内的已核实河道按实测宽度成面，补录水体与桥梁已核对；'
+                + '底图水面画错处（灰斜线，实为陆地）与来源冲突未裁决处（橙斜线，数据冲突／未知）单独标出。'
+                + '底图水面只作参照，不代表计算结果。'}</p>
           <div className="api-layer-list">{MAP_LAYERS.map(id => <div key={id}>
             <Checkbox checked={!!toggles[id]}
               onChange={event => setToggles({ ...toggles, [id]: event.target.checked })}>
@@ -311,15 +325,20 @@ export default function CheckupApp({ engine }: { engine: string }) {
       </section>
       <section className="api-map-section" data-testid="checkup-map-section"
         data-task-id={task?.taskId ?? ''} data-revision={revision ?? ''}
+        data-water-reviews={version?.applied?.join(',') ?? ''}
+        data-outdated={version && version.outdatedBy.length > 0 ? 'yes' : 'no'}
         data-drawn-revisions={[...new Set(MAP_LAYERS.filter(id => drawables[id])
           .map(id => state.layers?.[id]?.revision))].join(',')}>
         {snapshot && stale && <Alert type="warning" showIcon
           title="条件已修改。地图与报告仍是上一次体检的结果，需重新体检才会更新。" />}
         {!snapshot && live && stale && <Alert type="info" showIcon
           title="进行中的任务仍按它提交时的中心计算；新选点要等它结束后再体检。" />}
+        {version && version.outdatedBy.length > 0 && <Alert type="warning" showIcon
+          data-testid="checkup-outdated" title={`旧版本（第 ${snapshot?.revision} 版）：水系数据已修订`}
+          description={outdatedText(version)} />}
         <CheckupMap center={center} onPick={choose} resultCenter={taskCenter}
           layers={toggles} drawables={drawables} coverage={coverage} serviceMode={serviceMode}
-          densityCategory={densityCategory}
+          densityCategory={densityCategory} water={water}
           selectedId={selected} onSelect={setSelected} />
       </section>
       <section className="api-results" aria-label="体检结果">
@@ -348,6 +367,12 @@ export default function CheckupApp({ engine }: { engine: string }) {
               { key: 'tier', label: '等时圈档位', children: `${task.budget} 次上限` },
               { key: 'elapsed', label: '已用时', children: `${task.elapsedSeconds.toFixed(1)} 秒` },
             ]} />
+            {version && snapshot?.taskId === task.taskId && <p className="api-muted" data-testid="checkup-version"
+              data-recomputed={version.recomputed ? 'yes' : 'no'}>
+              {`结果版本：第 ${snapshot.revision} 版 · 水系 `
+                + (version.applied === null ? '早于水系复核' : version.applied.length === 0 ? 'OSM 原样（未采用复核）'
+                  : version.applied.join('、'))}
+              {version.recomputed && <><br />{recomputedText(version.recomputed)}</>}</p>}
           </>}
           {state.phase === 'cancelled' && <Alert type="info" title="任务已取消"
             description="取消只停住后续请求；已经发出的调用仍会计入本应用的预算账本。" />}
@@ -388,7 +413,7 @@ export default function CheckupApp({ engine }: { engine: string }) {
     </main>
     <footer className="api-footer">未知不等于不可达：灰区只覆盖"路网与检索数据都足够、却仍超出服务标准"的连片区域。评分区间是上界与下界，不是一个确定的百分比。</footer>
     <Drawer title="体检报告" open={reportOpen} onClose={() => setReportOpen(false)} size={760}>
-      {snapshot ? <CheckupReport snapshot={snapshot} stale={stale} />
+      {snapshot ? <CheckupReport snapshot={snapshot} stale={stale} waterReviews={view?.waterReviews} />
         : <p className="api-muted">体检完成后在这里显示报告。</p>}
     </Drawer>
   </div>;

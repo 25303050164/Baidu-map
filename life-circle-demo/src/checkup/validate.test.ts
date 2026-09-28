@@ -6,9 +6,10 @@
  * 通过，把它们全删掉测试照样绿。
  */
 import { describe, expect, it } from 'vitest';
-import { areaTolerance, readLayerGeometry, validFacilityRoute, validLayer, validSnapshot,
+import { areaTolerance, readLayerGeometry, validCapabilities, validFacilityRoute, validLayer, validSnapshot,
   validTaskView } from './validate';
-import { AREA, collection, feature, layer, point, report, route, snapshot, task, zone } from './fixtures';
+import { AREA, capabilities, collection, feature, layer, point, report, route, snapshot, task, water,
+  waterReview, zone } from './fixtures';
 
 describe('task view', () => {
   it('accepts the fixture and a queued task with no stage yet', () => {
@@ -160,5 +161,38 @@ describe('facility route', () => {
     expect(validFacilityRoute(route({ evidenceGrade: 'assumed' as never }))).toBe(false);
     expect(validFacilityRoute(route({ poiStatus: 'unknown' as never }))).toBe(false);
     expect(validFacilityRoute(route({ durationS: Infinity }))).toBe(false);
+  });
+});
+
+describe('water evidence', () => {
+  it('accepts a snapshot with water evidence, with none, and from a backend that predates it', () => {
+    expect(validSnapshot(snapshot({ water: water() }))).toBe(true);
+    expect(validSnapshot(snapshot({ water: null }))).toBe(true);
+    const { water: _omitted, ...older } = snapshot();
+    expect(validSnapshot(older)).toBe(true);
+  });
+
+  it('refuses a conflict area that cannot be drawn', () => {
+    // 画不出来的冲突面比没有更糟：图上少了"数据冲突／未知"，底图水面就被读成已核实。
+    const review = waterReview({ conflicts: [{ id: 'x', geometry: { type: 'Polygon', coordinates: [[[1, 2]]] } }] });
+    expect(validSnapshot(snapshot({ water: water({ reviews: [review] }) }))).toBe(false);
+    expect(validSnapshot(snapshot({ water: water({ reviews: [waterReview({ extent: { type: 'Point' } })] }) }))).toBe(false);
+  });
+
+  it('refuses negative areas and statements that are not text', () => {
+    expect(validSnapshot(snapshot({ water: water({ conflictAreaM2: -1 }) }))).toBe(false);
+    expect(validSnapshot(snapshot({ water: water({ statements: [1 as unknown as string] }) }))).toBe(false);
+  });
+
+  it('refuses a recompute that claims to come from itself or a later revision', () => {
+    const trace = (fromRevision: number) => ({ ...snapshot().trace, recomputed: { fromRevision } });
+    expect(validSnapshot(snapshot({ revision: 7, trace: trace(5) }))).toBe(true);
+    expect(validSnapshot(snapshot({ revision: 7, trace: trace(7) }))).toBe(false);
+    expect(validSnapshot(snapshot({ revision: 7, trace: trace(9) }))).toBe(false);
+  });
+
+  it('refuses capabilities whose water review list is not a list', () => {
+    expect(validCapabilities(capabilities())).toBe(true);
+    expect(validCapabilities({ ...capabilities(), waterReviews: {} })).toBe(false);
   });
 });

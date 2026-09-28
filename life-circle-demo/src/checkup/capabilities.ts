@@ -10,6 +10,7 @@
  * 让用户自己决定，而不是替他悄悄降级。
  */
 import type { Capabilities, EngineOption } from './validate';
+import { waterReviewRefs, type WaterReviewRef } from './water';
 
 type RecordValue = Record<string, unknown>;
 const object = (value: unknown): value is RecordValue =>
@@ -35,6 +36,8 @@ export type CapabilityView = {
   defaultEngine: string | null;
   defaultBudget: number | null;
   quota: QuotaSummary;
+  /** 当前部署采用的水系复核（用来认出早于复核的旧版本）；旧后端不给时为空。 */
+  waterReviews: WaterReviewRef[];
 };
 
 function nested(source: RecordValue, ...path: string[]): unknown {
@@ -85,6 +88,7 @@ export function capabilityView(value: Capabilities): CapabilityView {
     // 默认预算由后端指定，且必须在这一档里：校验层已经查过，这里不再兜底。
     defaultBudget: first?.defaultBudget ?? null,
     quota: quotaSummary(value),
+    waterReviews: waterReviewRefs(value.waterReviews),
   };
 }
 

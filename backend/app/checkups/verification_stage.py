@@ -121,17 +121,15 @@ def candidate_order(facilities, *, majors, zones, entrances, origin, projection=
         straight = (x * x + y * y) ** .5
         if straight > CANDIDATE_STRAIGHT_LINE_M:
             continue
-        entrance = (entrances or {}).get(str(item.get('id')))
-        unresolved = entrance is not None and getattr(entrance, 'status', None) == 'unresolved'
+        entrance_status, entrance_offset = _entrance(entrances, item.get('id'))
+        unresolved = entrance_status == 'unresolved'
         rank = 0 if str(item.get('id')) in suspected else 1 if unresolved else 2
         ranked[major].append({
             'facilityId': str(item.get('id')), 'category': item.get('category'), 'major': major,
             'location': (float(location['lng']), float(location['lat'])),
             'straightLineM': straight, 'priority': ('suspected_zone', 'unresolved_entrance',
                                                     'decision_edge')[rank],
-            'entranceStatus': None if entrance is None else getattr(entrance, 'status', None),
-            'entranceOffsetM': None if entrance is None or entrance.attachment is None
-                               else entrance.attachment.distance_m,
+            'entranceStatus': entrance_status, 'entranceOffsetM': entrance_offset,
             'rank': (rank, abs(straight - DISTANCE_RULE.threshold_m), str(item.get('id'))),
         })
     for items in ranked.values():
@@ -191,7 +189,7 @@ async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, se
         notes.append(f'{unverified} 处候选未取到路线'
                      f'（{stopped or "budget_exhausted"}）：未核验不等于走不通。')
     if unresolved:
-        notes.append(f'{unresolved} 处设施的入口在模型里接入不了，路线证据也无法代替入口证据。')
+        notes.append(_unresolved_note(unresolved))
     if flags:
         notes.append(f'{len(flags)} 处设施的路线证据与模型结论不一致：这些格标为待细化，'
                      f'不取平均、也不由单条路线改判。')
@@ -208,6 +206,39 @@ async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, se
             failed=failures, unresolved=unresolved, facilities=records, conflicts=flags,
             queries=queries, notes=notes),
         status=status, network_requests=session.attempts)
+
+
+def _unresolved_note(count: int) -> str:
+    return f'{count} 处设施的入口在模型里接入不了，路线证据也无法代替入口证据。'
+
+
+def _entrance(entrances, facility_id):
+    entrance = (entrances or {}).get(str(facility_id))
+    return (None if entrance is None else getattr(entrance, 'status', None),
+            None if entrance is None or entrance.attachment is None else entrance.attachment.distance_m)
+
+
+def carried_over(evidence: VerificationEvidence, *, entrances, revision: int) -> VerificationOutcome:
+    """已发布的路线证据带进离线重算的一版：路线不再请求，入口那一层按新评估重读。
+
+    中心到设施的路线是事实，和水系数据无关，照原样留下；入口能不能接入是模型的结论，
+    数据修订会改变它，所以只有这一层按新的入口重新读。候选顺序是原来那一版的灰区
+    排出来的，照原样留着，并在说明里写明。
+    """
+    records = []
+    for record in evidence.facilities:
+        status, offset = _entrance(entrances, record['facilityId'])
+        records.append({**record, 'entranceStatus': status, 'entranceOffsetM': offset})
+    unresolved = sum(1 for record in records if record['entranceStatus'] == 'unresolved')
+    notes = [note for note in evidence.notes if note != _unresolved_note(evidence.unresolved)]
+    if unresolved:
+        notes.append(_unresolved_note(unresolved))
+    notes.append(f'本版路线沿用第 {revision} 版已取得的结果，未重新请求；'
+                 '候选当时按那一版的灰区排序。')
+    return VerificationOutcome(
+        evidence=evidence.model_copy(update={'facilities': records, 'unresolved': unresolved,
+                                             'notes': notes}),
+        status=evidence.status)
 
 
 def _record(item, observation, origin) -> dict:

@@ -27,25 +27,44 @@ import {
 import {
   DENSITY_ALL, LAYER_STYLES, densityFacilities, type LayerDrawable, type LayerPoint, type ServiceSamples,
 } from './layers';
+import { createWaterOverlay, type WaterAnnotation, type WaterOverlay } from '../map/layers/waterOverlay';
 import { CATEGORY_ORDER, categoryLabel } from './report';
 import type { LayerId } from './validate';
+import { CROSSING_COLOR, WATER_KINDS, WATER_STYLES, type WaterKind, type WaterStyle, type WaterView } from './water';
 
 /** 两种热力（§8.1）：服务覆盖与设施密度互斥，同一时刻只开一种。 */
 export type HeatLayer = 'service' | 'density';
-export type CheckupLayerToggles = Partial<Record<LayerId | HeatLayer, boolean>>;
+/** 水系标注不是后端的图层，是修订里水系证据的翻译；与热力并存，不互斥。 */
+export type CheckupLayerToggles = Partial<Record<LayerId | HeatLayer | 'water', boolean>>;
 
 /**
  * 默认显示圈面、服务覆盖热力和核验；模型网格采样按需打开。
  * 服务覆盖是体检的结论本身；设施密度只说"设施扎不扎堆"，不说覆盖，所以不默认打开。
  */
-export const DEFAULT_CHECKUP_LAYERS: Record<LayerId | HeatLayer, boolean> = {
+export const DEFAULT_CHECKUP_LAYERS: Record<LayerId | HeatLayer | 'water', boolean> = {
   isochrone: true, accessibility: true, service_gaps: true, facilities: true,
-  heatmap: false, verification: true, report: false, density: false, service: true,
+  heatmap: false, verification: true, report: false, density: false, service: true, water: true,
 };
+
+/** 面内标字：只标会被读错的那几类。河道本身有底图注记，范围只是虚线框，不再加字。 */
+const WATER_MAP_LABELS: Partial<Record<WaterKind, string>> = {
+  conflict: '数据冲突／未知', misdrawn: '底图水面有误·实为陆地', supplement: '补录水体',
+};
+
+/** 图例色块与画布同一套样式：斜线、底色、虚实边都一致。 */
+function waterSwatch(style: WaterStyle) {
+  return {
+    display: 'inline-block', width: 18, height: 12, boxSizing: 'border-box' as const,
+    border: `2px ${style.dash.length > 0 ? 'dashed' : 'solid'} ${style.stroke}`,
+    background: style.hatch
+      ? `repeating-linear-gradient(135deg, ${style.hatch} 0 1.5px, ${style.fill ?? 'transparent'} 1.5px 5px)`
+      : style.fill ?? 'transparent',
+  };
+}
 
 const rgbCss = ([r, g, b]: readonly number[]) => `rgb(${r}, ${g}, ${b})`;
 
-type Group = 'vector' | 'point' | 'label';
+type Group = 'vector' | 'point' | 'label' | 'water';
 
 const VIEW_EVENTS: BMapViewEventType[] = ['moveend', 'zoomend', 'resize'];
 /** 点图层的绘制顺序：面积在前、点位在后，后画的压在上面。 */
@@ -60,7 +79,7 @@ function dominant(points: LayerPoint[]): LayerPoint {
 }
 
 export function CheckupMap({ center, onPick, resultCenter, layers, drawables, coverage = null,
-  serviceMode = SERVICE_COMPOSITE, densityCategory = DENSITY_ALL, selectedId, onSelect }: {
+  serviceMode = SERVICE_COMPOSITE, densityCategory = DENSITY_ALL, water = null, selectedId, onSelect }: {
   center: Center;
   onPick: (center: Center) => void;
   /** 已发布那一版修订的中心点；与选点分开，避免把"待分析选点"当成"结果中心"。 */
@@ -73,6 +92,8 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
   serviceMode?: string;
   /** 设施密度看哪一类；默认三类合算。 */
   densityCategory?: string;
+  /** 这一版的水系标注；null 表示这一版没有水系证据。 */
+  water?: WaterView | null;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 }) {
@@ -87,9 +108,10 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
   select.current = onSelect;
   const initialCenter = useRef(center);
   initialCenter.current = center;
-  const overlays = useRef<Record<Group, BMapOverlay[]>>({ vector: [], point: [], label: [] });
+  const overlays = useRef<Record<Group, BMapOverlay[]>>({ vector: [], point: [], label: [], water: [] });
   const density = useRef<DensityOverlay | null>(null);
   const serviceHeat = useRef<ServiceOverlay | null>(null);
+  const waterMarks = useRef<WaterOverlay | null>(null);
 
   const replaceGroup = (instance: BMapMap, group: Group, build: () => BMapOverlay[]) => {
     for (const overlay of overlays.current[group]) instance.removeOverlay?.(overlay);
@@ -111,7 +133,7 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
       } catch { setError(true); }
     });
     return () => { cancelAnimationFrame(frame);
-      overlays.current = { vector: [], point: [], label: [] }; instance?.destroy?.(); };
+      overlays.current = { vector: [], point: [], label: [], water: [] }; instance?.destroy?.(); };
   }, [api]);
 
   useEffect(() => {
@@ -158,6 +180,47 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
     overlay.setBoundary(drawables.isochrone?.shapes[0]?.geometry ?? null);
     if (layers.service) overlay.attach(map); else overlay.detach();
   }, [api, map, layers.service, coverage, serviceMode, drawables.isochrone]);
+
+  useEffect(() => {
+    if (!api || !map) return;
+    const overlay = createWaterOverlay(api, {
+      viewport: () => ({ width: container.current?.clientWidth ?? 0,
+        height: container.current?.clientHeight ?? 0 }),
+    });
+    waterMarks.current = overlay;
+    return () => { overlay?.destroy(); waterMarks.current = null; };
+  }, [api, map]);
+
+  // 水系标注按后端给的几何原样画：不平移、不按底图对齐（偏离沿河变化，统一平移只会在
+  // 别处造出新的错位）。桥梁是点，走 SDK 标记，和设施点一样能悬停看说明。
+  const waterAnnotations = useMemo<WaterAnnotation[]>(() => (water?.shapes ?? []).map(shape => ({
+    key: shape.key, geometry: shape.geometry, style: WATER_STYLES[shape.kind],
+    label: shape.anchor && WATER_MAP_LABELS[shape.kind]
+      ? { text: WATER_MAP_LABELS[shape.kind] as string, ...shape.anchor } : null,
+  })), [water]);
+  useEffect(() => {
+    const overlay = waterMarks.current;
+    if (!overlay || !map) return;
+    overlay.setAnnotations(waterAnnotations);
+    if (layers.water && waterAnnotations.length > 0) overlay.attach(map); else overlay.detach();
+  }, [api, map, layers.water, waterAnnotations]);
+
+  useEffect(() => {
+    const instance = map;
+    if (!instance || !api) return;
+    try {
+      replaceGroup(instance, 'water', () => {
+        if (!layers.water) return [];
+        return (water?.crossings ?? []).map(mark => {
+          const icon = createDotIcon(api, { color: CROSSING_COLOR, text: '桥', filled: true });
+          const marker = new api.Marker(new api.Point(mark.lng, mark.lat), {
+            title: mark.title, ...(icon ? { icon } : {}) });
+          instance.addOverlay(marker);
+          return marker;
+        });
+      });
+    } catch { setError(true); }
+  }, [api, map, layers.water, water]);
 
   useEffect(() => {
     if (!map) return;
@@ -287,6 +350,8 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
     .flatMap(id => (drawables[id]?.points ?? []).map(point => ({ id, color: point.color,
       title: point.title })))
     .filter(item => layers[item.id]), [drawables, layers]);
+  const waterOn = !!(layers.water && water?.available
+    && (water.shapes.length > 0 || water.crossings.length > 0));
   const unavailable = error || mode === 'fallback';
   return <div className="api-map-shell">
     <div ref={container} className="api-map" data-testid="checkup-map" aria-label="体检图层地图" />
@@ -302,7 +367,7 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
         {resultCenter && <><br />图层与报告中心：{resultCenter.lng.toFixed(6)}, {resultCenter.lat.toFixed(6)}</>}
       </div>
     </div>
-    {(legend.length > 0 || heatOn) && <div className="api-map-legend" data-testid="checkup-legend" aria-label="体检图层图例">
+    {(legend.length > 0 || heatOn || waterOn) && <div className="api-map-legend" data-testid="checkup-legend" aria-label="体检图层图例">
       {layers.service && <span className="api-legend-item" data-testid="service-legend"
         style={{ whiteSpace: 'normal', flexWrap: 'wrap' }}>
         {api && !api.Overlay ? '当前地图不支持服务覆盖热力' : <>
@@ -335,6 +400,25 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
           {densityInput.points.length > 0 && ` · ${densityInput.points.length} 处设施参与`}
           {densityInput.merged > 0 && `（${densityInput.merged} 条疑似重复已合并）`}
           {densityInput.points.length > 0 && !drawables.isochrone?.shapes.length && ' · 等待计算圈面'}
+        </>}
+      </span>}
+      {waterOn && water && <span className="api-legend-item" data-testid="water-legend"
+        data-shapes={water.shapes.length} data-crossings={water.crossings.length}
+        style={{ whiteSpace: 'normal', flexWrap: 'wrap' }}>
+        {api && !api.Overlay ? '当前地图不支持水系标注' : <>
+          {WATER_KINDS.filter(kind => water.shapes.some(shape => shape.kind === kind)).map(kind =>
+            <span key={kind} data-water-kind={kind} title={WATER_STYLES[kind].note}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 6 }}>
+              <i style={waterSwatch(WATER_STYLES[kind])} />
+              {kind === 'reach' && water.reachWidthM
+                ? `${WATER_STYLES.reach.label}（OSM，宽 ${water.reachWidthM.min === water.reachWidthM.max
+                  ? water.reachWidthM.min : `${water.reachWidthM.min}–${water.reachWidthM.max}`} m）`
+                : WATER_STYLES[kind].label}
+            </span>)}
+          {water.crossings.length > 0 && <span data-water-kind="crossing"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <i className="api-legend-dot" style={{ background: CROSSING_COLOR }} />已核实桥梁 {water.crossings.length} 座</span>}
+          · 以复核后的水系计算，底图水面仅作参照
         </>}
       </span>}
       {Object.entries(LAYER_STYLES).filter(([id]) => layers[id as LayerId])

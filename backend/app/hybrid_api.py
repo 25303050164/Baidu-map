@@ -125,7 +125,8 @@ class HybridManager:
             extent = computation_extent(origin_xy, config)
             obstacle_started = time.perf_counter()
             obstacles = await asyncio.to_thread(load_obstacles, self.settings.hybrid_obstacle_path,
-                projection, self.settings.osm_data_version, extent)
+                projection, self.settings.osm_data_version, extent,
+                getattr(self.settings, "water_review_dir", None))
             obstacle_seconds = time.perf_counter() - obstacle_started
             ready = dict(graph_available=store is not None,
                          data_version_matches=bool(store and store.graph.graph.get("osm_data_version") == self.settings.osm_data_version),

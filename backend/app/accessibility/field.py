@@ -68,6 +68,7 @@ class ServiceField:
     def __init__(self, *, category: str, rule, store, views: ServiceViews,
                  entrances: Iterable[Entrance], query_complete: bool = True,
                  boundary=None, obstacle_intersects: Callable[[object], bool] | None = None,
+                 data_conflict: Callable[[object], bool] | None = None,
                  verification_conflict: Callable[[object], bool] | None = None,
                  attachments: PointAttachments | None = None):
         self.category = category
@@ -80,6 +81,7 @@ class ServiceField:
         self.query_complete = query_complete
         self.boundary = boundary
         self.obstacle_intersects = obstacle_intersects
+        self.data_conflict = data_conflict
         self.verification_conflict = verification_conflict
         entrances = list(entrances)
         self.entrances = entrances
@@ -207,7 +209,13 @@ class ServiceField:
                    for i in hits)
 
     def refine_reason(self, cell, samples: Sequence[Point], assessment: CellAssessment) -> str | None:
-        """§6.1 的四个细化触发条件；``None`` 表示 50 米上的结论已经站得住。"""
+        """§6.1 的细化触发条件；``None`` 表示 50 米上的结论已经站得住。
+
+        水系数据冲突排在最前：那一片是不是水本身没有定论，任何距离都站不住，细化到
+        25 米仍然冲突的格就是"数据冲突／未知"，理由随格留下，地图据此区别于普通未知。
+        """
+        if self.data_conflict is not None and self.data_conflict(cell.geometry()):
+            return "water_data_conflict"
         decided = {sample.value for sample in assessment.samples if sample.value is not None}
         if len(decided) > 1:
             return "support_points_disagree"

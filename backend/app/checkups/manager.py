@@ -16,6 +16,7 @@ reader never has to join two files to see what was established, and the result
 hash of the later revision covers every group it repeats.
 """
 import asyncio
+import json
 import math
 import time
 from contextlib import AsyncExitStack
@@ -27,18 +28,18 @@ from life_circle.models import CancelToken
 from ..cache import KeyedCache
 from ..catalog import major_of
 from ..contracts import Issue, Origin
-from ..engines import EngineContext, IsochroneAsk, canonical_hash
+from ..engines import EngineContext, IsochroneAsk, IsochroneSnapshot, canonical_hash
 from ..poi.planner import RULES as POI_RULES
 from ..poi_evidence import poi_evidence
 from .accessibility_stage import AccessibilityOutcome, assess_accessibility
-from .facilities import FacilityOutcome, collect_facilities
+from .facilities import FacilityOutcome, collect_facilities, stale_for
 from .models import (DETAIL_ROUTE_REQUESTS, DISTANCE_RULE, RULE_VERSION, TERMINAL, CheckupRequest,
-                     CheckupSnapshot, CheckupTaskView, EngineRef, FacilityRoute, ReportEvidence,
-                     ScopeEvidence, new_trace)
+                     CheckupSnapshot, CheckupTaskView, EngineRef, FacilityGroup, FacilityRoute,
+                     ReportEvidence, ScopeEvidence, new_trace)
 from .reporting_stage import build_report
 from .routes import DETAIL_POOL, RoutesUnavailable, open_online as open_routes
 from .store import CheckupStore, RequestIdConflict, TaskNotFound
-from .verification_stage import (VerificationOutcome, refusal as verification_refusal,
+from .verification_stage import (VerificationOutcome, carried_over, refusal as verification_refusal,
                                  usable_route, verify_facilities, within_rule)
 
 # Engines currently enforce their own internal deadline; this is the task-level
@@ -50,6 +51,9 @@ LATER_STAGES_NOTICE = "服务覆盖、灰区与报告阶段尚未接入，本修
 VERIFICATION_NOTICE = "本修订尚未包含现实核验：这一版的灰区只有模型证据，核验阶段在其后发布。"
 #: 修订文档里的空间分析组。摘要覆盖的正是这一组，不多不少。
 ANALYSIS_FIELDS = ("accessibility", "service_gaps", "heatmap", "scores", "verification", "report")
+#: Published with the analysis group and covered by its digest, but only when
+#: present: revisions frozen before water reviews existed keep their identity.
+OPTIONAL_ANALYSIS_FIELDS = ("water",)
 #: 按任务保存的详情桶上限。它记在进程内：保护账户的是持久账本（每次尝试都先预约），
 #: 重启或淘汰之后这个任务的详情额度从 20 重新计起，账本上的消耗不会被抹掉。任务记录的
 #: 累计计数写的是整趟流水线的用量，点击详情不改写它 —— 让它和正在跑的阶段互相覆盖，
@@ -108,12 +112,34 @@ def _analysis_document(analysis: dict | None) -> dict | None:
         return None
     return {field: (None if analysis.get(field) is None
                     else analysis[field].model_dump(mode="json", by_alias=True))
-            for field in ANALYSIS_FIELDS}
+            for field in ANALYSIS_FIELDS + OPTIONAL_ANALYSIS_FIELDS
+            if field in ANALYSIS_FIELDS or analysis.get(field) is not None}
+
+
+def _data_versions(osm: str, engine: str, analysis: dict | None) -> dict:
+    """Every dataset a revision was computed from. ``waterReviews`` is listed
+    even when empty once the water evidence exists, so "no review applied here"
+    and "computed before reviews existed" read differently."""
+    versions = {"osm": osm, "engine": engine}
+    water = (analysis or {}).get("water")
+    if water is not None:
+        versions["waterReviews"] = [review["label"] for review in water.reviews]
+    return versions
 
 
 def _analysis_status(analysis: dict | None) -> str:
     evidence = (analysis or {}).get("accessibility")
     return "not_integrated" if evidence is None else evidence.status
+
+
+class _SpentBudget:
+    """A finished task's pools as its last revision froze them: a recompute spends none."""
+
+    def __init__(self, state: dict):
+        self._state = state
+
+    def state(self) -> dict:
+        return json.loads(json.dumps(self._state))
 
 
 def _point(value) -> Origin | None:
@@ -291,7 +317,7 @@ class CheckupManager:
     def _base(self, task_id: str, payload: CheckupRequest, snapshot, *, revision: int, stage: str,
               business: str, budgets: dict, result_hash: str, warnings: list,
               facilities: dict | None, facilities_status: str, analysis: dict | None = None,
-              extra_rules: dict | None = None) -> dict:
+              extra_rules: dict | None = None, recomputed: dict | None = None) -> dict:
         """The part of a revision that does not depend on which stage published it.
 
         ``analysis`` is the group of spatial objects this revision carries; the
@@ -306,6 +332,12 @@ class CheckupManager:
         analysis = analysis or {}
         document = _analysis_document(analysis)
         warnings = list(warnings) + self._pending_warnings(document, analysis)
+        trace = new_trace(isochrone_hash=snapshot.isochrone_hash, result_hash=result_hash,
+                          data_versions=_data_versions(self.settings.osm_data_version,
+                                                       snapshot.engine_version, analysis),
+                          budgets=budgets, extra_rule_versions=extra_rules)
+        if recomputed is not None:
+            trace = trace.model_copy(update={"recomputed": recomputed})
         return dict(
             task_id=task_id, revision=revision, generated_at=time.time(), center=payload.center,
             stage=stage, business_status=business,
@@ -325,13 +357,10 @@ class CheckupManager:
                     analysis.get("accessibility") is not None
                     and analysis["accessibility"].status != "failed"),
                 notes=self._pending_notices(document, analysis)),
-            trace=new_trace(isochrone_hash=snapshot.isochrone_hash, result_hash=result_hash,
-                            data_versions={"osm": self.settings.osm_data_version,
-                                           "engine": snapshot.engine_version},
-                            budgets=budgets, extra_rule_versions=extra_rules),
+            trace=trace,
             facilities=facilities, facilities_status=facilities_status,
             accessibility_status=_analysis_status(analysis), warnings=warnings,
-            **{field: analysis.get(field) for field in ANALYSIS_FIELDS})
+            **{field: analysis.get(field) for field in ANALYSIS_FIELDS + OPTIONAL_ANALYSIS_FIELDS})
 
     def _pending_notices(self, document: dict | None, analysis: dict | None) -> list:
         """What this revision does not contain, in the reader's words.
@@ -435,7 +464,7 @@ class CheckupManager:
         return {"accessibility": assessment.accessibility, "service_gaps": assessment.service_gaps,
                 "heatmap": assessment.heatmap, "scores": assessment.scores,
                 "verification": None if verification is None else verification.evidence,
-                "report": report}
+                "report": report, "water": assessment.water}
 
     async def _publish_accessibility(self, task_id: str, payload: CheckupRequest, snapshot,
                                      budget, outcome: FacilityOutcome) -> AccessibilityOutcome:
@@ -491,8 +520,6 @@ class CheckupManager:
         re-verdicts a whole cell.
         """
         self.store.update(task_id, stage="verification")
-        group = (None if outcome.group is None
-                 else outcome.group.model_dump(mode="json", by_alias=True))
         heatmap = (None if assessment.heatmap is None
                    else assessment.heatmap.model_dump(mode="json", by_alias=True))
         gaps = (None if assessment.service_gaps is None else assessment.service_gaps.zones)
@@ -516,6 +543,19 @@ class CheckupManager:
                     heatmap=heatmap, entrances=assessment.entrances,
                     origin=normalize((payload.center.lng, payload.center.lat)),
                     session=routes.session(self.quota.direction, budget=budget, deadline=deadline))
+        self._freeze_verification(task_id, payload, snapshot, budget, outcome, assessment, result)
+        # 核验阶段发的是真实路线请求，所以它也计入任务自己的请求数 —— 任务视图说
+        # "本次体检发出了多少请求"，少算这一阶段就等于少报了一百多次调用。
+        current = self.store.get(task_id)
+        self.store.update(task_id, requests=current.requests + result.network_requests,
+                          network_requests=current.network_requests + result.network_requests)
+        return result
+
+    def _freeze_verification(self, task_id: str, payload: CheckupRequest, snapshot, budget,
+                             outcome: FacilityOutcome, assessment: AccessibilityOutcome,
+                             result: VerificationOutcome, *, recomputed: dict | None = None) -> None:
+        group = (None if outcome.group is None
+                 else outcome.group.model_dump(mode="json", by_alias=True))
         objects = self._analysis_objects(assessment, verification=result)
         revision = self.store.get(task_id).revision + 1
         isochrone = snapshot.model_dump(mode="json", by_alias=True)
@@ -531,18 +571,14 @@ class CheckupManager:
                          + list(assessment.issues) + list(result.issues),
                          facilities=group, facilities_status=outcome.status, analysis=objects,
                          extra_rules={"classification": POI_RULES["version"],
-                                      "accessibility": RULE_VERSION})), revision,
+                                      "accessibility": RULE_VERSION},
+                         recomputed=recomputed)), revision,
             result_hash)
-        # 核验阶段发的是真实路线请求，所以它也计入任务自己的请求数 —— 任务视图说
-        # "本次体检发出了多少请求"，少算这一阶段就等于少报了一百多次调用。
-        current = self.store.get(task_id)
-        self.store.update(task_id, requests=current.requests + result.network_requests,
-                          network_requests=current.network_requests + result.network_requests)
-        return result
 
     def _publish_reporting(self, task_id: str, payload: CheckupRequest, snapshot, budget,
                            outcome: FacilityOutcome, assessment: AccessibilityOutcome,
-                           verification: VerificationOutcome | None = None) -> str:
+                           verification: VerificationOutcome | None = None, *,
+                           recomputed: dict | None = None) -> str:
         """Freeze the report revision: the same assessment, assembled for readers."""
         revision = self.store.get(task_id).revision + 1
         isochrone = snapshot.model_dump(mode="json", by_alias=True)
@@ -561,7 +597,8 @@ class CheckupManager:
             heatmap=dump(assessment.heatmap), scores=dump(assessment.scores),
             facilities=group,
             verification=None if verification is None or verification.evidence is None
-                         else verification.evidence.model_dump(mode="json", by_alias=True))
+                         else verification.evidence.model_dump(mode="json", by_alias=True),
+            water=dump(assessment.water))
         objects = self._analysis_objects(assessment, report, verification)
         result_hash = self._result_hash(isochrone, group, facilities_status=outcome.status,
                                         analysis=objects)
@@ -575,9 +612,93 @@ class CheckupManager:
                          + list(assessment.issues),
                          facilities=group, facilities_status=outcome.status, analysis=objects,
                          extra_rules={"classification": POI_RULES["version"],
-                                      "accessibility": RULE_VERSION})), revision,
+                                      "accessibility": RULE_VERSION},
+                         recomputed=recomputed)), revision,
             result_hash)
         return business
+
+    # -- recompute after a data correction ---------------------------------
+
+    async def recompute(self, task_id: str, *, reason: str) -> list[int]:
+        """Republish a finished task from its paid evidence after a data correction.
+
+        Nothing is asked again and the original budgets stand as spent:
+
+        * the boundary is rebuilt from the engine's stored samples when the
+          engine reads the corrected data (Hybrid replays its ledger against the
+          current obstacle layer), and kept as frozen when it does not;
+        * the facility retrieval is carried over, but only while the new
+          boundary leaves every record on the side it was counted on -- anything
+          else needs a new retrieval, which is a new task, not a recompute;
+        * the assessment is computed afresh, the verification routes are carried
+          over with their entrance layer re-read, and the report is rebuilt.
+
+        It publishes the verification and reporting revisions a run would, both
+        marked ``trace.recomputed``, so the report still summarizes the revision
+        before it and a reader can tell which revisions predate the correction.
+        """
+        record = self.get(task_id)
+        if record.status not in TERMINAL or task_id in self.tokens:
+            raise CheckupError(409, "checkup_task_running", "任务仍在运行，不能重算")
+        previous, _ = self.snapshot(task_id)
+        if previous.stage != "reporting" or previous.facilities is None:
+            raise CheckupError(409, "checkup_recompute_needs_report", "只有已出报告的任务可以重算")
+        payload = CheckupRequest(**record.payload)
+        origin = normalize((payload.center.lng, payload.center.lat))
+        frozen = IsochroneSnapshot(**previous.isochrone)
+        engine = self.registry.get(record.engine)
+        ledger_name = getattr(engine, "ledger_name", None)
+        if ledger_name is None:
+            # The engine does not read the obstacle layer: its boundary stands.
+            snapshot, boundary = frozen, "unchanged"
+        else:
+            ledger = json.loads((self.store.artifact_dir(task_id) / ledger_name)
+                                .read_text(encoding="utf-8"))
+            context = EngineContext(task_id=task_id, token=CancelToken(),
+                                    deadline=time.monotonic() + DEADLINE_SECONDS)
+            snapshot = await engine.compute(IsochroneAsk(origin=origin, budget=record.budget),
+                                            context, replay=ledger)
+            # The samples are the original run's paid attempts; the replay itself
+            # sent none, which ``trace.recomputed`` says.
+            snapshot = snapshot.model_copy(update={
+                "network_requests": frozen.network_requests,
+                "statistics": {**snapshot.statistics, "networkRequests": frozen.network_requests,
+                               "replayedFromLedger": True}})
+            boundary = "replayed_from_ledger"
+        group = previous.facilities
+        stale = stale_for(group, frozen.geometry, snapshot.geometry, origin)
+        if stale is not None:
+            raise CheckupError(409, "checkup_recompute_needs_retrieval",
+                               f"新边界与原设施检索不再一致（{stale}），需要新任务重新检索")
+        outcome = FacilityOutcome(group=group, status=previous.facilities_status,
+                                  issues=[issue for issue in previous.warnings
+                                          if issue.scope == "facilities"])
+        resolved = await self._resolve_offline()
+        assessment = await asyncio.to_thread(
+            assess_accessibility, geometry=snapshot.geometry,
+            unknown_region=snapshot.unknown_region, facilities=group.facilities,
+            query_status=outcome.status, majors=tuple(payload.facilities.categories),
+            store=None if resolved is None else resolved.store,
+            coverage=None if resolved is None else resolved.coverage,
+            version=self.settings.osm_data_version, settings=self.settings)
+        verification = (None if previous.verification is None
+                        else carried_over(previous.verification, entrances=assessment.entrances,
+                                          revision=previous.revision))
+        recomputed = {"fromRevision": previous.revision, "reason": reason, "networkRequests": 0,
+                      "boundary": boundary, "carriedOver": ["facilities", "verificationRoutes"],
+                      "previousIsochroneHash": frozen.isochrone_hash,
+                      "previousResultHash": previous.trace.result_hash}
+        budget = _SpentBudget(previous.trace.budgets)
+        published = []
+        if verification is not None:
+            self._freeze_verification(task_id, payload, snapshot, budget, outcome, assessment,
+                                      verification, recomputed=recomputed)
+            published.append(self.store.get(task_id).revision)
+        business = self._publish_reporting(task_id, payload, snapshot, budget, outcome,
+                                           assessment, verification, recomputed=recomputed)
+        published.append(self.store.get(task_id).revision)
+        self.store.update(task_id, stage="ready", business_status=business)
+        return published
 
     async def _resolve_offline(self):
         """Resolve the walking graph off the event loop; None when there is none."""

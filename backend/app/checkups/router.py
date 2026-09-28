@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
+from ..algorithms.hybrid_isochrone.water_review import review_catalog
 from ..catalog import major_of
 from ..engines import STATUS_THRESHOLD_S
 from .manager import CheckupError, CheckupManager
@@ -139,12 +140,17 @@ def _heatmap_layer(snapshot):
                  "geometry": {"type": "Point", "coordinates": [point["lng"], point["lat"]]},
                  "properties": {"category": category, "cell": point["cell"],
                                 "distanceM": point["distanceM"], "status": point["status"],
-                                "nearestFacility": point.get("nearestFacility")}}
+                                "nearestFacility": point.get("nearestFacility"),
+                                **({"reason": point["reason"]} if point.get("reason") else {})}}
                 for category, points in sorted(heat.categories.items())
                 for point in points]
     return {"type": "FeatureCollection", "coordinateSystem": "bd09ll", "features": features,
             "properties": {"metric": heat.metric, "estimated": heat.estimated,
-                           "stepM": heat.step_m, "domain": heat.domain, "notes": heat.notes},
+                           "stepM": heat.step_m, "domain": heat.domain, "notes": heat.notes,
+                           # 水体用的是哪份数据、复核过哪里：地图据此画出冲突与底图误绘。
+                           # 早于水系复核的修订为 null，界面据此标出"旧版本"。
+                           "water": (None if snapshot.water is None
+                                     else snapshot.water.model_dump(mode="json", by_alias=True))},
             }, None, None
 
 
@@ -267,6 +273,8 @@ def capabilities_router(manager: CheckupManager, settings):
                    "bandIsNotRadiusExpansion": True},
             data_versions={"osm": settings.osm_data_version,
                            "projection": settings.osm_metric_crs},
+            water_reviews=[item for item in review_catalog(getattr(settings, "water_review_dir", None))
+                           if item["osmDataVersion"] == settings.osm_data_version],
             coverage={"metricCrs": settings.osm_metric_crs, "queryPaddingM": QUERY_PADDING_M,
                       "graphConfigured": graph_configured,
                       "coverageBoundaryConfigured": settings.osm_coverage_boundary_path is not None,

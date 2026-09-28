@@ -18,6 +18,8 @@
  *   地图自己的 WebGL 画布上，公开的覆盖物容器（markerPane 等）都是其上的 DOM 层；
  *   自定义画布插在 markerPane 最前面，位于标记之下、所有面之上。所以面的填色不会
  *   "盖住"热力，却会透过半透明热力把颜色染成一片 —— 开热力时由调用方把圈面改成只描边。
+ * * **标注画布压在热力之上。** 水系标注（冲突、底图误绘）必须在热力颜色之上才读得出，
+ *   所以 `above` 的画布插在最后一张业务画布之后、标记之前；热力画布重挂时插在它们之下。
  */
 import type {
   BaiduMapApi, BMapMap, BMapOverlayInstance, BMapPixel, BMapViewEventType,
@@ -54,6 +56,9 @@ export type FieldFrame = {
   rings: number[][][];
 };
 
+/** 矢量标注的一帧：投影与可见视口（覆盖物像素）；画的时候减去视口原点。 */
+export type VectorFrame = { project: Project; view: PixelRect };
+
 /** 逐缓冲格的直通 RGBA；(x, y) 是缓冲格 (0,0) 左上角的覆盖物像素坐标。 */
 export type FieldImage = {
   cell: number;
@@ -67,10 +72,16 @@ export type FieldImage = {
 export type CanvasFieldSpec = {
   /** 画布的 data-testid；两层画布同时存在时据此区分。 */
   testId: string;
-  /** 每帧清空画布之后调用：本帧的裁剪面，null 表示本帧什么也不画。 */
+  /** 画布的 data-map-layer；缺省 'heat'。 */
+  layer?: string;
+  /** 压在其他业务画布之上（标注层）；缺省在最底下。 */
+  above?: boolean;
+  /** 每帧清空画布之后调用：本帧的裁剪面，null 表示本帧不画颜色图。 */
   boundary(): Geometry | null;
   /** 在 frame.cover 内算出颜色图；null 表示没有可画的内容。 */
   compute(frame: FieldFrame): FieldImage | null;
+  /** 矢量标注：在颜色图之后画，不受裁剪面限制；返回是否画了东西。 */
+  vector?(run: CanvasRenderingContext2D, frame: VectorFrame): boolean;
 };
 
 export type CanvasField = {
@@ -174,8 +185,9 @@ export function createCanvasField(
     element.style.pointerEvents = 'none';
     element.setAttribute('aria-hidden', 'true');
     element.setAttribute('data-testid', spec.testId);
-    // 业务热力画布的共同标记：真实验收据此把它们与底图自己的画布分开。
-    element.setAttribute('data-map-layer', 'heat');
+    // 业务画布的共同标记：真实验收据此把它们与底图自己的画布分开。
+    element.setAttribute('data-map-layer', spec.layer ?? 'heat');
+    if (spec.above) element.setAttribute('data-map-stack', 'above');
     canvas = element;
     ctx = element.getContext('2d');
     return element;
@@ -186,7 +198,22 @@ export function createCanvasField(
     const element = canvas;
     if (!element || !pane || element.parentNode === pane) return;
     const panes = map?.getPanes?.();
-    if (panes?.markerPane === pane && !panes.overlayPane && !panes.mapPane && pane.firstChild) {
+    const markerOnly = panes?.markerPane === pane && !panes.overlayPane && !panes.mapPane;
+    const children = Array.from((pane.children ?? []) as ArrayLike<Element>);
+    const attribute = (node: Element, name: string) => node.getAttribute?.(name) ?? null;
+    if (spec.above) {
+      // 标注：插在最后一张业务画布之后，仍在所有标记之前。
+      const business = children.filter(node => attribute(node, 'data-map-layer') !== null);
+      const last = business[business.length - 1];
+      if (last) pane.insertBefore(element, last.nextSibling);
+      else if (markerOnly && pane.firstChild) pane.insertBefore(element, pane.firstChild);
+      else pane.appendChild(element);
+      return;
+    }
+    const annotation = children.find(node => attribute(node, 'data-map-stack') === 'above');
+    if (annotation) {
+      pane.insertBefore(element, annotation);
+    } else if (markerOnly && pane.firstChild) {
       pane.insertBefore(element, pane.firstChild);
     } else {
       pane.appendChild(element);
@@ -244,7 +271,7 @@ export function createCanvasField(
     run.setTransform(dpr, 0, 0, dpr, 0, 0);
     run.clearRect(0, 0, size.width, size.height);
     const boundary = spec.boundary();
-    if (!boundary) return;
+    if (!boundary && !spec.vector) return;
     const centrePoint = instance.getCenter();
     const centre = project(centrePoint.lng, centrePoint.lat);
     if (!Number.isFinite(centre?.x) || !Number.isFinite(centre?.y)) return;
@@ -253,24 +280,39 @@ export function createCanvasField(
     // SDK 的覆盖物坐标原点不一定是视口左上角；画布位置与裁剪路径需使用同一原点。
     element.style.left = `${rect.x}px`;
     element.style.top = `${rect.y}px`;
+    const painted = boundary ? paintField(boundary, project, centrePoint.lng, rect, run) : false;
+    let annotated = false;
+    if (spec.vector) {
+      try {
+        annotated = spec.vector(run, { project, view: rect });
+      } catch {
+        annotated = false;
+      }
+    }
+    drawn = painted || annotated;
+  };
+
+  /** 颜色图：按裁剪面算、按裁剪面贴。返回是否贴出了图。 */
+  const paintField = (boundary: Geometry, project: Project, anchorLng: number, rect: PixelRect,
+    run: CanvasRenderingContext2D): boolean => {
     let rings: number[][][];
     try {
       rings = pixelRings(boundary, project);
     } catch {
-      return;
+      return false;
     }
     const bounds = ringBounds(rings);
     const cover = bounds ? intersectRect(rect, bounds) : null;
-    if (!cover) return;
+    if (!cover) return false;
     try {
       const field = spec.compute({
-        project, metersPerPixel: metersPerPixelFor(project, centrePoint.lng), view: rect, cover, rings,
+        project, metersPerPixel: metersPerPixelFor(project, anchorLng), view: rect, cover, rings,
       });
-      if (!field) return;
+      if (!field) return false;
       paint(field, rings, rect, run);
-      drawn = true;
+      return true;
     } catch {
-      drawn = false;
+      return false;
     }
   };
 

@@ -478,3 +478,27 @@ def test_shared_attachment_cache_preserves_all_assessment_outputs(monkeypatch):
     for section in ('accessibility', 'service_gaps', 'heatmap', 'scores'):
         assert getattr(cached, section).model_dump(mode='json') == \
             getattr(uncached, section).model_dump(mode='json'), section
+
+
+def test_a_water_data_conflict_is_unknown_not_coverage_or_gap():
+    """来源互相矛盾的水面：那一片可能是水，距离站不住，格是"数据冲突／未知"。"""
+    conflict = box(*metric(500, -40), *metric(620, 40))
+    layer = LocalObstacles(water=dry_layer().water, conflicts=MultiPolygon([conflict]))
+    outcome = run(obstacles=layer)
+    inside = [point for point in outcome.heatmap.categories["medical"]
+              if conflict.contains(shape({"type": "Point", "coordinates": metric_of(point)}))]
+    assert inside, "冲突区在服务距离之内，应当有测到距离的格"
+    assert all(point["status"] == "unknown" and point["reason"] == "water_data_conflict"
+               for point in inside)
+    assert not any(shape(zone.geometry).intersects(conflict.buffer(-1))
+                   for zone in outcome.service_gaps.zones)
+    assert outcome.water.conflict_area_m2 == pytest.approx(120 * 80, rel=1e-6)
+    assert any("water_data_conflict_m2" in note for note in outcome.accessibility.notes)
+    # 冲突区外、同样距离上的格仍然是覆盖：冲突只影响它自己那一片。
+    assert any(point["status"] == "covered" and "reason" not in point
+               for point in outcome.heatmap.categories["medical"])
+
+
+def metric_of(point) -> tuple[float, float]:
+    from app.geo.coordinates import bd09_to_wgs84
+    return PROJECTION.forward.transform(*bd09_to_wgs84(point["lng"], point["lat"]))

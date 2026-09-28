@@ -9,7 +9,7 @@
  * `as unknown as` 蒙过去。夹具一旦靠断言绕过类型，它就再也证明不了契约本身。
  */
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, CoverageRow, FacilityRoute,
-  ReportEvidence, ServiceZone } from './contract';
+  ReportEvidence, ServiceZone, WaterDataEvidence } from './contract';
 import type { Capabilities, EngineOption } from './validate';
 
 export const CENTER = { lng: 116.404, lat: 39.915 };
@@ -75,6 +75,7 @@ export function report(overrides: Partial<ReportEvidence> = {}): ReportEvidence 
       obstacleLayerAvailable: false, heatmapEstimated: true, catalogCompleteness: 'unverified',
       queryStatus: 'complete', notes: [] },
     limitations: ['目录完整性未经独立核实。'],
+    dataSources: null,
     ...overrides,
   };
 }
@@ -91,7 +92,7 @@ export function snapshot(overrides: Partial<CheckupSnapshot> = {}): CheckupSnaps
       coverageSupported: true, assessmentDomainAvailable: true, excludedAreaM2: 0,
       modelSupportAvailable: true, notes: [] },
     trace: { dataVersions: {}, ruleVersions: {}, isochroneHash: 'abc', resultHash: 'hash-5',
-      budgets: {} },
+      budgets: {}, recomputed: null },
     facilities: null, facilitiesStatus: 'complete',
     accessibility: {
       status: 'partial', domain: polygon(), domainAreaM2: AREA, excludedAreaM2: 0, gridStepM: 50,
@@ -126,6 +127,7 @@ export function snapshot(overrides: Partial<CheckupSnapshot> = {}): CheckupSnaps
       reason: null, notes: [],
     },
     report: report(),
+    water: null,
     warnings: [],
     ...overrides,
   };
@@ -178,6 +180,7 @@ export function capabilities(overrides: Partial<Capabilities> = {}): Capabilitie
       coverageBoundaryConfigured: true, completeDirectory: false },
     rules: { ruleVersion: 'walk-distance-1000-v1', statusThresholdSeconds: 900,
       assessmentScope: 'isochrone' },
+    waterReviews: [],
     ...overrides,
   };
 }
@@ -192,5 +195,36 @@ export function route(overrides: Partial<FacilityRoute> = {}): FacilityRoute {
     originOffsetM: 0, destinationOffsetM: 0, reason: null,
     provider: 'synthetic:checkup-routes', network: true, attempts: 1, budget: {}, notes: [],
     ...overrides,
+  };
+}
+
+/** 合成的一份水系复核：范围、一段河道、一处补录、一处底图误绘、一处冲突与一座桥。 */
+export function waterReview(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    reviewId: 'synthetic-river', version: '2026-09-01.1', label: 'synthetic-river@2026-09-01.1',
+    title: '合成河段复核', reviewedAt: '2026-09-01', scope: '合成社区', appliesTo: {},
+    sources: ['合成影像'], method: '合成', limitations: ['合成数据'],
+    extent: polygon(),
+    reaches: [{ osmId: 101, name: '合成河', widthM: 18, osmWidthTag: '10', status: 'verified',
+      measurement: {}, baiduOffset: { minM: 23, medianM: 80, maxM: 193 }, note: '合成',
+      geometry: polygon(0.001) }],
+    crossings: [{ osmId: 202, highway: 'primary', river: '合成河', lengthM: 31.6,
+      status: 'verified', note: '合成桥', anchor: { lng: 116.4, lat: 39.9 }, geometry: null }],
+    supplements: [{ id: 'pond-a', status: 'verified', areaM2: 1200, sources: [], note: '合成池塘',
+      anchor: { lng: 116.401, lat: 39.901 }, geometry: polygon(0.002) }],
+    conflicts: [{ id: 'pond-b', status: 'unverified', areaM2: 660, sources: [], note: '来源矛盾',
+      anchor: { lng: 116.402, lat: 39.902 }, geometry: polygon(0.003) }],
+    basemapMisdrawn: [{ id: 'ghost-1', kind: 'river_displaced', verifiedAs: 'land', areaM2: 3100,
+      note: '底图误绘', anchor: { lng: 116.403, lat: 39.903 }, geometry: polygon(0.004) }],
+    ...overrides,
+  };
+}
+
+export function water(overrides: Partial<WaterDataEvidence> = {}): WaterDataEvidence {
+  return {
+    obstacleLayerAvailable: true, osmDataVersion: 'synthetic-osm', sourcePbfSha256: 'sha-1',
+    reviews: [waterReview()], rejectedReviews: [], domainAreaM2: AREA, reviewedAreaM2: AREA * 0.9,
+    unreviewedAreaM2: AREA * 0.1, conflictAreaM2: 660,
+    statements: ['水系障碍取自合成 OSM。'], ...overrides,
   };
 }

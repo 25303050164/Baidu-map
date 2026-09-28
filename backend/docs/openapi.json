@@ -139,6 +139,48 @@
         }
       }
     },
+    "/api/analyses/by-request/{client_request_id}": {
+      "get": {
+        "tags": [
+          "analyses"
+        ],
+        "summary": "By Request",
+        "operationId": "by_request_api_analyses_by_request__client_request_id__get",
+        "parameters": [
+          {
+            "name": "client_request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Client Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analyses/by-request/{client_request_id}/cancel": {
       "post": {
         "tags": [
@@ -1780,6 +1822,14 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Quota"
+          },
+          "waterReviews": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Waterreviews"
           }
         },
         "additionalProperties": false,
@@ -2049,6 +2099,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ReportEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "water": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaterDataEvidence"
               },
               {
                 "type": "null"
@@ -4429,6 +4489,18 @@
           "evidence": {
             "$ref": "#/components/schemas/ReportQuality"
           },
+          "dataSources": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasources"
+          },
           "limitations": {
             "items": {
               "type": "string"
@@ -5534,6 +5606,18 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Budgets"
+          },
+          "recomputed": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recomputed"
           }
         },
         "additionalProperties": false,
@@ -5670,6 +5754,95 @@
         "type": "object",
         "title": "VerificationEvidence",
         "description": "§6.3 的百度核验阶段：能核实的与核实不了的都留下名字。\n\n``checked`` 是真实发起过路线核验的设施；``unresolved`` 是核验后仍然接入不了的\n入口；``conflicts`` 是\"模型说覆盖、路线说走不通\"这类分歧所在的那几格。三者都不是\n\"目录已完整\"的证据 —— 目录完整性永远是 ``unverified``。"
+      },
+      "WaterDataEvidence": {
+        "properties": {
+          "obstacleLayerAvailable": {
+            "type": "boolean",
+            "title": "Obstaclelayeravailable",
+            "default": false
+          },
+          "osmDataVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Osmdataversion"
+          },
+          "sourcePbfSha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcepbfsha256"
+          },
+          "reviews": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Reviews"
+          },
+          "rejectedReviews": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rejectedreviews"
+          },
+          "domainAreaM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domainaream2"
+          },
+          "reviewedAreaM2": {
+            "type": "number",
+            "title": "Reviewedaream2",
+            "default": 0.0
+          },
+          "unreviewedAreaM2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreviewedaream2"
+          },
+          "conflictAreaM2": {
+            "type": "number",
+            "title": "Conflictaream2",
+            "default": 0.0
+          },
+          "statements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Statements"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WaterDataEvidence",
+        "description": "这一版的水体障碍到底是什么：数据来源、版本、复核过的范围与仍然冲突的地方。\n\n热力与灰区把水体当障碍用；底图上画的水面并不参与计算。两者不一致时，读者需要\n知道计算用的是哪一份、哪一片被独立证据核对过 —— 否则底图上的一片\"水\"下面画着\n覆盖，看起来就像\"水面上有服务\"。``conflict_area_m2`` 是评估域里来源互相矛盾、\n又没有证据裁决的面积：那里的格一律是\"数据冲突／未知\"，不是覆盖，也不是灰区。\n\n``reviews`` 按复核文件原样带出（几何已转 bd09ll），范围之外的水系是 OSM 原样，\n``unreviewed_area_m2`` 说的就是这一部分。"
       }
     }
   }

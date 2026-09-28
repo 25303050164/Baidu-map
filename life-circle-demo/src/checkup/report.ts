@@ -25,6 +25,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
 /** 灰区理由码 → 中文。缺的码原样显示，宁可露出英文码也不猜它的意思。 */
 const REASON_LABELS: Record<string, string> = {
   beyond_service_distance: '超出服务距离',
+  water_data_conflict: '水系数据冲突（未裁决）',
   entrance_unresolved_nearby: '附近设施入口未核实',
   no_valid_entrance: '无可信入口',
   views_disagree: '两个视图结论不一致',
@@ -358,6 +359,8 @@ export function evidenceNotes(snapshot: CheckupSnapshot): Note[] {
   const excluded = snapshot.accessibility?.excludedAreaM2 ?? 0;
   push('domain', 'warning', excluded > 0
     ? `评估域已排除 ${area(excluded)}（边界外或不可评估），报告只对评估域内的面积负责。` : '');
+  // 水系证据的说明逐字照抄后端：来源、复核范围、底图误绘与冲突面积都在里面。
+  for (const statement of snapshot.water?.statements ?? []) push('water', 'info', statement);
   for (const limitation of report?.limitations ?? []) push(`limit:${limitation}`, 'warning', limitation);
   for (const warning of snapshot.warnings ?? []) {
     push(`warning:${warning.code}`, warning.severity === 'error' ? 'warning' : 'info',
@@ -365,3 +368,77 @@ export function evidenceNotes(snapshot: CheckupSnapshot): Note[] {
   }
   return notes;
 }
+
+export type WaterReviewSource = {
+  label: string;
+  title: string;
+  reviewedAt: string | null;
+  scope: string | null;
+  sources: string[];
+  method: string | null;
+  limitations: string[];
+  reaches: string[];
+  crossings: number;
+  conflicts: string[];
+  misdrawn: number;
+};
+
+export type DataSourcesView = {
+  /** false：这一版早于水系证据，说不出计算用了哪份水系。 */
+  available: boolean;
+  obstacle: string;
+  reviews: WaterReviewSource[];
+  areas: string | null;
+  rejected: string[];
+};
+
+const texts = (value: unknown) => Array.isArray(value)
+  ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : [];
+const records = (value: unknown) => Array.isArray(value)
+  ? value.filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object') : [];
+const optionalText = (value: unknown) => typeof value === 'string' && value.length > 0 ? value : null;
+const tally = (value: unknown) => Array.isArray(value) ? value.length
+  : typeof value === 'number' && Number.isFinite(value) ? value : 0;
+
+/**
+ * 数据来源栏：计算用的水系来自哪里、哪一版、复核了什么、哪里还没有结论。
+ * 报告冻结的那一份优先；没有时读快照里的水系证据（两者出自同一次计算）。
+ */
+export function dataSourcesView(snapshot: CheckupSnapshot): DataSourcesView {
+  const frozen = snapshot.report?.dataSources?.water;
+  const water = (frozen && typeof frozen === 'object' ? frozen : snapshot.water) as
+    Record<string, unknown> | null | undefined;
+  if (!water) return { available: false, obstacle: '这一版早于水系证据：说不出计算用了哪一版水系。',
+    reviews: [], areas: null, rejected: [] };
+  const osm = optionalText(water.osmDataVersion);
+  const sha = optionalText(water.sourcePbfSha256);
+  const obstacle = water.obstacleLayerAvailable === false
+    ? '水体障碍层不可用：这一版没有按水体判定。'
+    : `水体障碍：OpenStreetMap${osm ? ` ${osm}` : '（版本未记录）'}${sha ? `，源文件 SHA-256 ${sha.slice(0, 12)}…` : ''}`
+      + '；百度底图上的水面只作显示，不参与计算。';
+  const reviews = records(water.reviews).map(review => ({
+    label: optionalText(review.label) ?? '未命名复核',
+    title: optionalText(review.title) ?? optionalText(review.label) ?? '未命名复核',
+    reviewedAt: optionalText(review.reviewedAt), scope: optionalText(review.scope),
+    sources: texts(review.sources), method: optionalText(review.method),
+    limitations: texts(review.limitations),
+    reaches: records(review.reaches).map(reach => [optionalText(reach.name) ?? `OSM ${reach.osmId}`,
+      typeof reach.widthM === 'number' ? `按实测宽 ${reach.widthM} m 成面` : null,
+      optionalText(reach.osmWidthTag) ? `OSM 原标宽 ${reach.osmWidthTag} m` : null]
+      .filter(Boolean).join('，')),
+    crossings: tally(review.crossings),
+    conflicts: records(review.conflicts).map(item => [optionalText(item.id) ?? '未命名',
+      typeof item.areaM2 === 'number' ? `约 ${Math.round(item.areaM2)} 平方米` : null,
+      item.status === 'unverified' ? '未裁决' : optionalText(item.status),
+      optionalText(item.note)].filter(Boolean).join('，')),
+    misdrawn: tally(review.basemapMisdrawn),
+  }));
+  const reviewed = typeof water.reviewedAreaM2 === 'number' ? water.reviewedAreaM2 : null;
+  const unreviewed = typeof water.unreviewedAreaM2 === 'number' ? water.unreviewedAreaM2 : null;
+  const conflict = typeof water.conflictAreaM2 === 'number' ? water.conflictAreaM2 : null;
+  const areas = reviews.length === 0 ? null
+    : `评估域内：复核范围 ${area(reviewed)}，未复核 ${area(unreviewed)}（按 OSM 原样），`
+      + `数据冲突／未知 ${area(conflict)}（不计覆盖、不计灰区）。`;
+  return { available: true, obstacle, reviews, areas, rejected: texts(water.rejectedReviews) };
+}
+

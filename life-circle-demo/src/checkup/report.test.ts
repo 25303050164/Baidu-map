@@ -8,10 +8,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  area, coverageBars, coverageItems, evidenceNotes, gapSummary, overallView, percent,
-  radarView, verificationView, zoneItems,
+  area, coverageBars, coverageItems, dataSourcesView, evidenceNotes, gapSummary, overallView, percent,
+  radarView, reasonLabel, verificationView, zoneItems,
 } from './report';
-import { AREA, CATEGORIES, report, snapshot, zone } from './fixtures';
+import { AREA, CATEGORIES, report, snapshot, water, zone } from './fixtures';
 import type { CheckupSnapshot } from './contract';
 
 /** 把可达性阶段整段拿掉，模拟"没跑成"的修订。 */
@@ -213,3 +213,37 @@ describe('evidence notes', () => {
     expect(text).toContain('服务标准 1000 米');
   });
 });
+
+describe('data sources', () => {
+  it('says it cannot name the water data for a revision that predates water evidence', () => {
+    const view = dataSourcesView(snapshot());
+    expect(view.available).toBe(false);
+    expect(view.obstacle).toContain('早于水系证据');
+  });
+
+  it('names the OSM version, the review, its bridges, misdrawn areas and unresolved conflicts', () => {
+    const view = dataSourcesView(snapshot({ water: water() }));
+    expect(view.available).toBe(true);
+    expect(view.obstacle).toContain('OpenStreetMap synthetic-osm');
+    expect(view.obstacle).toContain('百度底图上的水面只作显示');
+    expect(view.reviews).toHaveLength(1);
+    expect(view.reviews[0]).toMatchObject({ label: 'synthetic-river@2026-09-01.1', crossings: 1, misdrawn: 1 });
+    expect(view.reviews[0].reaches[0]).toContain('按实测宽 18 m 成面');
+    expect(view.reviews[0].conflicts[0]).toContain('未裁决');
+    expect(view.areas).toContain('数据冲突／未知 660 m²');
+  });
+
+  it('prefers the frozen report section over the live snapshot', () => {
+    const frozen = { water: { ...water(), reviews: [{ label: 'frozen@1', title: '冻结', crossings: 9,
+      basemapMisdrawn: 11, reaches: [], conflicts: [] }] } };
+    const view = dataSourcesView(snapshot({ water: water(), report: report({ dataSources: frozen }) }));
+    expect(view.reviews[0]).toMatchObject({ label: 'frozen@1', crossings: 9, misdrawn: 11 });
+  });
+
+  it('copies water statements into the evidence notes and names the conflict reason', () => {
+    const notes = evidenceNotes(snapshot({ water: water() }));
+    expect(notes.map(note => note.text)).toContain('水系障碍取自合成 OSM。');
+    expect(reasonLabel('water_data_conflict')).toBe('水系数据冲突（未裁决）');
+  });
+});
+

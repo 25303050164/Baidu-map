@@ -39,7 +39,8 @@ from ..geo.coordinates import wgs84_to_bd09
 from ..scoring import (CATEGORY_WEIGHT, CategoryAreas, area_tolerance, category_score,
                        interval_degenerates, overall_score)
 from .models import (DISTANCE_RULE, AccessibilityEvidence, CategoryCoverage, HeatmapEvidence,
-                     ScoreEvidence, ServiceGapsEvidence, ServiceZone)
+                     ScoreEvidence, ServiceGapsEvidence, ServiceZone, WaterDataEvidence)
+from .water_data import water_evidence
 
 #: 障碍判定的容差（米）：与 Hybrid 硬障碍层同一口径，0.1 米以下的重叠算相切。
 OBSTACLE_TOUCH_TOLERANCE_M = 0.1
@@ -85,6 +86,8 @@ class AccessibilityOutcome:
     issues: list = dataclass_field(default_factory=list)
     #: ``{facility_id: Entrance}``：核验阶段要用的入口证据，只在本进程内传递。
     entrances: dict = dataclass_field(default_factory=dict)
+    #: 这一版用到的水体障碍的来源与复核范围。
+    water: WaterDataEvidence | None = None
 
 
 def _polygonal(geometry):
@@ -204,6 +207,19 @@ class _Obstacles:
         water = self.water
         return water is not None and not water.is_empty
 
+    @property
+    def conflicts(self):
+        """复核认定"来源互相矛盾、没有裁决"的面：不是水，也不是陆地。"""
+        conflicts = None if self.local is None else getattr(self.local, "conflicts", None)
+        return None if conflicts is None or conflicts.is_empty else conflicts
+
+    def conflict_intersects(self, geometry) -> bool:
+        try:
+            return self.conflicts.intersects(geometry)
+        except Exception:
+            self.failed += 1
+            return True
+
     def intersects(self, geometry) -> bool:
         if not self.available:
             return False
@@ -216,11 +232,17 @@ class _Obstacles:
             return True
 
     def connector_blocked(self, point: Point, projected: Point) -> bool:
-        """入口到接入点的直连段是否穿过水体：一条"过河"的连线段不是入口的证据。"""
-        if not self.available:
-            return False
+        """入口到接入点的直连段是否穿过水体：一条"过河"的连线段不是入口的证据。
+
+        穿过数据冲突区的连线同样不算：那一片可能是水，走不走得通没有证据。
+        """
+        segment = LineString([point, projected])
         try:
-            crossing = LineString([point, projected]).intersection(self.water)
+            if self.conflicts is not None and                     segment.intersection(self.conflicts).length > OBSTACLE_TOUCH_TOLERANCE_M:
+                return True
+            if not self.available:
+                return False
+            crossing = segment.intersection(self.water)
         except Exception:
             self.failed += 1
             return True
@@ -252,7 +274,8 @@ def local_obstacles(settings, projection, domain):
     外扩 —— 入口可能落在评估域外一点，连接段判定要用到那一段。
     """
     return load_obstacles(settings.hybrid_obstacle_path, projection,
-                          settings.osm_data_version, domain.envelope.buffer(OBSTACLE_MARGIN_M))
+                          settings.osm_data_version, domain.envelope.buffer(OBSTACLE_MARGIN_M),
+                          getattr(settings, "water_review_dir", None))
 
 
 def evaluated_majors(majors, facilities, *, query_complete: bool) -> tuple[str, ...]:
@@ -279,12 +302,15 @@ def evaluate_category(major: str, facilities, *, store, views, domain, rule, que
     entrances = resolve_entrances(
         metric_facilities(facilities, store.projection, major=major), store=store,
         category_of=lambda item: item["category"],
-        guard=obstacles.connector_blocked if obstacles.available else None,
+        guard=(obstacles.connector_blocked
+               if obstacles.available or obstacles.conflicts is not None else None),
         limit_m=ENTRANCE_LIMIT_M)
     field = ServiceField(category=major, rule=rule, store=store, views=views, entrances=entrances,
                          query_complete=query_complete, boundary=domain.boundary,
                          attachments=attachments,
-                         obstacle_intersects=obstacles.intersects if obstacles.available else None)
+                         obstacle_intersects=obstacles.intersects if obstacles.available else None,
+                         data_conflict=(obstacles.conflict_intersects
+                                        if obstacles.conflicts is not None else None))
     # 判定与证据一次算完：网格只拿结论，评估对象留在这里给热力与灰区用。
     assessed: dict = {}
 
@@ -356,9 +382,13 @@ def _heat_point(leaf, assessment, projection) -> dict:
     结论是"未知"的地方画出一个距离。
     """
     lng, lat = public_point(projection, (leaf.cell.center.x, leaf.cell.center.y))
-    return {"cell": leaf.cell.id, "lng": lng, "lat": lat,
-            "distanceM": round(assessment.min_distance_m, 3),
-            "nearestFacility": assessment.nearest_facility, "status": leaf.verdict}
+    point = {"cell": leaf.cell.id, "lng": lng, "lat": lat,
+             "distanceM": round(assessment.min_distance_m, 3),
+             "nearestFacility": assessment.nearest_facility, "status": leaf.verdict}
+    # 未知格带上理由：水面、数据冲突与"证据不足"在地图上是三种不同的未知。
+    if leaf.verdict == UNKNOWN and leaf.reason:
+        point["reason"] = leaf.reason
+    return point
 
 
 def _areas_match(areas: CategoryAreas, domain_area_m2: float) -> bool:
@@ -514,6 +544,13 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
     excluded = sum(exclusions.values())
     for reason, area in sorted(exclusions.items()):
         notes.append(f"excluded_area_m2={round(area, 3)} ({reason}): 未计入评估域。")
+    water = water_evidence(obstacles.local, domain, store.projection)
+    if water is not None and water.conflict_area_m2 > 0:
+        notes.append(f"water_data_conflict_m2={round(water.conflict_area_m2, 3)}: "
+                     "水系来源互相矛盾且未裁决的格按“数据冲突／未知”计，不计覆盖也不计灰区。")
+    if water is not None and water.rejected_reviews:
+        notes.append("water_review_not_applied: 覆盖本区域的水系复核与当前 OSM 数据版本不符，"
+                     "未采用，按 OSM 原样计算。")
     engine_unknown = engine_unknown_region(unknown_region, store.projection)
     if engine_unknown is not None:
         # 报出来是为了让它可见，不是为了让它做减法：分母 A 只由圈面和数据覆盖范围决定。
@@ -541,7 +578,7 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
                *notes])
     return AccessibilityOutcome(
         accessibility=evidence, service_gaps=gaps, heatmap=heatmap,
-        scores=_score(evaluated, domain_area_m2), status=status, issues=issues,
+        scores=_score(evaluated, domain_area_m2), status=status, issues=issues, water=water,
         # 一个设施只属于一个大类（按类别过滤过），所以 ID 之间不会互相覆盖。
         entrances={entrance.facility_id: entrance
                    for item in evaluated for entrance in item.entrance_items})

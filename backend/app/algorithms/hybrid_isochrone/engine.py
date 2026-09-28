@@ -175,6 +175,7 @@ class HybridIsochroneProvider:
                                   "hard_obstacle_source": self.obstacles.source,
                                   "hard_obstacle_unresolved": self.obstacles.unresolved,
                                   "unresolved_water_lines_affecting_shell": sum(line.intersects(coverage.shell) for line in self.obstacles.unresolved_lines),
+                                  "water_data_conflict_area_in_shell_m2": self.obstacles.conflicts.intersection(coverage.shell).area,
                                   "sampling_reasons": dict(Counter(s.reason for s in session.samples)),
                                   "budget_policy": "no_near_field_reserve_outer_boundary_priority",
                                   "outer_boundary_refinement_requests": sum(

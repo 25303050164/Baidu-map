@@ -177,6 +177,28 @@ function validReport(value: unknown): value is ReportEvidence {
   return true;
 }
 
+const WATER_ITEMS = ['reaches', 'supplements', 'conflicts', 'basemapMisdrawn', 'crossings'] as const;
+
+/**
+ * 水系证据：面积非负、说明是文字、每份复核里的几何要么没有要么是完整的面。一块画不出来
+ * 的冲突面比没有更糟 —— 图上少了"数据冲突／未知"，读者就会把那里的底图水面当成已核实。
+ */
+function validWater(value: unknown): boolean {
+  if (!object(value) || typeof value.obstacleLayerAvailable !== 'boolean'
+    || !nullableText(value.osmDataVersion) || !Array.isArray(value.statements)
+    || !value.statements.every(text) || !Array.isArray(value.rejectedReviews)
+    || !value.rejectedReviews.every(text) || !Array.isArray(value.reviews)) return false;
+  for (const key of ['reviewedAreaM2', 'conflictAreaM2'])
+    if (!finite(value[key]) || (value[key] as number) < 0) return false;
+  for (const key of ['domainAreaM2', 'unreviewedAreaM2'])
+    if (value[key] !== null && (!finite(value[key]) || (value[key] as number) < 0)) return false;
+  return value.reviews.every(review => object(review) && text(review.label)
+    && (review.extent === undefined || polygon(review.extent))
+    && WATER_ITEMS.every(key => review[key] === undefined || (Array.isArray(review[key])
+      && (review[key] as unknown[]).every(item => object(item)
+        && (item.geometry === undefined || polygon(item.geometry))))));
+}
+
 function validVerification(value: unknown): boolean {
   return object(value) && oneOf(value.status, EVIDENCE_STATUS) && nullableText(value.reason)
     && count(value.checked) && count(value.failed) && count(value.unresolved)
@@ -209,6 +231,11 @@ export function validSnapshot(value: unknown): value is CheckupSnapshot {
   if (value.scores !== null && (!object(value.scores) || !Array.isArray(value.scores.categories))) return false;
   if (value.verification !== null && !validVerification(value.verification)) return false;
   if (value.report !== null && !validReport(value.report)) return false;
+  if (value.water !== undefined && value.water !== null && !validWater(value.water)) return false;
+  // 重算来源只能是更早的一版：指向自己或之后的版本，说明修订链被改乱了。
+  const recomputed = value.trace.recomputed;
+  if (recomputed !== undefined && recomputed !== null && (!object(recomputed)
+    || !count(recomputed.fromRevision) || recomputed.fromRevision >= revision)) return false;
   // 报告一出现，"报告里那一节"和"快照里那一节"必须是同一件事：报告冻结的是同一版
   // 结论，两处给出不同的可用性只能说明有一处被改过。
   if (object(value.report) && object(value.verification) && object(value.report.verification)) {
@@ -237,6 +264,8 @@ export type Capabilities = {
   budgets: RecordValue;
   coverage: RecordValue;
   rules: RecordValue;
+  /** 当前部署采用的水系复核；旧后端不给这一项。条目由 water.ts 逐条认。 */
+  waterReviews?: RecordValue[];
 };
 
 /** 能力表：界面靠它决定"能选什么"，所以引擎字段错一个就整份拒绝，不做部分接受。 */
@@ -251,6 +280,7 @@ export function validCapabilities(value: unknown): value is Capabilities {
       || !count(engine.defaultBudget) || !engine.budgets.includes(engine.defaultBudget)
       || typeof engine.requiresOsmGraph !== 'boolean') return false;
   }
+  if (value.waterReviews !== undefined && !Array.isArray(value.waterReviews)) return false;
   return object(value.quota) && object(value.budgets) && object(value.coverage)
     && object(value.rules);
 }

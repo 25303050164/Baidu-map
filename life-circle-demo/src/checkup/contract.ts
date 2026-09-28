@@ -159,6 +159,7 @@ export type ReportEvidence = {
   gaps: ReportGaps;
   verification: ReportVerification;
   evidence: ReportQuality;
+  dataSources: Record<string, unknown> | null;
   limitations: Array<string>;
 };
 
@@ -271,6 +272,7 @@ export type TraceEvidence = {
   isochroneHash: string;
   resultHash: string;
   budgets: Record<string, unknown>;
+  recomputed: Record<string, unknown> | null;
 };
 
 export type VerificationEvidence = {
@@ -284,6 +286,19 @@ export type VerificationEvidence = {
   queries: Record<string, unknown>;
   reason: string | null;
   notes: Array<string>;
+};
+
+export type WaterDataEvidence = {
+  obstacleLayerAvailable: boolean;
+  osmDataVersion: string | null;
+  sourcePbfSha256: string | null;
+  reviews: Array<Record<string, unknown>>;
+  rejectedReviews: Array<string>;
+  domainAreaM2: number | null;
+  reviewedAreaM2: number;
+  unreviewedAreaM2: number | null;
+  conflictAreaM2: number;
+  statements: Array<string>;
 };
 
 export type CheckupSnapshot = {
@@ -309,6 +324,7 @@ export type CheckupSnapshot = {
   scores: ScoreEvidence | null;
   verification: VerificationEvidence | null;
   report: ReportEvidence | null;
+  water: WaterDataEvidence | null;
   warnings: Array<Issue>;
 };
 
@@ -357,4 +373,5 @@ export type CheckupCapabilities = {
   coverage: Record<string, unknown>;
   budgets: Record<string, unknown>;
   quota: Record<string, unknown>;
+  waterReviews: Array<Record<string, unknown>>;
 };

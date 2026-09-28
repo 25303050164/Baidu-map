@@ -108,6 +108,9 @@ class TraceEvidence(CheckupModel):
     isochrone_hash: str
     result_hash: str
     budgets: dict
+    #: 数据修订后离线重算出的一版：从哪一版来、为什么重算。重算不发网络请求，
+    #: ``budgets`` 仍是原任务花掉的额度。
+    recomputed: dict | None = None
 
 
 class FacilityGroup(CheckupModel):
@@ -242,6 +245,29 @@ class HeatmapEvidence(CheckupModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class WaterDataEvidence(CheckupModel):
+    """这一版的水体障碍到底是什么：数据来源、版本、复核过的范围与仍然冲突的地方。
+
+    热力与灰区把水体当障碍用；底图上画的水面并不参与计算。两者不一致时，读者需要
+    知道计算用的是哪一份、哪一片被独立证据核对过 —— 否则底图上的一片"水"下面画着
+    覆盖，看起来就像"水面上有服务"。``conflict_area_m2`` 是评估域里来源互相矛盾、
+    又没有证据裁决的面积：那里的格一律是"数据冲突／未知"，不是覆盖，也不是灰区。
+
+    ``reviews`` 按复核文件原样带出（几何已转 bd09ll），范围之外的水系是 OSM 原样，
+    ``unreviewed_area_m2`` 说的就是这一部分。
+    """
+    obstacle_layer_available: bool = False
+    osm_data_version: str | None = None
+    source_pbf_sha256: str | None = None
+    reviews: list[dict] = Field(default_factory=list)
+    rejected_reviews: list[str] = Field(default_factory=list)
+    domain_area_m2: float | None = None
+    reviewed_area_m2: float = 0.0
+    unreviewed_area_m2: float | None = None
+    conflict_area_m2: float = 0.0
+    statements: list[str] = Field(default_factory=list)
+
+
 class ScoreRow(CheckupModel):
     """一个类别的区间分。``supported`` 为假时百分比全是 null —— "没有空间支持"和
     "支持了但算出来是 0%"必须能分辨。"""
@@ -369,6 +395,9 @@ class ReportEvidence(CheckupModel):
     gaps: ReportGaps
     verification: ReportVerification
     evidence: ReportQuality
+    #: 数据来源栏：水体障碍来自哪一份数据、哪一份复核、复核覆盖了多少。几何不在报告里，
+    #: 在同一版修订的 ``water`` 栏。早于水系复核的报告没有这一栏。
+    data_sources: dict | None = None
     limitations: list[str] = Field(default_factory=list)
 
 
@@ -428,6 +457,8 @@ class CheckupSnapshot(CheckupModel):
     scores: ScoreEvidence | None = None
     verification: VerificationEvidence | None = None
     report: ReportEvidence | None = None
+    #: 水体障碍的来源与复核范围；早于水系复核的修订没有这一栏（null）。
+    water: WaterDataEvidence | None = None
     warnings: list[Issue] = Field(default_factory=list)
 
 
@@ -510,6 +541,8 @@ class CheckupCapabilities(CheckupModel):
     budgets: dict
     # The application's own remaining allowance, never the account's.
     quota: dict
+    #: Water reviews this deployment applies: ``[{reviewId, version, label, title, bbox}]``.
+    water_reviews: list[dict] = Field(default_factory=list)
 
 
 def new_trace(*, isochrone_hash: str, result_hash: str, data_versions: dict,
