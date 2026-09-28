@@ -49,16 +49,26 @@ class OsmOfflineEngine:
         self.coverage_reason = coverage_reason
 
     @classmethod
-    def load(cls, settings):
-        # Only startup calls this. Failure does not take the other algorithm down.
+    def load(cls, settings, progress=None):
+        """``progress(step, done, total)`` hears how far the graph has got.
+
+        Only startup calls this. Failure does not take the other algorithm down.
+        """
+        progress = progress or (lambda step, done=None, total=None: None)
         if settings.osm_data_version == "unconfigured":
             reason = "osm_data_version_unconfigured" if settings.osm_graph_cache_path.is_file() else "graph_cache_missing"
             return cls(settings, unavailable_reason=reason)
         try:
-            graph = load_graph_cache(settings.osm_graph_cache_path)
+            graph = load_graph_cache(settings.osm_graph_cache_path, progress)
             if graph.graph.get("osm_data_version") != settings.osm_data_version:
                 raise OsmDataError("cache_data_version_mismatch")
-            store = GraphStore(graph, speed=settings.walk_speed_mps, crs=settings.osm_metric_crs)
+            store = GraphStore(graph, speed=settings.walk_speed_mps, crs=settings.osm_metric_crs,
+                               progress=progress)
+            # The store works on its own copy. A networkx graph refers to itself
+            # through its views, so the parsed one would otherwise wait for a full
+            # cyclic collection over the whole heap; emptied, reference counting
+            # frees its millions of dicts right here.
+            graph.clear()
         except OsmDataError as exc:
             return cls(settings, unavailable_reason=str(exc))
         except Exception:
@@ -69,7 +79,7 @@ class OsmOfflineEngine:
         else:
             try:
                 coverage = load_coverage(settings.osm_coverage_boundary_path, store.projection)
-                expected = graph.graph.get("coverage_sha256")
+                expected = store.graph.graph.get("coverage_sha256")
                 if expected:
                     from .prepare import sha256_file
                     if sha256_file(settings.osm_coverage_boundary_path) != expected:

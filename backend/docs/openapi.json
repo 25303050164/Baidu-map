@@ -2250,6 +2250,64 @@
               }
             ],
             "title": "Error"
+          },
+          "serverTime": {
+            "type": "number",
+            "title": "Servertime"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishedat"
+          },
+          "stageStartedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stagestartedat"
+          },
+          "lastActivityAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastactivityat"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -2260,7 +2318,8 @@
           "engine",
           "status",
           "budget",
-          "createdAt"
+          "createdAt",
+          "serverTime"
         ],
         "title": "CheckupTaskView"
       },
@@ -5323,6 +5382,66 @@
           "coordinate_system"
         ],
         "title": "SyntheticRequest"
+      },
+      "TaskProgress": {
+        "properties": {
+          "step": {
+            "type": "string",
+            "title": "Step"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "since": {
+            "type": "number",
+            "title": "Since"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "step",
+          "label",
+          "since"
+        ],
+        "title": "TaskProgress",
+        "description": "The worker's current step inside the stage, as it last wrote it.\n\n``count`` is what has actually happened in this step (samples sent, pages\nrequested, cells judged, facilities verified); ``limit`` is a bound the step\nwill not pass (a budget, the candidate list), not a forecast of where it\nends. There is deliberately no percentage: most steps stop early."
       },
       "TaskResultResponse": {
         "properties": {

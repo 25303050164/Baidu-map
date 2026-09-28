@@ -30,6 +30,7 @@ import { CheckupReport } from './CheckupReport';
 import { CATEGORY_ORDER, categoryLabel, evidenceNotes, percent } from './report';
 import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
 import { outdatedText, recomputedText, versionView, waterView } from './water';
+import { duration, liveView, TICKING_PHASES, type LiveKind } from './live';
 // 复用旧分析页的排布类：工作台与它是同一个版式，另起一套只会让两页慢慢长歪。
 import '../analysis/api.css';
 import './checkup.css';
@@ -97,6 +98,24 @@ function RouteDetail({ route, error }: { route: CheckupState['route']; error?: s
     {route.notes.length > 0 && <ul className="checkup-notes">{route.notes.map(note =>
       <li key={note}>{note}</li>)}</ul>}
   </>;
+}
+
+/** 实时读法的提示框：问不到后端与疑似停滞要人留意，其余只是说明。 */
+const LIVE_ALERT: Record<LiveKind, 'info' | 'warning'> = {
+  submitting: 'info', restoring: 'info', queued: 'info', working: 'info', cancelling: 'info',
+  lost: 'warning', stalled: 'warning',
+};
+
+/** 只有时钟在走：任务未决时每秒取一次本机时刻重算读数，不做任何动画。 */
+function useClock(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  return now;
 }
 
 const DEFAULT_CENTER: Center = { lng: 116.404, lat: 39.915 };
@@ -251,6 +270,11 @@ export default function CheckupApp({ engine }: { engine: string }) {
   const version = useMemo(() => snapshot ? versionView(snapshot, view?.waterReviews ?? []) : null,
     [snapshot, view]);
 
+  const clock = useClock(TICKING_PHASES.includes(state.phase));
+  // 新的回答可能比上一次时钟跳动更晚到：以两者中较晚的为"此刻"，读数不会倒退成负数。
+  const now = Math.max(clock, state.contact?.at ?? 0, state.reconnect?.since ?? 0);
+  const liveNow = liveView(state, now);
+
   const overall = snapshot?.report?.overall ?? snapshot?.scores?.overall ?? null;
   const notes = useMemo(() => snapshot ? evidenceNotes(snapshot) : [], [snapshot]);
 
@@ -347,25 +371,44 @@ export default function CheckupApp({ engine }: { engine: string }) {
           {state.phase !== 'idle' && <p className="api-muted" data-testid="checkup-phase"
             data-phase={state.phase}>状态：{PHASE_LABELS[state.phase] ?? state.phase}
             {state.input && `（中心 ${state.input.center.lng.toFixed(6)}, ${state.input.center.lat.toFixed(6)}）`}</p>}
-          {state.connection === 'lost' && <Alert type="warning" showIcon data-testid="checkup-connection"
-            title="与体检服务的连接中断，正在自动重连"
-            description="任务仍在服务端继续，不会因为断网被取消或重复提交；连上后自动接着显示进度与结果。" />}
-          {state.phase === 'restoring' && <Alert type="info" showIcon
-            title="正在向后端核对上次的体检任务"
-            description={state.input ? `请求标识 ${state.input.clientRequestId}` : undefined} />}
-          {state.phase === 'queued' && <Alert type="info" showIcon title="排队中"
-            description="体检服务一次只执行一个任务（两个引擎共用），本任务会在前面的任务结束后自动开始。" />}
+          {liveNow && <Alert type={LIVE_ALERT[liveNow.kind]} showIcon data-testid="checkup-live"
+            data-kind={liveNow.kind} title={liveNow.title}
+            description={liveNow.hint + (liveNow.kind === 'restoring' && state.input
+              ? `（请求标识 ${state.input.clientRequestId}）` : '')} />}
           {task && <>
             <StageProgress stage={task.stage} />
             <Descriptions size="small" column={1} items={[
               { key: 'task', label: '任务', children: <span data-testid="checkup-task-id">{task.taskId}</span> },
-              { key: 'revision', label: '当前修订', children: `第 ${task.revision} 版` },
+              { key: 'revision', label: '最新修订', children: <span data-testid="checkup-revision"
+                data-revision={task.revision}>{`第 ${task.revision} 版`}</span> },
               { key: 'status', label: '状态', children: task.status +
                 (task.businessStatus ? `（${BUSINESS_LABELS[task.businessStatus] ?? task.businessStatus}）` : '') },
-              { key: 'spend', label: '本任务已用', children:
-                `${task.networkRequests} 次网络尝试（等时圈、设施与核验各池合计）` },
+              { key: 'spend', label: '本任务已用', children: <span data-testid="checkup-requests"
+                data-count={task.networkRequests}>{`${task.networkRequests} 次网络尝试（等时圈、设施与核验各池合计；只数真的发出的请求）`}</span> },
               { key: 'tier', label: '等时圈档位', children: `${task.budget} 次上限` },
-              { key: 'elapsed', label: '已用时', children: `${task.elapsedSeconds.toFixed(1)} 秒` },
+              // 未决时按服务端时钟每秒递增；有了结论就用后端算好的总时长，不再走。
+              { key: 'elapsed', label: '已用时', children: <span data-testid="checkup-elapsed"
+                data-seconds={liveNow ? liveNow.elapsed ?? '' : task.elapsedSeconds}>
+                {liveNow ? liveNow.kind === 'queued' ? `尚未开始（已排队 ${duration(liveNow.queued)}）`
+                  : liveNow.elapsed === null ? '尚未开始' : duration(liveNow.elapsed)
+                  : `${task.elapsedSeconds.toFixed(1)} 秒`}</span> },
+              ...(liveNow && liveNow.stage ? [{ key: 'stage', label: '当前阶段', children:
+                <span data-testid="checkup-stage-now" data-stage={liveNow.stage}>
+                  {STAGE_LABELS[liveNow.stage] + (liveNow.stageFor === null ? ''
+                    : `（本阶段已 ${duration(liveNow.stageFor)}）`)}</span> }] : []),
+              ...(liveNow && liveNow.step ? [{ key: 'step', label: '当前步骤', children:
+                <span data-testid="checkup-step" data-step={liveNow.step.step}
+                  data-count={liveNow.step.count ?? ''}>
+                  {liveNow.step.label}{liveNow.stepCount ? ` · ${liveNow.stepCount}` : ''}
+                  {liveNow.stepFor === null ? '' : `（本步已 ${duration(liveNow.stepFor)}）`}</span> }] : []),
+              ...(liveNow && liveNow.contactAgo !== null ? [{ key: 'contact', label: '最近一次成功连接',
+                children: <span data-testid="checkup-contact" data-seconds={liveNow.contactAgo}>
+                  {`${duration(liveNow.contactAgo)}前`}</span> }] : []),
+              ...(liveNow && (task.status === 'running' || task.status === 'cancelling') ? [{ key: 'activity',
+                label: '服务端最近活动', children: <span data-testid="checkup-activity"
+                  data-seconds={liveNow.activityAgo ?? ''}>
+                  {liveNow.activityAgo === null ? '未记录（后端版本不报活动时间）'
+                    : `${duration(liveNow.activityAgo)}前`}</span> }] : []),
             ]} />
             {version && snapshot?.taskId === task.taskId && <p className="api-muted" data-testid="checkup-version"
               data-recomputed={version.recomputed ? 'yes' : 'no'}>

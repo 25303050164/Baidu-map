@@ -1,5 +1,6 @@
 import type { Center } from '../types';
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityRoute } from './contract';
+import type { Contact, Reconnect } from './live';
 import { STAGES, type LayerId, type Stage } from './validate';
 
 /** v2 的引擎是具名的：两个算法各自服务各自的预算档，不互相顶替。 */
@@ -32,6 +33,10 @@ export type CheckupState = {
   input?: CheckupInput;
   /** 与后端的连接中断、正在退避重连；任务本身没有因此失败。 */
   connection?: 'lost';
+  /** 连接中断从何时起、已连续失败几次；连上即清掉。 */
+  reconnect?: Reconnect;
+  /** 最近一次拿到任务视图的时刻与其中的服务端时刻：界面据此推算"服务端此刻"。 */
+  contact?: Contact;
   /**
    * 恢复时遇到的两种"找不回来"：`unconfirmed` 是创建请求没送达（按请求标识查不到），
    * `expired` 是任务 ID 服务端已不认识。两者的出路不同：前者可沿用同一请求标识重提，

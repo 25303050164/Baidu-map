@@ -12,10 +12,17 @@ from shapely import from_wkt
 from shapely.geometry import LineString, Point
 from shapely.strtree import STRtree
 
+from ... import bulk_load
 from ...geo.projection import MetricProjection
 
 CACHE_VERSION = 1
 PEDESTRIAN_ATTRS = ("highway", "foot", "access", "bridge", "tunnel", "service", "oneway:foot")
+#: Edges between two progress reports while a cache is built and checked.
+PROGRESS_EDGES = 20_000
+
+
+def _unreported(step, done=None, total=None):
+    pass
 
 
 class OsmDataError(ValueError):
@@ -50,7 +57,9 @@ def oriented_geometry(graph, u, v, data):
 
 
 class GraphStore:
-    def __init__(self, graph, *, speed, crs):
+    def __init__(self, graph, *, speed, crs, progress=_unreported):
+        """``progress(step, done, total)`` hears the edge checks as they go: for
+        the city graph they are most of its first load, minutes of it."""
         if not isinstance(graph, nx.MultiDiGraph):
             raise OsmDataError("directed_multigraph_required")
         self.projection = MetricProjection(crs)
@@ -65,7 +74,10 @@ class GraphStore:
                 raise OsmDataError("cache_node_coordinates_missing")
             if not all(math.isfinite(float(data[c])) for c in ("x", "y")):
                 raise OsmDataError("invalid_node_coordinate")
-        for u, v, k, data in self.graph.edges(keys=True, data=True):
+        progress("graph_check", 0, self.edge_count)
+        for done, (u, v, k, data) in enumerate(self.graph.edges(keys=True, data=True), 1):
+            if done % PROGRESS_EDGES == 0:
+                progress("graph_check", done, self.edge_count)
             if "length" not in data or "travel_time_s" not in data:
                 raise OsmDataError("cache_cost_attributes_missing")
             geometry, fallback, reverse = oriented_geometry(self.graph, u, v, data)
@@ -80,6 +92,7 @@ class GraphStore:
                     raise OsmDataError("cache_pedestrian_attributes_missing")
             self.diagnostics["geometry_fallback_edges"] += int(fallback)
             self.diagnostics["geometry_reversed_edges"] += int(reverse)
+        progress("graph_index")
         self.edge_ids = sorted(self.graph.edges(keys=True), key=lambda e: tuple(map(str, e)))
         self.geometries = [self.graph.edges[e]["geometry"] for e in self.edge_ids]
         self.index = STRtree(self.geometries)
@@ -107,17 +120,22 @@ def save_graph_cache(graph, path):
         temporary.unlink(missing_ok=True)
 
 
-def load_graph_cache(path):
+def load_graph_cache(path, progress=_unreported):
     if not Path(path).is_file():
         raise OsmDataError("graph_cache_missing")
     try:
+        progress("graph_read")
         with gzip.open(path, "rt", encoding="utf-8") as stream:
-            payload = json.load(stream)
+            payload = bulk_load.loads(stream.read())
         if payload["cache_version"] != CACHE_VERSION:
             raise OsmDataError("graph_cache_version_mismatch")
         graph = nx.MultiDiGraph(**payload["metadata"])
         graph.add_nodes_from(payload["nodes"])
-        for u, v, key, data in payload["edges"]:
+        total = len(payload["edges"])
+        progress("graph_build", 0, total)
+        for done, (u, v, key, data) in enumerate(payload["edges"], 1):
+            if done % PROGRESS_EDGES == 0:
+                progress("graph_build", done, total)
             data["geometry"] = from_wkt(data["geometry"])
             if u not in graph or v not in graph or graph.has_edge(u, v, key):
                 raise OsmDataError("graph_cache_invalid_topology")

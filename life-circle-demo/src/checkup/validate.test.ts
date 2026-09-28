@@ -8,8 +8,8 @@
 import { describe, expect, it } from 'vitest';
 import { areaTolerance, readLayerGeometry, validCapabilities, validFacilityRoute, validLayer, validSnapshot,
   validTaskView } from './validate';
-import { AREA, capabilities, collection, feature, layer, point, report, route, snapshot, task, water,
-  waterReview, zone } from './fixtures';
+import { AREA, SERVER_TIME, STARTED_AT, capabilities, collection, feature, layer, point, report, route,
+  snapshot, task, water, waterReview, zone } from './fixtures';
 
 describe('task view', () => {
   it('accepts the fixture and a queued task with no stage yet', () => {
@@ -26,6 +26,37 @@ describe('task view', () => {
   it('refuses a stage the pipeline never publishes', () => {
     expect(validTaskView({ ...task(), stage: 'scoring' })).toBe(false);
     expect(validTaskView({ ...task(), revision: -1 })).toBe(false);
+  });
+
+  it('refuses a step counted past its own limit, or a unit with nothing counted', () => {
+    const progress = task().progress!;
+    // 上限是"不会越过的数"：越过了，要么计数错了，要么上限是编的。
+    expect(validTaskView(task({ progress: { ...progress, count: 5, limit: 4, unit: '次请求' } }))).toBe(false);
+    expect(validTaskView(task({ progress: { ...progress, count: null, unit: '格' } }))).toBe(false);
+    expect(validTaskView(task({ progress: { ...progress, count: -1 } }))).toBe(false);
+    expect(validTaskView(task({ progress: { ...progress, count: 1.5 } }))).toBe(false);
+    expect(validTaskView(task({ progress: { ...progress, label: '' } }))).toBe(false);
+    expect(validTaskView(task({ progress: { ...progress, since: 0 } }))).toBe(false);
+    expect(validTaskView(task({ progress: { ...progress, count: 4, limit: 4, unit: '次请求' } }))).toBe(true);
+    expect(validTaskView(task({ progress: { ...progress, count: null, unit: null } }))).toBe(true);
+    expect(validTaskView(task({ progress: null }))).toBe(true);
+  });
+
+  it('refuses timings that contradict each other, and accepts a backend that predates them', () => {
+    expect(validTaskView(task({ stageStartedAt: STARTED_AT - 10 }))).toBe(false);
+    expect(validTaskView(task({ finishedAt: STARTED_AT - 10 }))).toBe(false);
+    expect(validTaskView(task({ lastActivityAt: SERVER_TIME + 60 }))).toBe(false);
+    expect(validTaskView(task({ startedAt: SERVER_TIME + 60 }))).toBe(false);
+    expect(validTaskView(task({ startedAt: 0 }))).toBe(false);
+    expect(validTaskView({ ...task(), serverTime: 'now' })).toBe(false);
+    // 排队中的任务还没开始：开始、阶段、步骤都是 null。
+    expect(validTaskView(task({ status: 'queued', stage: null, startedAt: null, stageStartedAt: null,
+      progress: null }))).toBe(true);
+    const old: Record<string, unknown> = { ...task() };
+    for (const key of ['serverTime', 'startedAt', 'finishedAt', 'stageStartedAt', 'lastActivityAt', 'progress']) {
+      delete old[key];
+    }
+    expect(validTaskView(old)).toBe(true);
   });
 });
 

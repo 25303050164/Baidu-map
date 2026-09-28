@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CheckupController } from './controller';
 import { CheckupError, DETAIL_BUDGET_EXHAUSTED, type CheckupService } from './client';
 import { STAGE_LABELS, isCheckupBusy, isStageReached, type CheckupHandle } from './types';
-import { CENTER, capabilities, layer, route, snapshot, task } from './fixtures';
+import { CENTER, SERVER_TIME, capabilities, layer, route, snapshot, task } from './fixtures';
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView } from './contract';
 
 const input = { center: CENTER, engine: 'baidu_e82', budget: 200 };
@@ -285,6 +285,60 @@ describe('checkup task lifetime', () => {
     expect(controller.state.phase).toBe('completed');
     expect(controller.state.connection).toBeUndefined();
     expect(api.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('remembers when it last got through, and counts failed reconnects until the next answer', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    const api = service();
+    const offline = new CheckupError('无法连接', 0, 'network');
+    vi.mocked(api.status)
+      .mockResolvedValueOnce(task({ status: 'running', serverTime: SERVER_TIME }))
+      .mockRejectedValueOnce(offline)
+      .mockRejectedValueOnce(offline)
+      .mockResolvedValueOnce(task({ status: 'running', serverTime: SERVER_TIME + 4 }))
+      .mockResolvedValue(task({ status: 'completed', stage: 'ready', revision: 5 }));
+    const controller = new CheckupController(api, () => {});
+    const run = controller.start(input);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.state.contact).toEqual({ at: 10_000, serverTime: SERVER_TIME });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(controller.state.reconnect).toEqual({ since: 11_000, attempts: 1 });
+    // 第二次失败：从何时起不变，次数加一；最近一次成功联系也不变。
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(controller.state.reconnect).toEqual({ since: 11_000, attempts: 2 });
+    expect(controller.state.contact).toEqual({ at: 10_000, serverTime: SERVER_TIME });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(controller.state.connection).toBeUndefined();
+    expect(controller.state.reconnect).toBeUndefined();
+    expect(controller.state.contact).toEqual({ at: 14_000, serverTime: SERVER_TIME + 4 });
+    await vi.advanceTimersByTimeAsync(1000);
+    await run;
+    expect(controller.state.phase).toBe('completed');
+    expect(api.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts counting a new outage afresh instead of carrying the last one over', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    const api = service();
+    const offline = new CheckupError('无法连接', 0, 'network');
+    vi.mocked(api.status)
+      .mockRejectedValueOnce(offline)
+      .mockResolvedValueOnce(task({ status: 'running' }))
+      .mockRejectedValueOnce(offline)
+      .mockResolvedValue(task({ status: 'completed', stage: 'ready', revision: 5 }));
+    const controller = new CheckupController(api, () => {});
+    const run = controller.start(input);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.state.reconnect).toEqual({ since: 10_000, attempts: 1 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(controller.state.reconnect).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(controller.state.reconnect).toEqual({ since: 12_000, attempts: 1 });
+    await vi.advanceTimersByTimeAsync(1000);
+    await run;
+    expect(controller.state.phase).toBe('completed');
   });
 
   it('holds a cancel made while the create is in flight and sends it once the id arrives', async () => {

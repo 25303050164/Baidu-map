@@ -33,7 +33,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     started_at REAL,
     finished_at REAL,
     cancel_requested INTEGER NOT NULL DEFAULT 0,
-    error TEXT
+    error TEXT,
+    stage_started_at REAL,
+    activity_at REAL,
+    progress TEXT
 );
 CREATE TABLE IF NOT EXISTS revisions (
     task_id TEXT NOT NULL,
@@ -45,6 +48,15 @@ CREATE TABLE IF NOT EXISTS revisions (
     PRIMARY KEY (task_id, revision)
 );
 """
+#: Columns added after the first release, with their declarations. A store
+#: created before them is migrated in place; existing rows read them as NULL,
+#: which the view reports as "not recorded" rather than inventing a time.
+ADDED_COLUMNS = (("stage_started_at", "REAL"), ("activity_at", "REAL"), ("progress", "TEXT"))
+#: What ``update`` may write. ``progress`` is the worker's in-stage step (a JSON
+#: object); ``stage_started_at`` and ``activity_at`` are maintained here, never
+#: passed in.
+UPDATABLE = frozenset({"status", "stage", "business_status", "requests", "network_requests",
+                       "started_at", "finished_at", "cancel_requested", "error", "progress"})
 
 
 class RequestIdConflict(Exception):
@@ -75,6 +87,13 @@ class TaskRecord:
     finished_at: float | None
     cancel_requested: bool
     error: str | None
+    #: When the current stage began, on the same wall clock as ``started_at``.
+    stage_started_at: float | None = None
+    #: The last time the worker wrote anything about this task: a counter, a step,
+    #: a revision or a state change. A client's cancel request is not activity.
+    activity_at: float | None = None
+    #: The worker's current in-stage step, as written; None before the first one.
+    progress: dict | None = None
 
 
 def _record(row) -> TaskRecord:
@@ -85,7 +104,9 @@ def _record(row) -> TaskRecord:
         budget=row["budget"], requests=row["requests"], network_requests=row["network_requests"],
         created_at=row["created_at"], updated_at=row["updated_at"], started_at=row["started_at"],
         finished_at=row["finished_at"], cancel_requested=bool(row["cancel_requested"]),
-        error=row["error"])
+        error=row["error"], stage_started_at=row["stage_started_at"],
+        activity_at=row["activity_at"],
+        progress=None if row["progress"] is None else json.loads(row["progress"]))
 
 
 class CheckupStore:
@@ -114,9 +135,13 @@ class CheckupStore:
         return self.interrupt_unfinished()
 
     def create_schema(self) -> None:
-        """Create the tables. Runs anywhere, changes no task's state."""
+        """Create the tables and add any later column. Changes no task's state."""
         with self._connection() as connection:
             connection.executescript(SCHEMA)
+            present = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
+            for name, declaration in ADDED_COLUMNS:
+                if name not in present:
+                    connection.execute(f"ALTER TABLE tasks ADD COLUMN {name} {declaration}")
 
     def interrupt_unfinished(self) -> int:
         """Fail every queued/running/cancelling task as ``interrupted_by_restart``.
@@ -192,26 +217,46 @@ class CheckupStore:
 
     def claim(self, task_id: str) -> bool:
         """Move queued -> running exactly once, so two workers cannot both start it."""
+        now = time.time()
         with self._connection() as connection:
             cursor = connection.execute(
-                "UPDATE tasks SET status='running', stage='isochrone', started_at=?, updated_at=?"
-                " WHERE task_id=? AND status='queued'", (time.time(), time.time(), task_id))
+                "UPDATE tasks SET status='running', stage='isochrone', started_at=?,"
+                " stage_started_at=?, activity_at=?, progress=NULL, updated_at=?"
+                " WHERE task_id=? AND status='queued'", (now, now, now, now, task_id))
             return cursor.rowcount == 1
 
-    def update(self, task_id: str, **fields) -> TaskRecord:
-        allowed = {"status", "stage", "business_status", "requests", "network_requests",
-                   "started_at", "finished_at", "cancel_requested", "error"}
-        unknown = set(fields) - allowed
+    def update(self, task_id: str, *, activity: bool = True, **fields) -> TaskRecord:
+        """Write the named fields; a stage that changes restarts its clock and step.
+
+        ``activity`` is False for writes that are not the worker's doing -- a
+        client asking to cancel -- so "the server last did something at" stays
+        a statement about the computation, not about who called in.
+        """
+        unknown = set(fields) - UPDATABLE
         if unknown:
             raise ValueError(f"unknown task fields: {sorted(unknown)}")
         if not fields:
             return self._get(task_id)
-        assignments = ", ".join(f"{name}=?" for name in fields)
+        now = time.time()
+        if "progress" in fields and fields["progress"] is not None:
+            fields["progress"] = json.dumps(fields["progress"], ensure_ascii=False, sort_keys=True)
+        assignments = [f"{name}=?" for name in fields]
         values = [int(value) if isinstance(value, bool) else value for value in fields.values()]
+        if "stage" in fields:
+            # SQLite evaluates every right-hand side against the old row, so the
+            # comparison below sees the stage being left, not the one written.
+            assignments.append("stage_started_at=CASE WHEN stage IS ? THEN stage_started_at ELSE ? END")
+            values += [fields["stage"], now]
+            if "progress" not in fields:
+                assignments.append("progress=CASE WHEN stage IS ? THEN progress ELSE NULL END")
+                values.append(fields["stage"])
+        if activity:
+            assignments.append("activity_at=?")
+            values.append(now)
         with self._connection() as connection:
             connection.execute(
-                f"UPDATE tasks SET {assignments}, updated_at=? WHERE task_id=?",
-                (*values, time.time(), task_id))
+                f"UPDATE tasks SET {', '.join(assignments)}, updated_at=? WHERE task_id=?",
+                (*values, now, task_id))
         return self._get(task_id)
 
     def publish(self, task_id: str, *, stage: str, snapshot: dict, result_hash: str) -> int:
@@ -226,8 +271,11 @@ class CheckupStore:
                 "INSERT INTO revisions (task_id, revision, stage, created_at, result_hash, payload)"
                 " VALUES (?,?,?,?,?,?)",
                 (task_id, revision, stage, time.time(), result_hash, str(relative.as_posix())))
-            connection.execute("UPDATE tasks SET revision=?, stage=?, updated_at=? WHERE task_id=?",
-                               (revision, stage, time.time(), task_id))
+            now = time.time()
+            connection.execute(
+                "UPDATE tasks SET revision=?, stage=?, updated_at=?, activity_at=?,"
+                " stage_started_at=CASE WHEN stage IS ? THEN stage_started_at ELSE ? END"
+                " WHERE task_id=?", (revision, stage, now, now, stage, now, task_id))
             connection.execute("COMMIT")
         return revision
 

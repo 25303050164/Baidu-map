@@ -1,7 +1,6 @@
 """Versioned, spatially indexed water constraints, independent of route labels."""
 from dataclasses import dataclass, field
 from functools import lru_cache
-import json
 import math
 import re
 from pathlib import Path
@@ -11,6 +10,7 @@ from shapely.geometry import MultiPolygon, Point, LineString, shape, mapping
 from shapely.ops import transform, unary_union, linemerge
 from shapely.strtree import STRtree
 
+from ... import bulk_load
 from ...geo.projection import MetricProjection
 from .polygon_builder import multipolygon
 from .water_review import load_reviews, rejected_extent
@@ -189,7 +189,8 @@ class ObstacleIndex:
 
 @lru_cache(maxsize=2)
 def _cached_index(path, mtime_ns, size, crs, version):
-    return ObstacleIndex(json.loads(Path(path).read_text(encoding='utf-8')), MetricProjection(crs), version)
+    with bulk_load.long_lived():
+        return ObstacleIndex(bulk_load.loads(Path(path).read_text(encoding='utf-8')), MetricProjection(crs), version)
 
 
 def load_obstacles(path, projection, version, extent, reviews_dir=None):

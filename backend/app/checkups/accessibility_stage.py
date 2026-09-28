@@ -293,7 +293,7 @@ def evaluated_majors(majors, facilities, *, query_complete: bool) -> tuple[str, 
 
 
 def evaluate_category(major: str, facilities, *, store, views, domain, rule, query_complete,
-                      obstacles: _Obstacles, attachments=None) -> CategoryEvaluation:
+                      obstacles: _Obstacles, attachments=None, on_cell=None) -> CategoryEvaluation:
     """一个类别的完整评估：入口 → 服务场 → 网格 → 面积 → 灰区输入与热力点。
 
     ``query_complete`` 为假时 :func:`category_service` 永远不会给出 gap —— 检索没跑完
@@ -317,6 +317,8 @@ def evaluate_category(major: str, facilities, *, store, views, domain, rule, que
     def evaluate(cell, samples):
         assessment = field.assess(cell, samples)
         assessed[cell.id] = assessment
+        if on_cell is not None:
+            on_cell(len(assessed))
         return field.decide(cell, samples, assessment)
 
     try:
@@ -482,7 +484,7 @@ def _status_of(evaluated, query_complete: bool, obstacles_available: bool,
 
 def assess_accessibility(*, geometry, facilities, query_status: str, majors, store,
                          version: str, coverage=None, unknown_region=None, obstacles=None,
-                         rule=DISTANCE_RULE, settings=None) -> AccessibilityOutcome:
+                         rule=DISTANCE_RULE, settings=None, progress=None) -> AccessibilityOutcome:
     """跑完可达性阶段（§5–§7.1）。
 
     ``store`` 为 None 表示没有 OSM 图，``facilities`` 为 None 表示设施阶段没有建立
@@ -491,7 +493,12 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
 
     这是同步的 CPU 密集工作（整城图上的多源最短路 + 上千格的吸附），调用方应放进线程，
     不要占住事件循环。
+
+    ``progress(step, **detail)`` 在每一步开始时被调用（``domain``、``views``、
+    ``obstacles``、每个类别的 ``category``），类别内每判定一格再报一次已判定的格数；
+    它只报已经发生的事，不预估还剩多少。
     """
+    report = progress or (lambda step, **detail: None)
     requested = tuple(major for major in catalog.majors() if major in set(majors))
     # ``query_status`` 用的是修订文档里 ``facilitiesStatus`` 的口径（complete/partial/
     # failed），不是检索器内部的 queryStatus 拼写。两者只差一个词尾，混用不会报错，
@@ -507,6 +514,7 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
         return _refusal(QUERY_INCOMPLETE, requested,
                         "设施检索未完成且没有取到任何可用设施，服务覆盖未评估。",
                         status="partial")
+    report("domain")
     try:
         domain, exclusions = assessment_domain(geometry, projection=store.projection,
                                               coverage=coverage)
@@ -517,14 +525,23 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
         return _refusal(DOMAIN_TOO_LARGE, majors_used,
                         "评估域超过网格上限，服务覆盖未评估；请缩小分析范围后重试。")
     domain_area_m2 = domain.area
+    report("views")
     views = build_views(store.graph, version=version)
+    report("obstacles")
     obstacles = _Obstacles(obstacles if obstacles is not None
                            else (local_obstacles(settings, store.projection, domain)
                                  if settings is not None else None))
+    # 接入索引覆盖整张路网，比载入障碍层慢得多：单列一步，免得"载入障碍"背上它的时长。
+    report("attachments")
     attachments = PointAttachments(store)
-    evaluated = [evaluate_category(
-        major, facilities, store=store, views=views, domain=domain, rule=rule,
-        query_complete=query_complete, obstacles=obstacles, attachments=attachments) for major in majors_used]
+    evaluated = []
+    for index, major in enumerate(majors_used, start=1):
+        detail = dict(major=major, index=index, total=len(majors_used))
+        report("category", cells=0, **detail)
+        evaluated.append(evaluate_category(
+            major, facilities, store=store, views=views, domain=domain, rule=rule,
+            query_complete=query_complete, obstacles=obstacles, attachments=attachments,
+            on_cell=lambda cells, detail=detail: report("category", cells=cells, **detail)))
     issues = []
     for item in evaluated:
         if item.supported and not _areas_match(item.areas, domain_area_m2):

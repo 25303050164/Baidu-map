@@ -61,10 +61,17 @@ class EngineContext:
     deadline: float
     artifact_dir: Path | None = None
     on_progress: Callable[[ProgressSnapshot], None] | None = None
+    #: A step that is no attempt against the tier (loading, preparing), with
+    #: what it counts, if anything: ``on_step(step, count=..., limit=...)``.
+    on_step: Callable[..., None] | None = None
 
     def progress(self, snapshot: ProgressSnapshot) -> None:
         if self.on_progress is not None:
             self.on_progress(snapshot)
+
+    def step(self, step: str, count: int | None = None, limit: int | None = None) -> None:
+        if self.on_step is not None:
+            self.on_step(step, count=count, limit=limit)
 
 
 class IsochroneSnapshot(EngineModel):

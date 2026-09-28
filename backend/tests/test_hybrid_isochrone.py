@@ -280,6 +280,44 @@ async def test_river_bridge_obstacle_and_open_topology(tmp_path):
     assert result["requests_used"] <= 120
 
 
+@pytest.mark.anyio
+async def test_compute_leaves_the_event_loop_free_between_samples(tmp_path):
+    """The engine shares its event loop with every status poll the server answers.
+
+    A provider that answers without any I/O (an offline stand-in, a stored-evidence
+    replay) must not turn the run into one long blocking call: the ledger is written
+    and the geometry rebuilt off the loop, and each query yields once.
+    """
+    import time
+    p = MetricProjection(32651)
+    provider = MockProvider(p, lambda x, y: math.hypot(x, y) * 1.1)
+    config = HybridConfig(max_baidu_requests=80, initial_direction_count=8)
+    engine = HybridIsochroneProvider(p, provider, FastGate())
+    gaps, done = [], asyncio.Event()
+
+    async def heartbeat():
+        last = time.perf_counter()
+        while not done.is_set():
+            await asyncio.sleep(.01)
+            now = time.perf_counter()
+            gaps.append(now - last)
+            last = now
+
+    beat = asyncio.create_task(heartbeat())
+    started = time.perf_counter()
+    result = await engine.compute(ORIGIN, config, ledger_path=tmp_path / "ledger.json")
+    elapsed = time.perf_counter() - started
+    done.set()
+    await beat
+    assert result["requests_used"] > 40
+    assert json.loads((tmp_path / "ledger.json").read_text())["requests_used"] == result["requests_used"]
+    # Before the rebuilds and ledger writes left the loop, the heartbeat did not
+    # get a single turn until the run was over. Now it ticks throughout; the
+    # longest gap is a few hundredths of a second in a run of about two.
+    assert gaps and max(gaps) < elapsed / 4, (max(gaps, default=None), elapsed)
+    assert len(gaps) > elapsed / .1
+
+
 def test_async_geometry_api_no_facilities(tmp_path, monkeypatch):
     import time
     from fastapi.testclient import TestClient
@@ -308,11 +346,14 @@ def test_async_geometry_api_no_facilities(tmp_path, monkeypatch):
         assert response.status_code == 202
         task = response.json()["taskId"]
         assert client.post(prefix, json=body).json()["taskId"] == task
-        for _ in range(100):
+        # The status endpoint answers while the run is still computing, so wait
+        # on the clock rather than on a number of polls.
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
             status = client.get(f"{prefix}/{task}").json()
             if status["status"] in ("completed", "failed"):
                 break
-            time.sleep(.01)
+            time.sleep(.05)
         assert status["status"] == "completed", status
         result = client.get(f"{prefix}/{task}/result")
         assert result.status_code == 200

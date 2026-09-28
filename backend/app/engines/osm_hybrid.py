@@ -16,7 +16,10 @@ from ..algorithms.hybrid_isochrone.cache import ReplayProvider
 from ..algorithms.hybrid_isochrone.extent import ALGORITHM_VERSION, computation_extent
 from ..algorithms.hybrid_isochrone.hard_obstacles import load_obstacles
 from ..algorithms.hybrid_isochrone.osm_guidance import OsmGuidance
+from ..algorithms.osm_offline.lazy import resolve
 from ..geo.projection import MetricProjection
+from life_circle.models import ProgressSnapshot
+
 from .protocol import EngineCapabilities, EngineContext, IsochroneAsk, IsochroneSnapshot
 
 # The Hybrid core caps generation at 400 attempts; the checkup offers no more.
@@ -45,15 +48,22 @@ class OsmHybridEngine:
         qps = self.settings.analysis_qps or DEFAULT_QPS
         return HybridConfig(max_baidu_requests=budget, request_qps=max(1.0, min(20.0, qps)))
 
-    async def _prepare(self, origin, config):
-        """Resolve graph, guidance and obstacles; report what is missing."""
-        resolved = await asyncio.to_thread(self.offline.get)
+    async def _prepare(self, origin, config, step=lambda name, count=None, limit=None: None):
+        """Resolve graph, guidance and obstacles; report what is missing.
+
+        ``step`` is told as each of the three begins: none sends a request, and
+        the first load of the city graph takes minutes, told as it goes.
+        """
+        step("graph")
+        resolved = await resolve(self.offline, step)
         store, coverage = resolved.store, resolved.coverage
         projection = store.projection if store else MetricProjection(self.settings.osm_metric_crs)
+        step("guidance")
         guidance = await asyncio.to_thread(
             OsmGuidance, store, projection.origin(origin), config,
             risk_path=self.settings.hybrid_risk_path, speed=self.settings.walk_speed_mps)
         extent = computation_extent(projection.origin(origin), config)
+        step("obstacles")
         obstacles = await asyncio.to_thread(
             load_obstacles, self.settings.hybrid_obstacle_path, projection,
             self.settings.osm_data_version, extent, getattr(self.settings, "water_review_dir", None))
@@ -82,8 +92,17 @@ class OsmHybridEngine:
         """
         config = HybridConfig(**replay["config"]) if replay is not None else self._config(ask.budget)
         started = time.perf_counter()
+        budget = config.max_baidu_requests
+        # What the engine reports while it runs: the preparation steps (none an
+        # attempt), then one tick per sample with the attempts so far and how
+        # many of them left the process.
+        network = False
+
+        def report(stage, used=0):
+            context.progress(ProgressSnapshot(stage, used, used if network else 0, budget,
+                                              time.perf_counter() - started))
         projection, guidance, obstacles, ready, readiness_warnings = await self._prepare(
-            ask.origin, config)
+            ask.origin, config, context.step)
         if context.token.cancelled:
             raise asyncio.CancelledError()
         # A replay writes no ledger: the stored one stays the audit record of what was paid.
@@ -92,7 +111,8 @@ class OsmHybridEngine:
         if replay is not None:
             provider = ReplayProvider(replay)
             engine = HybridIsochroneProvider(projection, provider, self.gate, guidance,
-                                             obstacles=obstacles)
+                                             obstacles=obstacles,
+                                             progress=lambda used, sample: report("sampling", used))
             result = await engine.compute(ask.origin, config, token=context.token,
                                           seed_ledger=replay)
             # Every sample was restored, none continued: say "rebuilt from stored
@@ -104,9 +124,12 @@ class OsmHybridEngine:
             provider = (self.provider_factory(projection, config) if self.provider_factory
                         else StrictBaiduProvider(self.settings.baidu_map_ak.get_secret_value(),
                                                  projection, config))
+            network = bool(getattr(provider, "network", False))
+            report("sampling")
             async with provider:
                 engine = HybridIsochroneProvider(projection, provider, self.gate, guidance,
-                                                 obstacles=obstacles)
+                                                 obstacles=obstacles,
+                                                 progress=lambda used, sample: report("sampling", used))
                 result = await engine.compute(ask.origin, config, ledger_path=ledger_path,
                                               token=context.token)
         warnings = sorted(set(result["warnings"] + readiness_warnings))

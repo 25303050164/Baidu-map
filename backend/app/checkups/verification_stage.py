@@ -143,11 +143,14 @@ def candidate_order(facilities, *, majors, zones, entrances, origin, projection=
 
 
 async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, session, origin,
-                            projection=None) -> VerificationOutcome:
+                            projection=None, progress=None) -> VerificationOutcome:
     """跑完核验阶段。``session`` 为 None 表示这个部署没有路线服务。
 
     ``session`` 一次调用就是一个候选的全部尝试（含重试），每条尝试各扣一次 ``route``
     桶；这里不自己数次数，只读它报回来的尝试量，避免两处计数对不上。
+
+    ``progress(done, candidates, attempts)`` 在第一家之前和每问完一家之后各报一次：
+    已问过几家、候选共几家、路线尝试累计几次。
     """
     if session is None:
         return refusal(NO_TRANSPORT)
@@ -163,8 +166,12 @@ async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, se
                 notes=['本次检索没有落在直线 1200 米内的设施，核验阶段没有可核验的对象。']),
             status='partial')
     records, flags, failures, unresolved = [], [], 0, 0
-    for item in candidates:
+    if progress is not None:
+        progress(0, len(candidates), session.attempts)
+    for asked, item in enumerate(candidates, start=1):
         observation = await session(item['facilityId'], origin, item['location'])
+        if progress is not None:
+            progress(asked, len(candidates), session.attempts)
         if observation is None:
             # 池子用尽或撞上停止类原因：剩下的候选没有结论，不是"走不通"。
             break

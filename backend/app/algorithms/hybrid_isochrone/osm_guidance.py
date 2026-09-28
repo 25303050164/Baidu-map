@@ -1,5 +1,4 @@
 """Advisory topology, never an authorization to reject a Baidu label."""
-import json
 import math
 from functools import lru_cache
 from pathlib import Path
@@ -10,22 +9,24 @@ from shapely.strtree import STRtree
 
 from ..osm_offline.routing import cutoff_dijkstra
 from ..osm_offline.snap import nearest_edge_source
+from ... import bulk_load
 from ...geo.projection import MetricProjection
 from .extent import computation_extent, contains
 
 
 @lru_cache(maxsize=2)
 def risk_index(path, mtime_ns, size, crs, version):
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if payload.get("osm_data_version") != version:
-        raise ValueError("risk_version_mismatch")
-    projection = MetricProjection(crs)
-    features = []
-    for feature in payload["features"]:
-        g = transform(projection.forward.transform, shape(feature["geometry"]))
-        if g.is_valid and not g.is_empty:
-            features.append((g, feature["properties"]["risk_kind"]))
-    return tuple(features), STRtree([g for g, _ in features])
+    with bulk_load.long_lived():
+        payload = bulk_load.loads(Path(path).read_text(encoding="utf-8"))
+        if payload.get("osm_data_version") != version:
+            raise ValueError("risk_version_mismatch")
+        projection = MetricProjection(crs)
+        features = []
+        for feature in payload["features"]:
+            g = transform(projection.forward.transform, shape(feature["geometry"]))
+            if g.is_valid and not g.is_empty:
+                features.append((g, feature["properties"]["risk_kind"]))
+        return tuple(features), STRtree([g for g, _ in features])
 
 
 class OsmGuidance:

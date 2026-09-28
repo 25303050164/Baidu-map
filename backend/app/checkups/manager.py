@@ -25,6 +25,7 @@ from uuid import uuid4
 from life_circle.coordinates import LocalProjection, normalize
 from life_circle.models import CancelToken
 
+from ..algorithms.osm_offline.lazy import resolve
 from ..cache import KeyedCache
 from ..catalog import major_of
 from ..contracts import Issue, Origin
@@ -35,7 +36,8 @@ from .accessibility_stage import AccessibilityOutcome, assess_accessibility
 from .facilities import FacilityOutcome, collect_facilities, stale_for
 from .models import (DETAIL_ROUTE_REQUESTS, DISTANCE_RULE, RULE_VERSION, TERMINAL, CheckupRequest,
                      CheckupSnapshot, CheckupTaskView, EngineRef, FacilityGroup, FacilityRoute,
-                     ReportEvidence, ScopeEvidence, new_trace)
+                     ReportEvidence, ScopeEvidence, TaskProgress, new_trace)
+from .progress import StepReporter, category_label
 from .reporting_stage import build_report
 from .routes import DETAIL_POOL, RoutesUnavailable, open_online as open_routes
 from .store import CheckupStore, RequestIdConflict, TaskNotFound
@@ -150,6 +152,23 @@ def _point(value) -> Origin | None:
     return Origin(lng=lng, lat=lat)
 
 
+def _assessment_progress(report):
+    """Translate the assessment's own step callbacks into stored progress.
+
+    The assessment runs in a worker thread; the store opens its own connection
+    per write, so writing from there is safe. Cell ticks are throttled by the
+    reporter; every step change is written at once.
+    """
+    def progress(step: str, *, major: str | None = None, index: int | None = None,
+                 total: int | None = None, cells: int | None = None) -> None:
+        if step == "category":
+            report("category", key=major, count=cells, label=category_label(major, index, total),
+                   throttle=bool(cells))
+        else:
+            report(step)
+    return progress
+
+
 class CheckupManager:
     def __init__(self, settings, registry, store: CheckupStore, quota, place_factory=None,
                  route_factory=None, offline=None):
@@ -249,11 +268,19 @@ class CheckupManager:
         # 这一趟的桶和点击详情用的是同一个对象，所以"一个任务 20 次详情"是共享的一个
         # 额度，而不是各记一本账。
         self._remember_budget(task_id, budget)
+        # Every write of an in-stage step goes through this one reporter, so the
+        # step's own clock survives the counter ticks that follow it.
+        report = StepReporter(lambda **fields: self.store.update(task_id, **fields))
         context = EngineContext(
             task_id=task_id, token=token, deadline=time.monotonic() + DEADLINE_SECONDS,
             artifact_dir=self.store.artifact_dir(task_id),
-            on_progress=lambda snapshot: self.store.update(
-                task_id, requests=snapshot.requests, network_requests=snapshot.network_requests))
+            # The engine names its own sub-stage; the counts are its attempts
+            # against the tier and what of them actually went to the network.
+            on_progress=lambda snapshot: report(
+                snapshot.stage, count=snapshot.requests, limit=snapshot.budget,
+                requests=snapshot.requests, network_requests=snapshot.network_requests),
+            # Its preparation counts edges or nothing: the task counters stay as they are.
+            on_step=report)
         try:
             snapshot = await self.registry.get(record.engine).compute(
                 IsochroneAsk(origin=origin, budget=record.budget), context)
@@ -270,31 +297,42 @@ class CheckupManager:
             self._finish(task_id, status="cancelled",
                          business_status=business_status_for(snapshot.quality, "not_integrated"))
             return
-        # The stage lasts as long as its queries do, and the task counters are
-        # only written when it finishes; the interface keeps reading the
-        # boundary's own counts until then rather than a fabricated interim one.
+        # The stage lasts as long as its queries do. The task counters follow the
+        # pool as each attempt is reserved -- the boundary's own network count
+        # plus what this stage has sent so far -- and the publish below writes
+        # the stage's final account over them.
         self.store.update(task_id, stage="poi")
+        boundary_network = snapshot.network_requests
         outcome = await collect_facilities(
             payload, snapshot, settings=self.settings, context=context, quota=self.quota,
-            budget=budget, cache=self.cache, places_factory=self.place_factory)
+            budget=budget, cache=self.cache, places_factory=self.place_factory,
+            progress=lambda sent, limit: report(
+                "places", count=sent, limit=limit, requests=boundary_network + sent,
+                network_requests=boundary_network + sent))
         business = self._publish_facilities(task_id, payload, snapshot, budget, outcome)
         if token.cancelled:
             self._finish(task_id, status="cancelled", business_status=business)
             return
-        assessment = await self._publish_accessibility(task_id, payload, snapshot, budget, outcome)
+        assessment = await self._publish_accessibility(task_id, payload, snapshot, budget, outcome,
+                                                       report=report)
         if token.cancelled:
             self._finish(task_id, status="cancelled", business_status=business)
             return
         # §6.3 verification asks for real routes before the report is assembled,
         # so the report can say what was verified and what stayed model-only.
         verification = await self._publish_verification(
-            task_id, payload, snapshot, budget, outcome, assessment, deadline=context.deadline)
+            task_id, payload, snapshot, budget, outcome, assessment, deadline=context.deadline,
+            report=report)
         if token.cancelled:
             self._finish(task_id, status="cancelled", business_status=business)
             return
         # §7.2 reporting repeats the assessment rather than recomputing it.
-        business = self._publish_reporting(task_id, payload, snapshot, budget, outcome, assessment,
-                                           verification)
+        self.store.update(task_id, stage="reporting")
+        report("report")
+        # Assembling and writing the report takes a second or more; off the event
+        # loop, so status polls are answered meanwhile.
+        business = await asyncio.to_thread(self._publish_reporting, task_id, payload, snapshot, budget,
+                                           outcome, assessment, verification)
         self._finish(task_id, status="completed", business_status=business)
         self.store.update(task_id, stage="ready")
 
@@ -467,7 +505,8 @@ class CheckupManager:
                 "report": report, "water": assessment.water}
 
     async def _publish_accessibility(self, task_id: str, payload: CheckupRequest, snapshot,
-                                     budget, outcome: FacilityOutcome) -> AccessibilityOutcome:
+                                     budget, outcome: FacilityOutcome, *,
+                                     report=None) -> AccessibilityOutcome:
         """Run and freeze the accessibility assessment (§5–§7.1).
 
         The graph it needs is the deployment's OSM store, not the engine's: a
@@ -479,7 +518,9 @@ class CheckupManager:
         self.store.update(task_id, stage="accessibility")
         group = (None if outcome.group is None
                  else outcome.group.model_dump(mode="json", by_alias=True))
-        resolved = await self._resolve_offline()
+        if report is not None and self.offline is not None:
+            report("graph")
+        resolved = await self._resolve_offline(report)
         assessment = await asyncio.to_thread(
             assess_accessibility, geometry=snapshot.geometry,
             unknown_region=snapshot.unknown_region,
@@ -487,7 +528,8 @@ class CheckupManager:
             query_status=outcome.status, majors=tuple(payload.facilities.categories),
             store=None if resolved is None else resolved.store,
             coverage=None if resolved is None else resolved.coverage,
-            version=self.settings.osm_data_version, settings=self.settings)
+            version=self.settings.osm_data_version, settings=self.settings,
+            progress=None if report is None else _assessment_progress(report))
         objects = self._analysis_objects(assessment)
         revision = self.store.get(task_id).revision + 1
         isochrone = snapshot.model_dump(mode="json", by_alias=True)
@@ -509,7 +551,7 @@ class CheckupManager:
 
     async def _publish_verification(self, task_id: str, payload: CheckupRequest, snapshot, budget,
                                     outcome: FacilityOutcome, assessment: AccessibilityOutcome,
-                                    *, deadline: float) -> VerificationOutcome:
+                                    *, deadline: float, report=None) -> VerificationOutcome:
         """Run and freeze the route verification (§6.3).
 
         A deployment without a walking-route service publishes the same revision
@@ -520,6 +562,11 @@ class CheckupManager:
         re-verdicts a whole cell.
         """
         self.store.update(task_id, stage="verification")
+        before = self.store.get(task_id)
+        progress = None if report is None else (
+            lambda done, candidates, attempts: report(
+                "routes", count=done, limit=candidates, requests=before.requests + attempts,
+                network_requests=before.network_requests + attempts))
         heatmap = (None if assessment.heatmap is None
                    else assessment.heatmap.model_dump(mode="json", by_alias=True))
         gaps = (None if assessment.service_gaps is None else assessment.service_gaps.zones)
@@ -542,13 +589,14 @@ class CheckupManager:
                                                      for zone in gaps],
                     heatmap=heatmap, entrances=assessment.entrances,
                     origin=normalize((payload.center.lng, payload.center.lat)),
-                    session=routes.session(self.quota.direction, budget=budget, deadline=deadline))
+                    session=routes.session(self.quota.direction, budget=budget, deadline=deadline),
+                    progress=progress)
         self._freeze_verification(task_id, payload, snapshot, budget, outcome, assessment, result)
         # 核验阶段发的是真实路线请求，所以它也计入任务自己的请求数 —— 任务视图说
-        # "本次体检发出了多少请求"，少算这一阶段就等于少报了一百多次调用。
-        current = self.store.get(task_id)
-        self.store.update(task_id, requests=current.requests + result.network_requests,
-                          network_requests=current.network_requests + result.network_requests)
+        # "本次体检发出了多少请求"，少算这一阶段就等于少报了一百多次调用。运行中的
+        # 计数已经随每家候选写过，这里按阶段开始时的底数写定终值，不会重复累加。
+        self.store.update(task_id, requests=before.requests + result.network_requests,
+                          network_requests=before.network_requests + result.network_requests)
         return result
 
     def _freeze_verification(self, task_id: str, payload: CheckupRequest, snapshot, budget,
@@ -700,12 +748,16 @@ class CheckupManager:
         self.store.update(task_id, stage="ready", business_status=business)
         return published
 
-    async def _resolve_offline(self):
-        """Resolve the walking graph off the event loop; None when there is none."""
+    async def _resolve_offline(self, report=None):
+        """Resolve the walking graph off the event loop; None when there is none.
+
+        A load in progress is told to ``report`` step by step, its edges counted.
+        """
         if self.offline is None:
             return None
         try:
-            return await asyncio.to_thread(self.offline.get)
+            return await resolve(self.offline, None if report is None else (
+                lambda step, done, total: report(step, count=done, limit=total)))
         except Exception:
             # A graph that fails to load is the same answer as a deployment that
             # has none: the assessment says why, and the rest of the revision
@@ -829,10 +881,13 @@ class CheckupManager:
         return CheckupSnapshot(**stored["snapshot"]), stored
 
     def view(self, record) -> CheckupTaskView:
+        # Every stored time is the wall clock (``time.time()``); a running task
+        # is measured against the same clock, never a monotonic one.
+        now = time.time()
         if record.started_at is None:
             elapsed = 0.0
         else:
-            end = record.finished_at if record.finished_at is not None else time.monotonic()
+            end = record.finished_at if record.finished_at is not None else now
             elapsed = max(0.0, end - record.started_at)
         return CheckupTaskView(
             task_id=record.task_id, client_request_id=record.client_request_id,
@@ -841,7 +896,10 @@ class CheckupManager:
             revision=record.revision, budget=record.budget, requests=record.requests,
             network_requests=record.network_requests, elapsed_seconds=elapsed,
             created_at=record.created_at, cancel_requested=record.cancel_requested,
-            error=record.error)
+            error=record.error, server_time=now, started_at=record.started_at,
+            finished_at=record.finished_at, stage_started_at=record.stage_started_at,
+            last_activity_at=record.activity_at,
+            progress=None if record.progress is None else TaskProgress(**record.progress))
 
     def get(self, task_id: str):
         try:
@@ -860,11 +918,13 @@ class CheckupManager:
         record = self.get(task_id)
         if record.status in TERMINAL:
             return self.view(record), False
-        self.store.update(task_id, cancel_requested=True)
+        # The request is the client's, not the worker's: it does not count as
+        # server activity. A queued task is closed here, which is its last event.
+        self.store.update(task_id, cancel_requested=True, activity=False)
         if record.status == "queued":
             self.store.update(task_id, status="cancelled", finished_at=time.time())
         else:
-            self.store.update(task_id, status="cancelling")
+            self.store.update(task_id, status="cancelling", activity=False)
             token = self.tokens.get(task_id)
             if token is not None:
                 token.cancel()

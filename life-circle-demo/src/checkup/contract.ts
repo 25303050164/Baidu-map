@@ -24,6 +24,15 @@ export type CheckupRequest = {
   facilities?: CheckupFacilities;
 };
 
+export type TaskProgress = {
+  step: string;
+  label: string;
+  count: number | null;
+  limit: number | null;
+  unit: string | null;
+  since: number;
+};
+
 export type CheckupTaskView = {
   taskId: string;
   clientRequestId: string;
@@ -39,6 +48,12 @@ export type CheckupTaskView = {
   createdAt: number;
   cancelRequested: boolean;
   error: string | null;
+  serverTime: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  stageStartedAt: number | null;
+  lastActivityAt: number | null;
+  progress: TaskProgress | null;
 };
 
 export type AccessibilityEvidence = {

@@ -462,6 +462,23 @@ class CheckupSnapshot(CheckupModel):
     warnings: list[Issue] = Field(default_factory=list)
 
 
+class TaskProgress(CheckupModel):
+    """The worker's current step inside the stage, as it last wrote it.
+
+    ``count`` is what has actually happened in this step (samples sent, pages
+    requested, cells judged, facilities verified); ``limit`` is a bound the step
+    will not pass (a budget, the candidate list), not a forecast of where it
+    ends. There is deliberately no percentage: most steps stop early.
+    """
+    step: str
+    label: str
+    count: int | None = Field(default=None, ge=0)
+    limit: int | None = Field(default=None, ge=0)
+    unit: str | None = None
+    #: When this step began, on the server's wall clock.
+    since: float
+
+
 class CheckupTaskView(CheckupModel):
     task_id: str
     client_request_id: str
@@ -477,6 +494,18 @@ class CheckupTaskView(CheckupModel):
     created_at: float
     cancel_requested: bool = False
     error: str | None = None
+    #: The server's wall clock when this view was built. Every other time here
+    #: is on the same clock, so a client measures "how long ago" against this
+    #: value plus its own elapsed time since the response, never its own clock.
+    server_time: float
+    started_at: float | None = None
+    finished_at: float | None = None
+    #: When the current stage began; None for a task stored before it was recorded.
+    stage_started_at: float | None = None
+    #: The last time the worker wrote anything about this task (a count, a step,
+    #: a revision, a state change). A cancel request is not the worker's activity.
+    last_activity_at: float | None = None
+    progress: TaskProgress | None = None
 
     def is_terminal(self) -> bool:
         return self.status in TERMINAL

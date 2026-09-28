@@ -17,7 +17,7 @@
  * 它不推导任何结论：设施是否可达、面积属于哪一态，都由后端说，这里只核对它说清了没有。
  */
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityRoute, Origin,
-  ReportEvidence, ServiceZone } from './contract';
+  ReportEvidence, ServiceZone, TaskProgress } from './contract';
 
 type RecordValue = Record<string, unknown>;
 const object = (value: unknown): value is RecordValue =>
@@ -110,6 +110,44 @@ export function readLayerGeometry(layer: CheckupLayer): LayerGeometry | null {
   return { kind: 'none' };
 }
 
+/**
+ * 阶段内的一步。`count` 是这一步已经发生的事，`limit` 是它不会越过的数（预算、候选数），
+ * 不是预计总量 —— 所以计数不许超过上限，而没有计数的一步也不该带单位。
+ */
+export function validProgress(value: unknown): value is TaskProgress {
+  return object(value) && text(value.step) && value.step.length > 0
+    && text(value.label) && value.label.length > 0
+    && (value.count === null || count(value.count))
+    && (value.limit === null || count(value.limit))
+    && (value.count === null || value.limit === null || value.count <= value.limit)
+    && nullableText(value.unit) && (value.count !== null || value.unit === null)
+    && finite(value.since) && value.since > 0;
+}
+
+/** 服务端时间：缺席（旧版后端）可以，给了就必须是正的有限数。 */
+const optionalTime = (value: unknown) => value === undefined || value === null || (finite(value) && value > 0);
+
+/**
+ * 运行中的计时字段。它们晚于任务视图的其余部分加入：旧版后端不给，界面就说"未记录"，
+ * 而不是把整份任务视图判成结构异常。给了的必须彼此说得通 —— 都在同一台服务器的墙钟
+ * 上，所以阶段与步骤不会早于任务开始，活动时间不会晚于服务端的"现在"。
+ */
+function validTiming(value: RecordValue): boolean {
+  const { serverTime, startedAt, finishedAt, stageStartedAt, lastActivityAt, progress } = value;
+  if (!(serverTime === undefined || (finite(serverTime) && serverTime > 0))) return false;
+  if (![startedAt, finishedAt, stageStartedAt, lastActivityAt].every(optionalTime)) return false;
+  if (!(progress === undefined || progress === null || validProgress(progress))) return false;
+  const started = finite(startedAt) ? startedAt : null;
+  const now = finite(serverTime) ? serverTime : null;
+  // 同一台机器的墙钟，只留一点写库与序列化之间的余量。
+  const SLACK = 1;
+  if (started !== null && finite(finishedAt) && finishedAt < started - SLACK) return false;
+  if (started !== null && finite(stageStartedAt) && stageStartedAt < started - SLACK) return false;
+  if (now !== null && finite(lastActivityAt) && lastActivityAt > now + SLACK) return false;
+  if (now !== null && started !== null && started > now + SLACK) return false;
+  return true;
+}
+
 export function validTaskView(value: unknown): value is CheckupTaskView {
   return object(value) && text(value.taskId) && value.taskId.length > 0
     && text(value.clientRequestId) && text(value.engine) && value.engine.length > 0
@@ -123,7 +161,8 @@ export function validTaskView(value: unknown): value is CheckupTaskView {
     && typeof value.cancelRequested === 'boolean'
     && nullableText(value.error)
     // 失败必须有话说：一个只说 "failed" 的任务视图没法告诉人下一步该做什么。
-    && (value.status !== 'failed' || text(value.error));
+    && (value.status !== 'failed' || text(value.error))
+    && validTiming(value);
 }
 
 function validZone(value: unknown): value is ServiceZone {

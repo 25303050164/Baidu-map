@@ -1,5 +1,6 @@
 """Per-run evidence cache and durable, pre-send request reservations."""
 import asyncio
+import threading
 import time
 
 from life_circle.coordinates import normalize
@@ -25,6 +26,7 @@ class EvidenceSession:
         self.deadline = time.monotonic() + config.deadline_seconds
         self.cache, self.samples, self.events = {}, [], []
         self.lock = asyncio.Lock()
+        self._flushing = threading.Lock()
         self.requests_used, self.failures, self.origin_endpoint_failures = 0, 0, 0
         self.stop_reason = None
         self.outside_candidates_skipped = 0
@@ -88,13 +90,21 @@ class EvidenceSession:
     def flush(self):
         if self.path is not None:
             try:
-                atomic_dump(self.path, {"version": LEDGER_VERSION, "origin": self.origin,
-                        "config": self.config.model_dump(mode="json"), "requests_used": self.requests_used,
-                        "stop_reason": self.stop_reason, "events": self.events,
-                        "samples": [s.to_dict() for s in self.samples]})
+                with self._flushing:
+                    atomic_dump(self.path, {"version": LEDGER_VERSION, "origin": self.origin,
+                            "config": self.config.model_dump(mode="json"), "requests_used": self.requests_used,
+                            "stop_reason": self.stop_reason, "events": self.events,
+                            "samples": [s.to_dict() for s in self.samples]})
             except OSError:
                 self.stop_reason = "persistence_failure"
                 raise
+
+    async def persist(self):
+        """``flush`` on a worker thread. The ledger is rewritten whole, twice per
+        request, and grows with every sample; on the event loop that write would
+        hold up everything else the server is answering, status polls included.
+        Nothing touches the session while the caller awaits this."""
+        await asyncio.to_thread(self.flush)
 
     def coordinate(self, xy):
         return normalize(wgs84_to_bd09(*self.projection.inverse.transform(*xy)))
@@ -107,6 +117,9 @@ class EvidenceSession:
         return not self.stop_reason and not self.token.cancelled and self.requests_used < self.config.max_baidu_requests and time.monotonic() < self.deadline
 
     async def query(self, xy, source="GEOMETRIC", reason="probe", level=0, *, request_coordinate=None):
+        # One turn of the event loop per query, even when the answer needs no I/O
+        # (a cached point, a stored-evidence replay, an offline provider).
+        await asyncio.sleep(0)
         # Serial lock makes cancellation, reservations and duplicate queries atomic.
         async with self.lock:
             if not contains(self.origin_xy, xy, self.config):
@@ -131,7 +144,7 @@ class EvidenceSession:
                              "reserved_at": time.time(), "state": "reserved"}
                     self.events.append(event)
                     # If this write fails the provider is never entered.
-                    self.flush()
+                    await self.persist()
                     event["sent_at"] = time.time()
                     try:
                         evidence = await self.provider.query_walking_time(self.origin, coordinate, self.deadline)
@@ -150,7 +163,7 @@ class EvidenceSession:
                     event.update(state="completed", completed_at=time.time())
             except RequestStopped as exc:
                 self.stop_reason = exc.reason
-                self.flush()
+                await self.persist()
                 return None
             info = self.guidance.inspect(exact_xy) if self.guidance else {"available": False, "risk_score": 0, "reachable": None}
             sample = Sample(point_id, exact_xy, coordinate, source, reason, level, evidence, info)
@@ -168,7 +181,7 @@ class EvidenceSession:
             elif self.failures >= self.config.failure_streak_limit:
                 self.stop_reason = "consecutive_api_failures"
             # Persistence failure propagates; caller must stop the entire run.
-            self.flush()
+            await self.persist()
             if self.progress:
                 self.progress(self.requests_used, sample)
             return sample

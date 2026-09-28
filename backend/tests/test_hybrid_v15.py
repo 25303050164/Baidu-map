@@ -165,8 +165,14 @@ def test_failure_stage_is_recorded_without_exception_text(tmp_path, monkeypatch)
         r = client.post("/api/v1/analysis/hybrid", json=dict(origin=dict(zip(("lng", "lat"), ORIGIN)),
                  coordinate_system="bd09ll", client_request_id="fail"))
         task = r.json()["taskId"]
-        time.sleep(.1)
-        assert client.get(f"/api/v1/analysis/hybrid/{task}").json()["status"] == "failed"
+        # The first use of the offline graph starts with a full collection, which in
+        # a long test session's heap takes a noticeable moment.
+        for _ in range(400):
+            status = client.get(f"/api/v1/analysis/hybrid/{task}").json()["status"]
+            if status in ("completed", "failed"):
+                break
+            time.sleep(.01)
+        assert status == "failed"
         text = (tmp_path / task / "failure.json").read_text()
         assert "SECRET" not in text and json.loads(text)["stage"] == "preparing"
 

@@ -21,6 +21,7 @@ import type { LayerId } from './validate';
 import { CheckupError, DETAIL_BUDGET_EXHAUSTED, isNotFound, type CheckupService } from './client';
 import type { CheckupHandle, CheckupInput, CheckupState } from './types';
 import { isCheckupBusy, isTerminal } from './types';
+import type { Contact } from './live';
 
 type Run = {
   input: CheckupInput;
@@ -48,6 +49,12 @@ export function isTransient(error: unknown): boolean {
     && ((error.status === 0 && error.code === 'network') || [502, 503, 504].includes(error.status));
 }
 
+/** 一次成功的回答：本机收到它的时刻，和它报的服务端时刻（旧版后端不报）。 */
+function contactOf(task: CheckupTaskView): Contact {
+  const serverTime = (task as Partial<CheckupTaskView>).serverTime;
+  return { at: Date.now(), ...(typeof serverTime === 'number' && Number.isFinite(serverTime) ? { serverTime } : {}) };
+}
+
 const EXPIRED_MESSAGE = '服务端已找不到这个体检任务（数据目录被清理或更换了后端），结果无法恢复；可重新体检。';
 const UNCONFIRMED_MESSAGE = '创建请求没有送达服务端：按请求标识查不到任务。为避免重复消耗额度，页面没有自动重新提交；'
   + '点"重新提交"会沿用同一请求标识，服务端若已建过任务会直接认出来，不会重复创建。';
@@ -67,6 +74,12 @@ export class CheckupController {
 
   private set(state: CheckupState) { this.state = state; this.publish(state); }
   private patch(state: Partial<CheckupState>) { this.set({ ...this.state, ...state }); }
+  /** 又一次没连上：记下从何时起、连续失败了几次。 */
+  private lost(failures: number) {
+    this.patch({ connection: 'lost',
+      reconnect: { since: this.state.connection === 'lost' && this.state.reconnect
+        ? this.state.reconnect.since : Date.now(), attempts: failures } });
+  }
   private current(run: Run) { return run.revision === this.revision && !run.abort.signal.aborted; }
 
   private save(run: Run) {
@@ -168,7 +181,7 @@ export class CheckupController {
       }
       // 响应丢了（断网、超时、5xx、读不懂的响应）：服务端可能已经建了任务。只按请求标识
       // 去查，不自动重提。
-      if (isTransient(error)) this.patch({ connection: 'lost' });
+      if (isTransient(error)) this.lost(1);
       await this.follow(run);
       return;
     }
@@ -176,7 +189,7 @@ export class CheckupController {
     run.id = created.taskId;
     this.save(run);
     if (!this.current(run)) return;
-    this.patch({ task: created, phase: run.cancelRequested ? 'cancelling'
+    this.patch({ task: created, contact: contactOf(created), phase: run.cancelRequested ? 'cancelling'
       : created.status === 'queued' ? 'queued' : 'running' });
     await this.follow(run);
   }
@@ -211,19 +224,19 @@ export class CheckupController {
           if (!this.current(run)) return;
           run.id = found.taskId;
           this.save(run);
-          this.patch({ task: found });
+          this.patch({ task: found, contact: contactOf(found), connection: undefined, reconnect: undefined });
         }
         const task = run.cancelRequested && !cancelSent && !isTerminal(this.state.task)
           ? await this.api.cancel(run.id) : await this.api.status(run.id, run.abort.signal);
         if (run.cancelRequested) cancelSent = true;
         failures = 0;
         if (!this.current(run)) return;
-        if (this.state.connection) this.patch({ connection: undefined });
+        this.patch({ connection: undefined, reconnect: undefined, contact: contactOf(task) });
         if (await this.accept(run, task)) return;
       } catch (error) {
         if (!this.current(run)) return;
         if (isTransient(error)) {
-          this.patch({ connection: 'lost' });
+          this.lost(failures + 1);
           await this.pause(run, RECONNECT_DELAYS_MS[Math.min(failures++, RECONNECT_DELAYS_MS.length - 1)]);
           continue;
         }

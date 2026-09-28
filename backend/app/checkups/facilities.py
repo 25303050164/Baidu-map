@@ -112,12 +112,17 @@ def _status_for(query_status: str) -> str:
 
 
 async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, context, quota,
-                             budget, cache: KeyedCache, places_factory=None) -> FacilityOutcome:
+                             budget, cache: KeyedCache, places_factory=None,
+                             progress=None) -> FacilityOutcome:
     """Run the one facility retrieval of a task and report it.
 
     ``places_factory`` substitutes the transport for an offline or fixture-backed
     run; without it the deployment's own key and client are used, or the stage is
     refused by name.
+
+    ``progress(sent, limit)`` is called once before the first page and after every
+    page the planner receives: ``sent`` is what this stage has reserved from its
+    pool so far (a cache hit reserves nothing), ``limit`` the pool's allowance.
     """
     origin = normalize_point((payload.center.lng, payload.center.lat))
     majors = tuple(payload.facilities.categories)
@@ -147,10 +152,19 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
         fetch = CachedPages(cache, places.session(quota.place, budget=budget,
                                                   deadline=context.deadline),
                             provider=places, task_id=context.task_id)
+        limit = budget.remaining(POI_POOL)
         planner = OnlinePlanner(domain=domain, origin=origin, categories=list(categories),
-                                budget=budget.remaining(POI_POOL), source=source,
-                                token=context.token)
-        result = await planner.run(fetch)
+                                budget=limit, source=source, token=context.token)
+        pages = fetch
+        if progress is not None:
+            progress(0, limit)
+
+            async def pages(sequence, page):
+                try:
+                    return await fetch(sequence, page)
+                finally:
+                    progress(budget.spent.get(POI_POOL, 0) - reserved, limit)
+        result = await planner.run(pages)
     return _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
                    places, source, majors, budget, started,
                    network=budget.spent.get(POI_POOL, 0) - reserved)

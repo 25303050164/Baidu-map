@@ -24,12 +24,21 @@ export function polygon(offset = 0): Record<string, unknown> {
     [x, y + 0.02], [x, y]]] };
 }
 
+/** 夹具任务的服务端时钟：创建后 2 秒开始，此刻是开始后 4.5 秒。 */
+export const CREATED_AT = 1_700_000_000;
+export const STARTED_AT = CREATED_AT + 2;
+export const SERVER_TIME = STARTED_AT + 4.5;
+
 export function task(overrides: Partial<CheckupTaskView> = {}): CheckupTaskView {
   return {
     taskId: 'task-1', clientRequestId: 'request-1', engine: 'baidu_e82', status: 'running',
     businessStatus: null, stage: 'accessibility', revision: 3, budget: 200, requests: 12,
-    networkRequests: 12, elapsedSeconds: 4.5, createdAt: 1_700_000_000, cancelRequested: false,
-    error: null, ...overrides,
+    networkRequests: 12, elapsedSeconds: 4.5, createdAt: CREATED_AT, cancelRequested: false,
+    error: null, serverTime: SERVER_TIME, startedAt: STARTED_AT, finishedAt: null,
+    stageStartedAt: STARTED_AT + 3, lastActivityAt: SERVER_TIME - 0.5,
+    progress: { step: 'category', label: '评估服务覆盖 · 医疗（第 2/3 类）', count: 120, limit: null,
+      unit: '格', since: STARTED_AT + 4 },
+    ...overrides,
   };
 }
 
