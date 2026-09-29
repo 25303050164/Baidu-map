@@ -158,8 +158,9 @@ async def compute_multicross_boundary(request,provider,token,*,radial_step=50,ta
                                      allow_network=False,parallel_sampling=False,edge_batch_size=1,
                                      on_checkpoint=None, diverse_batches=False, coverage_first=False,
                                      edge_queue_policy=None, on_local_start=None, poi_guided=False,
-                                     poi_discovery_only=False, on_progress=None):
+                                     poi_discovery_only=False, on_progress=None, refinement='legacy'):
     if provider.network and not allow_network:raise ValueError('E8.2 requires explicit real-provider enablement')
+    if refinement not in ('legacy', 'loop'):raise ValueError('Invalid refinement mode')
     if not math.isfinite(radial_step) or radial_step<=0:raise ValueError('Invalid radial step')
     if type(edge_batch_size) is not int or not 1<=edge_batch_size<=30:raise ValueError('Invalid edge batch size')
     if edge_queue_policy not in (None, 'combined', 'stagnation', 'diversity'):
@@ -297,10 +298,21 @@ async def compute_multicross_boundary(request,provider,token,*,radial_step=50,ta
                 reason='known_negative_inside_estimate' if conflicts else 'local_unresolved_triangles',
                 meaning='unknownRegion marks unlocalized local faces; no calibrated boundary band'))
         await checkpoint('final',force=True)
+    async def loop_repair(session,rows):
+        # E8.2.1: one scheduler for directions, patches, edges and exploration;
+        # the published extension comes from the last evidence version.
+        from tools.endpoint_refinement_loop import publish, refinement_loop
+        state=await refinement_loop(session,rows,target=target,radial_step=radial_step,token=token)
+        extension.update(publish(state,token))
+        extension['refinementLoop']['truncatedDirections']=sum(
+            r.get('status')=='truncated' for r in state.failed_directions)
     result=await compute_radial_boundary(request,provider,token,directions=16,boundary_bands=True,
-        target=target,on_sampling_complete=repair,on_session_start=initialize if parallel_sampling else None,
+        target=target,on_sampling_complete=loop_repair if refinement=='loop' else repair,
+        on_session_start=initialize if parallel_sampling else None,
         coverage_first=coverage_first,on_progress=on_progress)
     result.update(extension)
+    if extension.get('refinementLoop',{}).get('truncatedDirections'):
+        result['truncated']=True
     result['algorithm']='local-multicross-e82'
     from life_circle.coordinates import LocalProjection
     projection=LocalProjection(request.origin)
@@ -309,7 +321,8 @@ async def compute_multicross_boundary(request,provider,token,*,radial_step=50,ta
         if 'geometry' in extension:
             from shapely.geometry import shape
             e['insideEstimate']=bool(result['candidateGeometry'] and shape(result['candidateGeometry']).covers(Point(e['coordinate'])))
-    result['assumption']='local observed-vertex connection; unsampled gaps and interior islands may be missed'
+    result['assumption']=('closed-loop local evidence; structures narrower than the probe spacing may be missed'
+        if refinement=='loop' else 'local observed-vertex connection; unsampled gaps and interior islands may be missed')
     result.setdefault('localRepair',dict(patches=0,calls=0,scanRays=[],edgeBrackets=[]))
     result.setdefault('completion',dict(scope='observed_local_boundary_only',resolutionReached=False,
         budgetExhausted=result['calls']>=request.budget,unresolvedEdges=0,pendingUnattemptedEdges=0,

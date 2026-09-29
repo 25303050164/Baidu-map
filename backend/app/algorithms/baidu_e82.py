@@ -21,9 +21,9 @@ class EndpointAnalyticProvider(AnalyticProvider):
                        route_destination=destination, origin_offset_m=0, destination_offset_m=0)
 
 
-async def compute_e82(request, provider, token, *, on_progress=None):
+async def compute_e82(request, provider, token, *, on_progress=None, refinement='legacy'):
     raw = await compute_multicross_boundary(request, provider, token,
-        allow_network=provider.network, on_progress=on_progress)
+        allow_network=provider.network, on_progress=on_progress, refinement=refinement)
     projection = LocalProjection(request.origin)
     domain = box(-request.extent, -request.extent, request.extent, request.extent)
     empty = business_geometry(MultiPolygon(), projection)
@@ -35,11 +35,15 @@ async def compute_e82(request, provider, token, *, on_progress=None):
 
     geometry = raw['geometry']
     local_geometry = local(geometry)
-    # Only E8.2 explicitly labels unknown faces. Missing support is unknown,
-    # never inferred to be unreachable from the absence of a polygon.
+    established = local_geometry is not None and not local_geometry.is_empty
+    # Without a boundary nothing is established: the whole square is unresolved,
+    # never inferred to be unreachable. With one, the region is what the solver
+    # reports as unresolved; a run that reports none has none.
     unknown = raw.get('unknownRegion')
-    if unknown is None:
+    if not established:
         unknown = business_geometry(domain, projection)
+    elif unknown is None:
+        unknown = empty
     local_unknown = local(unknown)
     stats = Statistics(**raw['_statistics'])
     stats.unknown_area = local_unknown.area
@@ -49,7 +53,12 @@ async def compute_e82(request, provider, token, *, on_progress=None):
         warnings.append('range_truncated')
     if raw['quality'] == 'experimental_evidence_conflict':
         warnings.append('known_negative_inside_estimate')
-    quality = 'insufficient' if local_geometry is None or local_geometry.is_empty else 'partial'
+    loop = raw.get('refinementLoop') or {}
+    if loop.get('carvedNegatives'):
+        warnings.append('known_negative_carved')
+    if raw.get('status') == 'cancelled' or raw['completion'].get('runComplete') is False:
+        warnings.append('run_incomplete')
+    quality = 'partial' if established else 'insufficient'
     return IsochroneResult(
         geometry=geometry, uncertain_region=raw.get('uncertaintyBand') or empty,
         unknown_region=unknown, computation_extent=business_geometry(domain, projection),
@@ -59,4 +68,9 @@ async def compute_e82(request, provider, token, *, on_progress=None):
         sample_observations=raw['_observations'],
         metadata=dict(algorithm=ALGORITHM, validationStatus='not_independently_validated',
             completion=raw['completion'], assumption=raw['assumption'],
+            unknownRegionMeaning=('solver-unresolved region; may overlap geometry; not an error bound'
+                                  if established else 'no boundary established'),
+            unresolvedArea=dict(insideM2=local_unknown.intersection(local_geometry).area if established else 0,
+                                outsideM2=local_unknown.difference(local_geometry).area if established
+                                else local_unknown.area),
             evidence={k: v for k, v in raw.items() if not k.startswith('_')}))

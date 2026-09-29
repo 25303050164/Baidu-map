@@ -5,7 +5,7 @@ Every run goes through ``compute_e82`` with the request built by
 uses -- so the numbers describe the production algorithm, not a research config.
 Failed runs stay in every denominator.
 
-    python -m tools.e82_benchmark run --output OUT --sets base development --budgets 400 800 --arms legacy
+    python -m tools.e82_benchmark run --output OUT --sets base development --budgets 400 800 --arms legacy --workers 12
     python -m tools.e82_benchmark compare --baseline OUT_A --candidate OUT_B
 """
 import argparse
@@ -16,7 +16,9 @@ import math
 import statistics
 import subprocess
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -51,12 +53,19 @@ def family(case):
 
 
 def freeze():
-    """Code identity of this run: the commit plus a hash of any uncommitted diff."""
+    """Code identity of this run: the commit plus a hash of every uncommitted change,
+    untracked source files included."""
     def git(*args):
         return subprocess.run(['git', *args], cwd=REPO, capture_output=True, text=True, check=True).stdout
-    diff = git('diff', 'HEAD', '--', 'backend', 'life-circle-algorithm')
-    return dict(commit=git('rev-parse', 'HEAD').strip(), dirty=bool(diff.strip()),
-                diff_sha256=hashlib.sha256(diff.encode()).hexdigest())
+    digest = hashlib.sha256(git('diff', 'HEAD', '--', 'backend', 'life-circle-algorithm').encode())
+    untracked = sorted(git('ls-files', '--others', '--exclude-standard', '--', 'backend',
+                           'life-circle-algorithm').split())
+    for name in untracked:
+        if name.endswith('.py'):
+            digest.update(name.encode() + b'\0' + (REPO / name).read_bytes())
+    dirty = bool(git('status', '--porcelain', '--', 'backend', 'life-circle-algorithm').strip())
+    return dict(commit=git('rev-parse', 'HEAD').strip(), dirty=dirty, changes_sha256=digest.hexdigest(),
+                untracked_sources=[n for n in untracked if n.endswith('.py')])
 
 
 def classification(pred, truth, extent):
@@ -132,21 +141,42 @@ def summarize(rows):
     return '\n'.join(lines)
 
 
-async def run(args):
+@lru_cache(maxsize=None)
+def _cases(name):
+    return {case: (truth, factory) for case, truth, factory in case_set(name)}
+
+
+def _job(job):
+    """One (set, case, budget, arm) run; importable so worker processes can execute it."""
+    name, case, budget, arm = job
+    truth, factory = _cases(name)[case]
+
+    async def go():
+        with no_network():
+            return await run_one(case, truth, factory, budget, arm)
+    row, request = asyncio.run(go())
+    row['set'] = name
+    return row, None if request is None else asdict(request)
+
+
+def run(args):
     args.output.mkdir(parents=True, exist_ok=False)
     identity = freeze()
+    jobs = [(name, case, budget, arm) for name in args.sets for case, _, _ in case_set(name)
+            for budget in args.budgets for arm in args.arms]
     rows, requests = [], {}
-    for name in args.sets:
-        for case, truth, factory in case_set(name):
-            for budget in args.budgets:
-                for arm in args.arms:
-                    row, request = await run_one(case, truth, factory, budget, arm)
-                    row['set'] = name
-                    rows.append(row)
-                    if request is not None:
-                        requests.setdefault(str(budget), asdict(request))
-                    print(json.dumps({k: row.get(k) for k in ('set', 'case', 'budget', 'arm', 'calls', 'iou', 'failed')}),
-                          flush=True)
+    if args.workers > 1:
+        with ProcessPoolExecutor(max_workers=args.workers) as pool:
+            results = pool.map(_job, jobs, chunksize=1)
+            outputs = list(results)
+    else:
+        outputs = map(_job, jobs)
+    for row, request in outputs:
+        rows.append(row)
+        if request is not None:
+            requests.setdefault(str(row['budget']), request)
+        print(json.dumps({k: row.get(k) for k in ('set', 'case', 'budget', 'arm', 'calls', 'iou', 'failed')}),
+              flush=True)
     dump(args.output / 'protocol.json', dict(sets=args.sets, budgets=args.budgets, arms=args.arms,
          effective_requests=requests, grid_m=GRID_M, band_m=BAND_M, live_calls=0, **identity))
     dump(args.output / 'metrics.json', rows)
@@ -195,6 +225,7 @@ def main():
     runner.add_argument('--sets', nargs='+', choices=SETS, default=['base', 'development'])
     runner.add_argument('--budgets', nargs='+', type=int, default=[400, 800])
     runner.add_argument('--arms', nargs='+', default=['legacy'])
+    runner.add_argument('--workers', type=int, default=1)
     comparer = sub.add_parser('compare')
     comparer.add_argument('--baseline', type=Path, required=True)
     comparer.add_argument('--candidate', type=Path, required=True)
@@ -202,11 +233,7 @@ def main():
     args = parser.parse_args()
     if args.command == 'compare':
         return compare(args)
-
-    async def guarded():
-        with no_network():
-            await run(args)
-    asyncio.run(guarded())
+    run(args)
 
 
 if __name__ == '__main__':
