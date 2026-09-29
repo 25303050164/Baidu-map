@@ -44,6 +44,7 @@ import threading
 import time
 import traceback
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -133,6 +134,8 @@ OFFLINE_KEY = "lifecycle-offline-no-network"
 settings = load_settings().model_copy(update=dict(
     baidu_map_ak=SecretStr(OFFLINE_KEY), analysis_provider="synthetic",
     baidu_place_qps=10000, baidu_direction_qps=10000,
+    # 档位不随日历切换：这个受控后端的节奏只由 /control 决定。
+    baidu_quota_fallback_at=datetime(2099, 1, 1, tzinfo=timezone(timedelta(hours=8))),
     checkup_dir=ROOT / "checkups", hybrid_ledger_dir=ROOT / "ledgers",
     quota_ledger_path=ROOT / "quota.sqlite3",
     cors_origins=[os.environ.get("LIFECYCLE_ORIGIN", "http://127.0.0.1:5182")]))

@@ -11,7 +11,8 @@ import httpx
 from life_circle.models import IsochroneRequest
 from life_circle.providers import BaiduProvider
 
-from ..algorithms.baidu_e82 import ALGORITHM, EndpointAnalyticProvider, compute_e82
+from ..algorithms.baidu_e82 import (ALGORITHM, DEFAULT_REFINEMENT, REFINEMENT_VERSIONS,
+                                    EndpointAnalyticProvider, compute_e82)
 from ..analyses import LimitedProvider, effective_qps
 from ..baidu import silence_transport_logs
 from .protocol import EngineCapabilities, EngineContext, IsochroneAsk, IsochroneSnapshot
@@ -21,11 +22,18 @@ MAX_EXTENT_M = 1600
 BUDGET_TIERS = (200, 400, 800)
 
 
-def e82_request(origin, budget: int, *, qps: float | None = None) -> IsochroneRequest:
-    """The one request shape production uses; offline benchmarks build it here too."""
+def e82_request(origin, budget: int, *, qps: float | None = None,
+                refinement: str = DEFAULT_REFINEMENT) -> IsochroneRequest:
+    """The one request shape production uses; offline benchmarks build it here too.
+
+    ``config_version`` names the refinement, so a result says which one drew it and
+    enters the result hash with it. The 800 tier gets a longer deadline: at a
+    conservative 2 QPS its attempts alone take about seven minutes.
+    """
     return IsochroneRequest(
         origin, "bd09ll", budget=budget, max_extent=MAX_EXTENT_M, expand=False,
-        time_bands=(15,), config_version=ALGORITHM, qps=qps)
+        time_bands=(15,), config_version=REFINEMENT_VERSIONS[refinement], qps=qps,
+        deadline_seconds=600 if budget <= 400 else 1200)
 
 
 class BaiduE82Engine:

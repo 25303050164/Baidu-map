@@ -231,7 +231,7 @@ def test_every_grey_zone_explains_itself_and_the_layer_draws_the_counted_geometr
             assert "geometry" not in feature["properties"]
 
 
-def test_the_heatmap_reports_measured_distances_only(tmp_path):
+def test_the_heatmap_reports_measured_distances_and_distance_free_gaps(tmp_path):
     app = make_report_app(tmp_path, [ORIGIN, offset(700)])
     with TestClient(app) as client:
         task_id, _view = run(client, body())
@@ -246,7 +246,11 @@ def test_the_heatmap_reports_measured_distances_only(tmp_path):
             points = heat["categories"][category]
             assert points, category
             for point in points:
-                assert point["distanceM"] >= 0 and point["cell"]
+                # A gap cell has no model path within the cutoff: a point without a
+                # distance, never a zero-distance hot spot.
+                assert (point["status"] == "gap" if point["distanceM"] is None
+                        else point["distanceM"] >= 0)
+                assert point["cell"]
                 assert point["status"] in ("covered", "gap", "unknown")
                 assert -180 <= point["lng"] <= 180 and -90 <= point["lat"] <= 90
 

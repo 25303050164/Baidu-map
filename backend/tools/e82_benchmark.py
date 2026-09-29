@@ -84,12 +84,11 @@ def classification(pred, truth, extent):
 
 async def run_one(case, truth, factory, budget, arm):
     provider = factory()
-    request = e82_request(ORIGIN, budget)
-    options = {} if arm == 'legacy' else {'refinement': arm}
+    request = e82_request(ORIGIN, budget, refinement=arm)
     started = time.perf_counter()
     row = dict(case=case, family=family(case), budget=budget, arm=arm)
     try:
-        result = await compute_e82(request, provider, CancelToken(), **options)
+        result = await compute_e82(request, provider, CancelToken(), refinement=arm)
     except GeometryError as error:
         return dict(row, calls=provider.calls, elapsed_s=time.perf_counter() - started,
                     valid=False, failed=True, failure=str(error)), None

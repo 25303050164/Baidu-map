@@ -32,6 +32,7 @@ from ..poi.cache import CachedPages
 from ..poi.models import PoiCollectRequest, Point as WirePoint
 from ..poi.normalize import merge_entities, normalize
 from ..poi.online import OnlinePlanner, clip_to_domain
+from ..quota import attach_token
 from .facility_stage import local_region, query_domain
 from .models import QUERY_PADDING_M, CheckupRequest, FacilityGroup
 from .places import POI_POOL, PlacesUnavailable, open_online
@@ -88,6 +89,7 @@ def _refusal(reason: str, major_categories, *, status: str = 'failed') -> Facili
     """A stage that could not run: null group, a named reason, no counts."""
     messages = {
         'missing_ak': '未配置百度地图 AK，设施检索不可用。',
+        'synthetic_mode_offline': '当前为离线合成模式，未接入真实检索服务，设施检索未运行。',
         'task_budget_exhausted': '本任务的 POI 预算已用尽，设施检索未开始。',
         'no_boundary_geometry': '成圈结果没有几何，设施检索没有可确定的范围。',
         'empty_boundary_geometry': '成圈几何不是可用区域，设施检索没有可确定的范围。',
@@ -149,8 +151,9 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
         source = 'baidu_place' if places.network else 'synthetic'
         # The cache wraps the metered session, so a hit never enters the pool's
         # scheduling point and §9.2's single reservation stays the only one.
-        fetch = CachedPages(cache, places.session(quota.place, budget=budget,
-                                                  deadline=context.deadline),
+        fetch = CachedPages(cache, attach_token(places.session(quota.place, budget=budget,
+                                                               deadline=context.deadline),
+                                                context.token),
                             provider=places, task_id=context.task_id)
         limit = budget.remaining(POI_POOL)
         planner = OnlinePlanner(domain=domain, origin=origin, categories=list(categories),
@@ -168,6 +171,20 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
     return _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
                    places, source, majors, budget, started,
                    network=budget.spent.get(POI_POOL, 0) - reserved)
+
+
+def _incomplete_regions(incomplete: dict, projection) -> dict:
+    """Unfinished query blocks (local metres) → bd09ll polygons, per category."""
+    regions = {}
+    for category, boxes in (incomplete or {}).items():
+        polygons = []
+        for x0, y0, x1, y1 in boxes:
+            ring = [list(projection.to_geographic(corner))
+                    for corner in ((x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0))]
+            polygons.append({'type': 'Polygon', 'coordinates': [ring]})
+        if polygons:
+            regions[category] = polygons
+    return regions
 
 
 def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin, places,
@@ -189,8 +206,11 @@ def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
     def counted(point):
         return boundary.covers(Point(*projection.to_local((point['lng'], point['lat']))))
 
+    # Outside the boundary but inside the query range: not counted, but they serve
+    # the places near the boundary (§2.3), which is what the padding is for.
+    nearby = []
     accepted, review, excluded, outside_boundary, merged = merge_entities(
-        inside, request, within=counted)
+        inside, request, within=counted, nearby=nearby)
     coverage = result.coverage
     for entry in coverage:
         for record in entry['pageRecords']:
@@ -223,17 +243,20 @@ def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
         counts_by_category={major: sum(1 for item in accepted
                                        if catalog.major_of(item['category']) == major)
                             for major in majors},
-        facilities=accepted, review_candidates=review, excluded_candidates=excluded,
+        facilities=accepted, nearby_facilities=nearby, review_candidates=review,
+        excluded_candidates=excluded,
         # Both kinds of record that are not findings for this region are kept
         # where they are: one whose row could not be read, one outside the query
         # range, and one inside the range but outside the boundary. The reason
         # tells them apart, and a nearby facility stays evidence for the region.
         quarantine=quarantine + outside_domain + outside_boundary, query_coverage=coverage,
+        query_incomplete_regions=_incomplete_regions(result.incomplete, projection),
         statistics={
             'rawRecords': sum(entry['returned'] for entry in coverage),
             'invalidRecords': len(quarantine),
             'outsideDomainRecords': len(outside_domain),
             'outsideBoundaryRecords': len(outside_boundary),
+            'nearbyServiceSources': len(nearby),
             'uidMergedRecords': merged,
             'acceptedRecords': len(accepted), 'reviewRecords': len(review),
             'excludedRecords': len(excluded),

@@ -12,7 +12,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from life_circle.coordinates import normalize
-from .algorithms.baidu_e82 import compute_e82, EndpointAnalyticProvider
+from .algorithms.baidu_e82 import (DEFAULT_REFINEMENT, REFINEMENT_VERSIONS, EndpointAnalyticProvider,
+                                   compute_e82)
 from life_circle.models import CancelToken, IsochroneRequest, ProgressSnapshot, RouteObservation
 from life_circle.providers import BaiduProvider
 
@@ -249,7 +250,9 @@ class AnalysisManager:
                         self.gate,
                     )
                 request = IsochroneRequest(origin, "bd09ll", budget=budget,
-                    max_extent=1600, expand=False, time_bands=(15,), config_version="local-multicross-e82",
+                    max_extent=1600, expand=False, time_bands=(15,),
+                    config_version=REFINEMENT_VERSIONS[DEFAULT_REFINEMENT],
+                    deadline_seconds=600 if budget <= 400 else 1200,
                     qps=effective_qps(self.settings, self.gate) if provider.network else None)
                 result = await compute_e82(request, provider, job.token, on_progress=lambda p: self.update(job, p))
                 if not self.provider_factory and provider.network and result.quality != "insufficient" and not job.token.cancelled:

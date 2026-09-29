@@ -28,7 +28,11 @@ def test_full_http_business_chain_and_server_owned_route_ids(monkeypatch, shift,
             b = (b[0]+shift, b[1])
         return httpx.Response(200,json={"status":0,"result":{"routes":[{"duration":duration,"distance":distance,"steps":[{"start_location":{"lng":str(a[0]),"lat":str(a[1])},"end_location":{"lng":str(b[0]),"lat":str(b[1])},"path":f"{a[0]},{a[1]};{b[0]},{b[1]}"}]}]}})
     monkeypatch.setattr("app.analyses.httpx.AsyncClient",lambda **kw:actual_client(transport=httpx.MockTransport(handle),**kw))
-    app=create_app(Settings(_env_file=None,analysis_provider="baidu",baidu_map_ak="test-secret",analysis_qps=10000))
+    # ANALYSIS_QPS only lowers the shared direction gate's tier; the tier itself is raised
+    # (and kept from switching on the calendar) so the offline chain runs at full speed.
+    app=create_app(Settings(_env_file=None,analysis_provider="baidu",baidu_map_ak="test-secret",analysis_qps=10000,
+                            baidu_direction_qps=10000,baidu_place_qps=10000,
+                            baidu_quota_fallback_at="2099-01-01T00:00:00+08:00"))
     with TestClient(app) as client:
         task=client.post("/api/analyses",json={"center":{"lng":116.404,"lat":39.915},"coordinateSystem":"bd09ll","budget":200,"clientRequestId":"business"}).json()["taskId"]
         for _ in range(500):

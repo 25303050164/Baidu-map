@@ -348,6 +348,14 @@ export function validFacilityRoute(value: unknown): value is FacilityRoute {
     || !nullableNumber(value.durationS) || !nullableNumber(value.observedDurationS)
     || !(value.withinRule === null || typeof value.withinRule === 'boolean')
     || !text(value.provider) || typeof value.network !== 'boolean' || !count(value.attempts)) return false;
-  // 判定与距离必须同进同出：有判定的那条路线一定报出了距离，反之亦然。
-  return (value.withinRule === null) === (value.routeDistanceM === null);
+  // 两个字段是端点容差层带来的；旧后端没有它们，照样接受。
+  if (value.accessDistanceM !== undefined && !nullableNumber(value.accessDistanceM)) return false;
+  if (value.verificationLayer !== undefined
+    && !(value.verificationLayer === null || oneOf(value.verificationLayer, ['strict', 'endpoint_tolerance'])))
+    return false;
+  // 有判定的路线一定报出了它所依据的距离；反过来不成立：误差带里、或证据层不成立时，
+  // 后端报出距离但不下判定——界面照样不自己判 1000 米，判据仍只有后端一处。
+  if (value.withinRule === null) return true;
+  // accessDistanceM 缺席（旧后端）可以；在场就必须是判定所依据的那个数。
+  return value.routeDistanceM !== null && value.accessDistanceM !== null;
 }

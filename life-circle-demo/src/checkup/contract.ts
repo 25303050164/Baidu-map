@@ -126,10 +126,12 @@ export type FacilityGroup = {
   dataObtainedAt: number | null;
   countsByCategory: Record<string, number>;
   facilities: Array<Record<string, unknown>>;
+  nearbyFacilities: Array<Record<string, unknown>>;
   reviewCandidates: Array<Record<string, unknown>>;
   excludedCandidates: Array<Record<string, unknown>>;
   quarantine: Array<Record<string, unknown>>;
   queryCoverage: Array<Record<string, unknown>>;
+  queryIncompleteRegions: Record<string, Array<Record<string, unknown>>> | null;
   statistics: Record<string, unknown>;
   warnings: Array<string>;
   stopReason: string | null;
@@ -214,6 +216,9 @@ export type ReportVerification = {
   unresolved: number;
   facilities: Array<Record<string, unknown>>;
   conflicts: Array<Record<string, unknown>>;
+  spotChecks: Array<Record<string, unknown>>;
+  spotCheckSummary: Record<string, unknown>;
+  localOverrides: Array<Record<string, unknown>>;
   queries: Record<string, unknown>;
   reason: string | null;
   notes: Array<string>;
@@ -298,6 +303,9 @@ export type VerificationEvidence = {
   unresolved: number;
   facilities: Array<Record<string, unknown>>;
   conflicts: Array<Record<string, unknown>>;
+  spotChecks: Array<Record<string, unknown>>;
+  spotCheckSummary: Record<string, unknown>;
+  localOverrides: Array<Record<string, unknown>>;
   queries: Record<string, unknown>;
   reason: string | null;
   notes: Array<string>;
@@ -363,6 +371,8 @@ export type FacilityRoute = {
   straightLineM: number | null;
   withinRule: boolean | null;
   routeDistanceM: number | null;
+  accessDistanceM: number | null;
+  verificationLayer: "strict" | "endpoint_tolerance" | null;
   durationS: number | null;
   observedDurationS: number | null;
   poiStatus: "pending" | "verified_reachable" | "verified_unreachable";

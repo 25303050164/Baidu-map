@@ -256,6 +256,9 @@ class OnlineResult:
     budget: int
     stop_reason: str | None
     warnings: list
+    #: Per category, the bounds (local metres from the origin) of the blocks whose
+    #: keyword evidence is incomplete: nothing there may be read as "none exist".
+    incomplete: dict = field(default_factory=dict)
 
     @property
     def catalog_completeness(self) -> str:
@@ -428,6 +431,24 @@ class OnlinePlanner:
         children = self.children.get(block.tile_id)
         return bool(children) and all(self._covered(child, category, query) for child in children)
 
+    def _uncovered(self, block, category, query) -> list:
+        """The leaf bounds under ``block`` where one keyword's evidence is incomplete."""
+        state = self.sequences.get((block.tile_id, category, query))
+        if state is not None and state.status == 'completed':
+            return []
+        children = self.children.get(block.tile_id)
+        if children:
+            return [bounds for child in children for bounds in self._uncovered(child, category, query)]
+        return [block.bounds]
+
+    def incomplete_blocks(self) -> dict:
+        """Per category, where any of its keywords did not finish: a place there may
+        not have been found, so a gap can rest nowhere within reach of it."""
+        return {category: sorted({bounds for query in RULES['queries'][category]
+                                  for block in self.coarse
+                                  for bounds in self._uncovered(block, category, query)})
+                for category in self.categories}
+
     def result(self) -> OnlineResult:
         """Report the run. Closes out anything the budget left unscheduled."""
         for state in self.sequences.values():
@@ -450,7 +471,8 @@ class OnlinePlanner:
                           | ({self.stopped} if self.stopped else set()))
         return OnlineResult(status=status, coverage=coverage, observations=list(self.observations),
                             blocks=tuple(self.blocks.values()), attempts=self.attempts,
-                            budget=self.budget, stop_reason=self.stopped, warnings=warnings)
+                            budget=self.budget, stop_reason=self.stopped, warnings=warnings,
+                            incomplete=self.incomplete_blocks())
 
 
 def clip_to_domain(records, domain: QueryDomain, origin):

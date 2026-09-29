@@ -103,16 +103,19 @@ def category_score(category: str, areas: CategoryAreas, *, domain_area_m2: float
     """
     if not domain_area_m2 > 0:
         raise ScoringError("domain area must be positive")
-    gap = abs(areas.total_m2() - domain_area_m2)
-    if gap > area_tolerance(domain_area_m2):
-        raise ScoringError(
-            f"category {category}: C+G+U={areas.total_m2()} differs from the frozen domain"
-            f" {domain_area_m2} by {gap} (tolerance {area_tolerance(domain_area_m2)})")
+    # A category without spatial support -- including one already downgraded because
+    # its areas did not add up -- is reported as "cannot be determined" before the
+    # identity is checked: its areas are not a claim, so they cannot fail one.
     if not spatial_support:
         return CategoryScore(category=category, areas=areas, domain_area_m2=domain_area_m2,
                              supported=False, coverage_lower_pct=None, coverage_upper_pct=None,
                              assessable_pct=None, unknown_pct=None,
                              unavailable_reason=unavailable_reason or "no_spatial_support")
+    gap = abs(areas.total_m2() - domain_area_m2)
+    if gap > area_tolerance(domain_area_m2):
+        raise ScoringError(
+            f"category {category}: C+G+U={areas.total_m2()} differs from the frozen domain"
+            f" {domain_area_m2} by {gap} (tolerance {area_tolerance(domain_area_m2)})")
     return CategoryScore(
         category=category, areas=areas, domain_area_m2=domain_area_m2, supported=True,
         coverage_lower_pct=_pct(areas.covered_m2, domain_area_m2),

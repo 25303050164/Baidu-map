@@ -39,7 +39,9 @@ def _layer_geometry(snapshot, layer_id: str):
     claim the stage refused to make.
     """
     if layer_id == "isochrone":
-        return snapshot.isochrone.get("geometry"), snapshot.isochrone.get("display_geometry"), None
+        # Stored revisions use the wire (camelCase) names; the snake_case read never matched.
+        display = snapshot.isochrone.get("displayGeometry", snapshot.isochrone.get("display_geometry"))
+        return snapshot.isochrone.get("geometry"), display, None
     if layer_id == "facilities":
         if snapshot.facilities is None:
             raise CheckupError(409, "checkup_facilities_not_ready", "设施结果尚未就绪")

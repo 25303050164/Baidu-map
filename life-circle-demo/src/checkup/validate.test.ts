@@ -108,7 +108,8 @@ describe('report', () => {
 
   it('refuses a report that claims verification the snapshot says never ran', () => {
     const none = { status: 'not_integrated' as const, provider: null, checked: 0, failed: 0,
-      unresolved: 0, facilities: [], conflicts: [], queries: {}, reason: '未接入核验服务', notes: [] };
+      unresolved: 0, facilities: [], conflicts: [], spotChecks: [], spotCheckSummary: {},
+      localOverrides: [], queries: {}, reason: '未接入核验服务', notes: [] };
     const honest = snapshot({ verification: none,
       report: report({ verification: { ...report().verification, available: false,
         status: 'not_integrated', provider: null, reason: '未接入核验服务' } }) });
@@ -181,11 +182,21 @@ describe('facility route', () => {
   });
 
   it('refuses a verdict that comes without the distance it was made from', () => {
-    // 判定与距离同进同出：只有判定没有距离，读者无法复核；只有距离没有判定，界面
-    // 就得到处自己判 1000 米 —— 判据必须只有一处。
+    // 只有判定没有距离，读者无法复核；判据只有后端一处，界面从不自己判 1000 米。
     expect(validFacilityRoute(route({ routeDistanceM: null }))).toBe(false);
+    expect(validFacilityRoute(route({ withinRule: true, accessDistanceM: null }))).toBe(false);
     expect(validFacilityRoute(route({ withinRule: null, routeDistanceM: null,
       durationS: null, observedDurationS: null }))).toBe(true);
+    // 误差带里的路线：报出距离，但不下判定。
+    expect(validFacilityRoute(route({ withinRule: null, routeDistanceM: 1040, accessDistanceM: 1062,
+      verificationLayer: 'endpoint_tolerance' }))).toBe(true);
+  });
+
+  it('reads the endpoint-tolerance layer and still accepts an older backend without it', () => {
+    expect(validFacilityRoute(route({ verificationLayer: 'endpoint_tolerance', accessDistanceM: 512 })))
+      .toBe(true);
+    expect(validFacilityRoute(route({ verificationLayer: 'guessed' as never }))).toBe(false);
+    expect(validFacilityRoute(route({ accessDistanceM: 'far' as never }))).toBe(false);
   });
 
   it('refuses a route that is neither verified nor modelled', () => {

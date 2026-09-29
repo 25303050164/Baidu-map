@@ -53,6 +53,9 @@ async def open_online(settings, stack) -> "OnlineRouteTransport":
     """生产传输：一个阶段一个 HTTP 客户端，或者一个带名字的拒绝。"""
     if not settings.ak_configured:
         raise RoutesUnavailable('missing_ak')
+    if settings.analysis_provider == 'synthetic':
+        # 离线合成模式不接真实服务：即使配了 AK 也不发出去。
+        raise RoutesUnavailable('synthetic_mode_offline')
     silence_transport_logs()
     client = await stack.enter_async_context(
         httpx.AsyncClient(trust_env=False, follow_redirects=False))
@@ -113,8 +116,11 @@ class RouteSession:
                 self.stop_reason = 'deadline'
                 return None
             try:
+                # The token is passed only when there is one, so an injected pool keeps
+                # its plain signature.
+                extra = {} if self.token is None else {'token': self.token}
                 async with self.pool.attempt(self.deadline, budget=self.budget,
-                                             pool=pool, token=self.token) as attempt:
+                                             pool=pool, **extra) as attempt:
                     timeout = self.deadline - time.monotonic()
                     if timeout <= 0:
                         attempt.outcome('deadline')

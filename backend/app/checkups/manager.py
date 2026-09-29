@@ -33,7 +33,7 @@ from ..contracts import Issue, Origin
 from ..engines import EngineContext, IsochroneAsk, IsochroneSnapshot, canonical_hash
 from ..engines.protocol import EngineCancelled
 from ..poi.planner import RULES as POI_RULES
-from ..poi_evidence import poi_evidence
+from ..quota import attach_token
 from .accessibility_stage import AccessibilityOutcome, assess_accessibility
 from .facilities import FacilityOutcome, collect_facilities, stale_for
 from .models import (DETAIL_ROUTE_REQUESTS, DISTANCE_RULE, RULE_VERSION, TERMINAL, CheckupRequest,
@@ -43,8 +43,8 @@ from .progress import StepReporter, category_label
 from .reporting_stage import build_report
 from .routes import DETAIL_POOL, RoutesUnavailable, open_online as open_routes
 from .store import CheckupStore, RequestIdConflict, TaskNotFound
-from .verification_stage import (VerificationOutcome, carried_over, refusal as verification_refusal,
-                                 usable_route, verify_facilities, within_rule)
+from .verification_stage import (VerificationOutcome, carried_over, judge_route,
+                                 refusal as verification_refusal, verify_facilities)
 
 # Engines currently enforce their own internal deadline; this is the task-level
 # bound every stage shares.
@@ -157,17 +157,17 @@ def _point(value) -> Origin | None:
     return Origin(lng=lng, lat=lat)
 
 
-def _with_token(session, token):
-    """Hand the task's cancel token to a transport session that checks it per attempt.
+def _service_sources(group) -> list[dict] | None:
+    """The facilities that can serve the assessed places: the counted ones plus the
+    accepted ones just outside the boundary (§2.3). Counts never read this list."""
+    if group is None:
+        return None
+    return list(group.facilities) + list(getattr(group, "nearby_facilities", None) or [])
 
-    Set as an attribute so injected transports keep their plain signature.
-    """
-    if token is not None:
-        try:
-            session.token = token
-        except AttributeError:
-            pass
-    return session
+
+def _incomplete(group) -> dict | None:
+    """The retrieval's unfinished query blocks; None when this revision never recorded them."""
+    return None if group is None else getattr(group, "query_incomplete_regions", None)
 
 
 def _assessment_progress(report):
@@ -294,8 +294,11 @@ class CheckupManager:
         # Every write of an in-stage step goes through this one reporter, so the
         # step's own clock survives the counter ticks that follow it.
         report = StepReporter(lambda **fields: self.store.update(task_id, **fields))
+        # The 800 tier's boundary may take up to 20 minutes on its own; the later
+        # stages keep their share of the task deadline.
         context = EngineContext(
-            task_id=task_id, token=token, deadline=time.monotonic() + DEADLINE_SECONDS,
+            task_id=task_id, token=token,
+            deadline=time.monotonic() + DEADLINE_SECONDS + (600 if record.budget > 400 else 0),
             artifact_dir=self.store.artifact_dir(task_id),
             # The engine names its own sub-stage; the counts are its attempts
             # against the tier and what of them actually went to the network.
@@ -352,7 +355,7 @@ class CheckupManager:
             return
         # §6.3 verification asks for real routes before the report is assembled,
         # so the report can say what was verified and what stayed model-only.
-        verification = await self._publish_verification(
+        verification, assessment = await self._publish_verification(
             task_id, payload, snapshot, budget, outcome, assessment, deadline=context.deadline,
             report=report, token=token)
         if token.cancelled:
@@ -564,12 +567,12 @@ class CheckupManager:
         assessment = await asyncio.to_thread(
             assess_accessibility, geometry=snapshot.geometry,
             unknown_region=snapshot.unknown_region,
-            facilities=None if outcome.group is None else outcome.group.facilities,
+            facilities=_service_sources(outcome.group),
             query_status=outcome.status, majors=tuple(payload.facilities.categories),
             store=None if resolved is None else resolved.store,
             coverage=None if resolved is None else resolved.coverage,
             version=self.settings.osm_data_version, settings=self.settings,
-            progress=progress)
+            progress=progress, incomplete=_incomplete(outcome.group))
         objects = self._analysis_objects(assessment)
         revision = self.store.get(task_id).revision + 1
         isochrone = snapshot.model_dump(mode="json", by_alias=True)
@@ -621,7 +624,7 @@ class CheckupManager:
                 # pool, so verification, both engines and the click-detail route
                 # all pass the one scheduling point of their service (§9.2).
                 result = await verify_facilities(
-                    facilities=None if outcome.group is None else outcome.group.facilities,
+                    facilities=_service_sources(outcome.group),
                     majors=tuple(payload.facilities.categories),
                     # 冻结的灰区是模型，而阶段读的是普通字典（和 facilities 一样）：
                     # 转换摆在边界上，阶段里就不会出现"模型还是字典"的两套读法。
@@ -629,16 +632,42 @@ class CheckupManager:
                                                      for zone in gaps],
                     heatmap=heatmap, entrances=assessment.entrances,
                     origin=normalize((payload.center.lng, payload.center.lat)),
-                    session=_with_token(routes.session(self.quota.direction, budget=budget,
-                                                       deadline=deadline), token),
+                    session=attach_token(routes.session(self.quota.direction, budget=budget,
+                                                        deadline=deadline), token),
                     progress=progress, token=token)
+        # §6.3 局部重算：覆盖抽检的冲突与实测补定只改它们所在的那几格，其余格照旧由
+        # 模型判定。重算不发任何请求；没有路网或被取消时保留原评估。
+        if result.overrides and assessment.accessibility is not None and not (token and token.cancelled):
+            local = await self._assess(snapshot, outcome, payload, verified=result.overrides, token=token)
+            if local is not None:
+                assessment = local
         self._freeze_verification(task_id, payload, snapshot, budget, outcome, assessment, result)
         # 核验阶段发的是真实路线请求，所以它也计入任务自己的请求数 —— 任务视图说
         # "本次体检发出了多少请求"，少算这一阶段就等于少报了一百多次调用。运行中的
         # 计数已经随每家候选写过，这里按阶段开始时的底数写定终值，不会重复累加。
         self.store.update(task_id, requests=before.requests + result.network_requests,
                           network_requests=before.network_requests + result.network_requests)
-        return result
+        return result, assessment
+
+    async def _assess(self, snapshot, outcome, payload, *, verified=None, token=None):
+        """Re-run the assessment off the event loop; None without a graph or on cancel."""
+        resolved = await self._resolve_offline()
+        if resolved is None:
+            return None
+
+        def progress(step, **detail):
+            if token is not None and token.cancelled:
+                raise AssessmentCancelled()
+        try:
+            return await asyncio.to_thread(
+                assess_accessibility, geometry=snapshot.geometry,
+                unknown_region=snapshot.unknown_region, facilities=_service_sources(outcome.group),
+                query_status=outcome.status, majors=tuple(payload.facilities.categories),
+                store=resolved.store, coverage=resolved.coverage,
+                version=self.settings.osm_data_version, settings=self.settings,
+                progress=progress, verified=verified, incomplete=_incomplete(outcome.group))
+        except AssessmentCancelled:
+            return None
 
     def _freeze_verification(self, task_id: str, payload: CheckupRequest, snapshot, budget,
                              outcome: FacilityOutcome, assessment: AccessibilityOutcome,
@@ -763,13 +792,17 @@ class CheckupManager:
                                   issues=[issue for issue in previous.warnings
                                           if issue.scope == "facilities"])
         resolved = await self._resolve_offline()
+        # The spot checks' measured points are facts about their cells, independent of
+        # the water data: the recompute applies them again, sending nothing.
+        overrides = [] if previous.verification is None else list(previous.verification.local_overrides)
         assessment = await asyncio.to_thread(
             assess_accessibility, geometry=snapshot.geometry,
-            unknown_region=snapshot.unknown_region, facilities=group.facilities,
+            unknown_region=snapshot.unknown_region, facilities=_service_sources(group),
             query_status=outcome.status, majors=tuple(payload.facilities.categories),
             store=None if resolved is None else resolved.store,
             coverage=None if resolved is None else resolved.coverage,
-            version=self.settings.osm_data_version, settings=self.settings)
+            version=self.settings.osm_data_version, settings=self.settings,
+            verified=overrides or None, incomplete=_incomplete(group))
         verification = (None if previous.verification is None
                         else carried_over(previous.verification, entrances=assessment.entrances,
                                           revision=previous.revision))
@@ -852,7 +885,7 @@ class CheckupManager:
         snapshot, stored = self.snapshot(task_id)
         if snapshot.facilities is None:
             raise CheckupError(409, "checkup_facilities_not_ready", "设施结果尚未就绪")
-        item = next((row for row in snapshot.facilities.facilities if row["id"] == facility_id),
+        item = next((row for row in _service_sources(snapshot.facilities) if row["id"] == facility_id),
                     None)
         if item is None:
             raise CheckupError(404, "checkup_facility_not_found", "该设施不在本次体检结果中")
@@ -880,23 +913,23 @@ class CheckupManager:
                                    f"本任务的详情路线额度已用完（{DETAIL_ROUTE_REQUESTS} 次）")
             raise CheckupError(409, "checkup_route_unavailable",
                                f"本次没有取到路线结论（{stopped or 'unknown'}）")
-        strict = poi_evidence(observation, origin, destination, item["id"])
-        # "可用"沿用核验阶段同一套：端点核实过、路线有结果、严格映射成立。端点对不上的
-        # 那一条只进道路端点证据层，既不判覆盖，也不冒充严格证据。
-        usable = usable_route(observation, destination) and strict.status != "pending"
-        distance = observation.distance_m if usable else None
-        returned = observation.distance_m if usable_route(observation, destination) else None
+        # 判定与核验阶段同一套（:func:`judge_route`）：严格层成立用路线距离，端点容差层
+        # 用"路线距离＋两端偏移"的接入距离估计；两者都不成立时只留下返回的距离。
+        judged = judge_route(observation, origin, destination, item["id"])
+        strict, returned = judged["strict"], judged["returned"]
         x, y = LocalProjection(origin).to_local(destination)
         return FacilityRoute(
             task_id=task_id, revision=stored["revision"], facility_id=item["id"],
             category=item["category"], major_category=major_of(item["category"]),
             origin=Origin(lng=origin[0], lat=origin[1]),
             destination=Origin(lng=destination[0], lat=destination[1]),
-            straight_line_m=round(math.hypot(x, y), 3), within_rule=within_rule(distance),
+            straight_line_m=round(math.hypot(x, y), 3), within_rule=judged["within"],
             route_distance_m=None if returned is None else round(returned, 3),
+            access_distance_m=None if judged["estimate"] is None else round(judged["estimate"], 3),
+            verification_layer=judged["layer"],
             duration_s=observation.duration, observed_duration_s=observation.observed_duration,
             poi_status=strict.status, poi_reason=strict.reason,
-            evidence_grade="verified" if strict.status != "pending" else "model",
+            evidence_grade="verified" if judged["layer"] is not None else "model",
             route_origin=_point(observation.route_origin),
             route_destination=_point(observation.route_destination),
             origin_offset_m=observation.origin_offset_m,

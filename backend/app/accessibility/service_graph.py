@@ -22,6 +22,7 @@ from typing import Callable, Iterable, Literal
 import networkx as nx
 from shapely.geometry import Point, box
 
+from .. import service_rules as rules
 from ..algorithms.osm_offline.routing import (LENGTH_WEIGHT, cutoff_dijkstra,
                                               cutoff_dijkstra_owners)
 
@@ -31,9 +32,9 @@ DENIED = "denied"
 VIEWS = (ALLOWED, POSSIBLE)
 
 #: §5.4 的搜索截止：1000 米规则加上 100 米误差带，接入成本计入总距离后仍在带内。
-SEARCH_CUTOFF_M = 1100.0
+SEARCH_CUTOFF_M = rules.SEARCH_CUTOFF_M
 #: §5.3 的入口接入上限（米）。
-ENTRANCE_LIMIT_M = 50.0
+ENTRANCE_LIMIT_M = rules.ENTRANCE_LIMIT_M
 #: 评估点支持点的合法接入上限（米）：与入口同一条口径，不做 200 米的老式放宽。
 SUPPORT_LIMIT_M = 50.0
 #: 两个候选被判定为相容的最大间距（米）。

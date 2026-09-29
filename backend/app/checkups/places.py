@@ -53,6 +53,9 @@ async def open_online(settings, stack) -> "OnlinePlaceTransport":
     """The production transport: one client for one stage, or a named refusal."""
     if not settings.ak_configured:
         raise PlacesUnavailable('missing_ak')
+    if settings.analysis_provider == 'synthetic':
+        # An offline deployment never reaches the real service, even with a key set.
+        raise PlacesUnavailable('synthetic_mode_offline')
     silence_transport_logs()
     client = await stack.enter_async_context(
         httpx.AsyncClient(trust_env=False, follow_redirects=False))
@@ -91,11 +94,15 @@ class PlaceSession:
     per call, always behind its reservation.
     """
 
-    def __init__(self, transport, pool, *, budget, deadline):
+    def __init__(self, transport, pool, *, budget, deadline, token=None):
         self.transport, self.pool, self.budget, self.deadline = transport, pool, budget, deadline
+        # The task's cancel token, checked by the pool before every attempt is sent.
+        self.token = token
 
     async def __call__(self, sequence, page):
-        async with self.pool.attempt(self.deadline, budget=self.budget, pool=POI_POOL) as attempt:
+        extra = {} if self.token is None else {'token': self.token}
+        async with self.pool.attempt(self.deadline, budget=self.budget, pool=POI_POOL,
+                                     **extra) as attempt:
             payload, reason = await self.transport.page(
                 parameters(sequence, page), self.deadline - time.monotonic())
             attempt.outcome(reason)

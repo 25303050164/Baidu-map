@@ -11,6 +11,10 @@ from tools.endpoint_geometry import business_geometry
 from tools.endpoint_multicross_boundary import compute_multicross_boundary
 
 ALGORITHM = 'local-multicross-e82'
+# The algorithm identity stays the same; the refinement is versioned in the
+# request's config_version. E8.2.1 is the closed-loop refinement.
+REFINEMENT_VERSIONS = {'legacy': ALGORITHM, 'loop': 'local-multicross-e82.1'}
+DEFAULT_REFINEMENT = 'loop'
 
 
 class EndpointAnalyticProvider(AnalyticProvider):
@@ -21,7 +25,10 @@ class EndpointAnalyticProvider(AnalyticProvider):
                        route_destination=destination, origin_offset_m=0, destination_offset_m=0)
 
 
-async def compute_e82(request, provider, token, *, on_progress=None, refinement='legacy'):
+async def compute_e82(request, provider, token, *, on_progress=None, refinement=None):
+    if refinement is None:
+        # The request names its refinement; an older version string means legacy.
+        refinement = 'loop' if request.config_version == REFINEMENT_VERSIONS['loop'] else 'legacy'
     raw = await compute_multicross_boundary(request, provider, token,
         allow_network=provider.network, on_progress=on_progress, refinement=refinement)
     projection = LocalProjection(request.origin)

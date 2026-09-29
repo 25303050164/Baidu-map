@@ -2983,6 +2983,14 @@
             "type": "array",
             "title": "Facilities"
           },
+          "nearbyFacilities": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Nearbyfacilities"
+          },
           "reviewCandidates": {
             "items": {
               "additionalProperties": true,
@@ -3014,6 +3022,24 @@
             },
             "type": "array",
             "title": "Querycoverage"
+          },
+          "queryIncompleteRegions": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queryincompleteregions"
           },
           "statistics": {
             "additionalProperties": true,
@@ -3124,6 +3150,32 @@
               }
             ],
             "title": "Routedistancem"
+          },
+          "accessDistanceM": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessdistancem"
+          },
+          "verificationLayer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "strict",
+                  "endpoint_tolerance"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verificationlayer"
           },
           "durationS": {
             "anyOf": [
@@ -3396,7 +3448,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "HeatmapEvidence",
-        "description": "设施密度热力的数据面：每格到最近设施模型距离（§5.4）。\n\n这是**模型估计**：它只回答\"路网上走 1000 米能到哪里\"，不是实测、不是设施数量、\n也不是人口覆盖。没有模型路径的格不出现在热力里 —— 它们的结论由灰区层与未知面积\n表达，不在这里被画成一个\"距离为零\"的热点。"
+        "description": "设施密度热力的数据面：每格到最近设施模型距离（§5.4）。\n\n这是**模型估计**：它只回答\"路网上走 1000 米能到哪里\"，不是实测、不是设施数量、\n也不是人口覆盖。缺口格（搜索截止内没有模型路径）照样出点，``distanceM`` 为空，\n状态为 ``gap``：地图据此画出缺口，而不是把没有点的地方读成\"未知\"；也绝不把它画成\n一个\"距离为零\"的热点。其余没有模型路径的格不出点，它们的结论由未知面积表达。"
       },
       "HybridConfig": {
         "properties": {
@@ -4805,6 +4857,27 @@
             "type": "array",
             "title": "Conflicts"
           },
+          "spotChecks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Spotchecks"
+          },
+          "spotCheckSummary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spotchecksummary"
+          },
+          "localOverrides": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Localoverrides"
+          },
           "queries": {
             "additionalProperties": true,
             "type": "object",
@@ -5844,6 +5917,27 @@
             },
             "type": "array",
             "title": "Conflicts"
+          },
+          "spotChecks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Spotchecks"
+          },
+          "spotCheckSummary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Spotchecksummary"
+          },
+          "localOverrides": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Localoverrides"
           },
           "queries": {
             "additionalProperties": true,

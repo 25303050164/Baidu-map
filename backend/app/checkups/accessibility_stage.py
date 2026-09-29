@@ -26,8 +26,8 @@ from shapely import make_valid, segmentize
 from shapely.geometry import LineString, Point, shape
 from shapely.ops import transform, unary_union
 
-from .. import catalog
-from ..accessibility.field import ServiceField
+from .. import catalog, service_rules
+from ..accessibility.field import ServiceField, VerifiedPoint
 from ..accessibility.grid import (COVERED, GAP, MAX_LEAF_CELLS, UNKNOWN, cells_covering,
                                   explore)
 from ..accessibility.service_graph import (ENTRANCE_LIMIT_M, SEARCH_CUTOFF_M, PointAttachments, build_views,
@@ -44,8 +44,9 @@ from .water_data import water_evidence
 
 #: 障碍判定的容差（米）：与 Hybrid 硬障碍层同一口径，0.1 米以下的重叠算相切。
 OBSTACLE_TOUCH_TOLERANCE_M = 0.1
-#: 障碍层载入范围在评估域外扩的距离（米）：入口可能落在评估域外一点，连接段判定要用到。
-OBSTACLE_MARGIN_M = 300.0
+#: 障碍层载入范围在评估域外扩的距离（米）：圈外设施也是服务源，它们的入口可能落在
+#: 评估域外一整个搜索截止距离之远，连接段的穿水判定都要用到（见 ``service_rules``）。
+OBSTACLE_MARGIN_M = service_rules.OBSTACLE_MARGIN_M
 #: 边界折线加密间距（度）：BD09 与米制之间的变换是非线性的，长边不加密会被拉成一条弦。
 BOUNDARY_SEGMENT_DEGREES = 1e-4
 
@@ -292,8 +293,38 @@ def evaluated_majors(majors, facilities, *, query_complete: bool) -> tuple[str, 
     return tuple(major for major in requested if major in found)
 
 
+def metric_verified(items, projection, *, major: str) -> list[VerifiedPoint]:
+    """Coverage spot-check results (bd09ll) → metric points for one major category."""
+    points = []
+    for item in items or ():
+        if item.get("major") != major:
+            continue
+        try:
+            x, y = projection.origin((float(item["lng"]), float(item["lat"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+        points.append(VerifiedPoint(point=Point(x, y), verdict=item["verdict"],
+                                    contradicted=item.get("contradicted")))
+    return points
+
+
+def metric_incomplete(regions, projection, *, major: str):
+    """The query blocks left unfinished for one major (bd09ll) → one metric geometry."""
+    parts = []
+    for category, polygons in (regions or {}).items():
+        if catalog.major_of(category) != major:
+            continue
+        for polygon in polygons:
+            try:
+                parts.append(transform(lambda x, y, z=None: projection.origin((x, y)), shape(polygon)))
+            except (TypeError, ValueError):
+                continue
+    return unary_union(parts) if parts else None
+
+
 def evaluate_category(major: str, facilities, *, store, views, domain, rule, query_complete,
-                      obstacles: _Obstacles, attachments=None, on_cell=None) -> CategoryEvaluation:
+                      obstacles: _Obstacles, attachments=None, on_cell=None,
+                      verified=(), query_incomplete=None) -> CategoryEvaluation:
     """一个类别的完整评估：入口 → 服务场 → 网格 → 面积 → 灰区输入与热力点。
 
     ``query_complete`` 为假时 :func:`category_service` 永远不会给出 gap —— 检索没跑完
@@ -310,7 +341,8 @@ def evaluate_category(major: str, facilities, *, store, views, domain, rule, que
                          attachments=attachments,
                          obstacle_intersects=obstacles.intersects if obstacles.available else None,
                          data_conflict=(obstacles.conflict_intersects
-                                        if obstacles.conflicts is not None else None))
+                                        if obstacles.conflicts is not None else None),
+                         verified=verified, query_incomplete=query_incomplete)
     # 判定与证据一次算完：网格只拿结论，评估对象留在这里给热力与灰区用。
     assessed: dict = {}
 
@@ -345,10 +377,15 @@ def evaluate_category(major: str, facilities, *, store, views, domain, rule, que
                 nearest_facility=None if assessment is None else assessment.nearest_facility,
                 reason=leaf.reason or _gap_reason(assessment),
                 evidence_grade="model", query_complete=query_complete))
-        if assessment is not None and assessment.min_distance_m is not None:
+        # A gap cell usually has no model path at all (nothing within the cutoff); it
+        # still gets a point, with no distance, so the map shows a gap rather than a
+        # hole the renderer would read as "unknown".
+        if assessment is not None and (assessment.min_distance_m is not None or leaf.verdict == GAP):
             heat.append(_heat_point(leaf, assessment, store.projection))
     # 可达面用服务场已经算好的距离场出图：判定与展示来自同一次搜索（§5.4）。
-    coverage, _counts = coverage_from_settled(views, field.fields, cutoff_m=SEARCH_CUTOFF_M)
+    # Drawn at the rule's threshold: the 1100 m search cutoff only bounds the search,
+    # and a reachable surface out to it would show the tolerance band as covered.
+    coverage, _counts = coverage_from_settled(views, field.fields, cutoff_m=rule.threshold_m)
     return CategoryEvaluation(
         category=major, supported=True, areas=areas,
         cells={"total": len(outcome.leaves), "refined": outcome.refined, "capped": outcome.capped,
@@ -384,8 +421,9 @@ def _heat_point(leaf, assessment, projection) -> dict:
     结论是"未知"的地方画出一个距离。
     """
     lng, lat = public_point(projection, (leaf.cell.center.x, leaf.cell.center.y))
+    distance = assessment.min_distance_m
     point = {"cell": leaf.cell.id, "lng": lng, "lat": lat,
-             "distanceM": round(assessment.min_distance_m, 3),
+             "distanceM": None if distance is None else round(distance, 3),
              "nearestFacility": assessment.nearest_facility, "status": leaf.verdict}
     # 未知格带上理由：水面、数据冲突与"证据不足"在地图上是三种不同的未知。
     if leaf.verdict == UNKNOWN and leaf.reason:
@@ -484,7 +522,8 @@ def _status_of(evaluated, query_complete: bool, obstacles_available: bool,
 
 def assess_accessibility(*, geometry, facilities, query_status: str, majors, store,
                          version: str, coverage=None, unknown_region=None, obstacles=None,
-                         rule=DISTANCE_RULE, settings=None, progress=None) -> AccessibilityOutcome:
+                         rule=DISTANCE_RULE, settings=None, progress=None,
+                         verified=None, incomplete=None) -> AccessibilityOutcome:
     """跑完可达性阶段（§5–§7.1）。
 
     ``store`` 为 None 表示没有 OSM 图，``facilities`` 为 None 表示设施阶段没有建立
@@ -497,6 +536,13 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
     ``progress(step, **detail)`` 在每一步开始时被调用（``domain``、``views``、
     ``obstacles``、每个类别的 ``category``），类别内每判定一格再报一次已判定的格数；
     它只报已经发生的事，不预估还剩多少。
+
+    ``verified`` 是覆盖抽检的实测结论（``major``/``lng``/``lat``/``verdict``/
+    ``contradicted``）：给了就是 §6.3 的局部重算——只在实测点所在的 25 米格定论，
+    同一父格里被推翻的模型结论降为未知，其余格照旧由模型判定。
+
+    ``incomplete`` 是检索没有查完的分块（按小类，bd09ll 多边形）。给了就按格判断：
+    一格的服务搜索范围内有没查完的分块才不许判缺口，而不是整个任务一个开关（§4.4）。
     """
     report = progress or (lambda step, **detail: None)
     requested = tuple(major for major in catalog.majors() if major in set(majors))
@@ -540,8 +586,13 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
         report("category", cells=0, **detail)
         evaluated.append(evaluate_category(
             major, facilities, store=store, views=views, domain=domain, rule=rule,
-            query_complete=query_complete, obstacles=obstacles, attachments=attachments,
-            on_cell=lambda cells, detail=detail: report("category", cells=cells, **detail)))
+            # Known unfinished blocks replace the task-wide switch with a per-cell test.
+            query_complete=query_complete or incomplete is not None,
+            obstacles=obstacles, attachments=attachments,
+            on_cell=lambda cells, detail=detail: report("category", cells=cells, **detail),
+            verified=metric_verified(verified, store.projection, major=major),
+            query_incomplete=(None if incomplete is None
+                              else metric_incomplete(incomplete, store.projection, major=major))))
     issues = []
     for item in evaluated:
         if item.supported and not _areas_match(item.areas, domain_area_m2):

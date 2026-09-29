@@ -8,6 +8,7 @@ from life_circle.models import RouteObservation
 from life_circle.providers import BaiduProvider
 from life_circle.field import business_geometry
 
+from . import service_rules
 from .catalog import majors, minors_of
 from .contracts import AssessmentPoint, CategoryResult, CoverageEvidence, FacilityAnalysis
 from .places import PlacesClient
@@ -19,7 +20,8 @@ from .poi_evidence import poi_evidence, route_evidence
 # Major-to-minor grouping comes from the one dictionary, like every other
 # category list in the application.
 GROUPS = {major: minors_of(major) for major in majors()}
-RULE = DistanceRule(metric="walking_route", threshold_m=1000, inclusive=True, tolerance_m=100,
+RULE = DistanceRule(metric="walking_route", threshold_m=int(service_rules.THRESHOLD_M), inclusive=True,
+                    tolerance_m=int(service_rules.TOLERANCE_M),
                     assessment_scope="isochrone", category_policy="major_minor")
 
 

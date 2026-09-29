@@ -265,6 +265,8 @@ def make_app(tmp_path, places=None, routes=None, **overrides):
     configured = dict(
         baidu_map_ak=SECRET if places is not None else "",
         analysis_provider="synthetic", baidu_place_qps=10000, baidu_direction_qps=10000,
+        # The fixture's tier must not switch with the calendar mid-suite.
+        baidu_quota_fallback_at="2099-01-01T00:00:00+08:00",
         checkup_dir=tmp_path / "checkups", hybrid_ledger_dir=tmp_path / "ledgers",
         quota_ledger_path=tmp_path / "quota.sqlite3",
         hybrid_obstacle_path=Path("missing-checkup-obstacles"),

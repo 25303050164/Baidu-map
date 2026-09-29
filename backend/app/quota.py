@@ -116,6 +116,19 @@ class AttemptCancelled(QuotaError):
         super().__init__("task cancelled before the request was sent")
 
 
+def attach_token(session, token):
+    """Give a transport session the task's cancel token, checked before every attempt.
+
+    Set as an attribute so injected transports keep their plain signature.
+    """
+    if token is not None:
+        try:
+            session.token = token
+        except AttributeError:
+            pass
+    return session
+
+
 class TieredGate(RateGate):
     """A response-paced gate whose ceiling is the active tier, read at every wait.
 
