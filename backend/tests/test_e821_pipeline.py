@@ -324,6 +324,29 @@ def test_synthetic_mode_never_opens_a_live_transport_even_with_a_key():
     asyncio.run(run())
 
 
+def test_synthetic_mode_says_so_where_the_engine_is_chosen(tmp_path, caplog):
+    from app.main import create_app
+
+    def e82(provider):
+        settings = Settings(_env_file=None, baidu_map_ak="k" * 32, analysis_provider=provider,
+                            checkup_dir=tmp_path / provider, quota_ledger_path=tmp_path / f"{provider}.sqlite3")
+        with caplog.at_level("WARNING", logger="app.main"), TestClient(create_app(settings)) as client:
+            engines = client.get("/api/v2/capabilities").json()["engines"]
+        return next(e for e in engines if e["engineId"] == "baidu_e82")
+
+    synthetic = e82("synthetic")
+    assert "合成替身" in synthetic["label"]
+    assert any("正圆" in note and "不是百度实测" in note for note in synthetic["notes"])
+    # The real-mode claim would be false here.
+    assert not any("百度实际返回" in note for note in synthetic["notes"])
+    assert any("ANALYSIS_PROVIDER=synthetic" in r.getMessage() for r in caplog.records)
+    caplog.clear()
+    real = e82("baidu")
+    assert real["label"] == "百度边界搜索（E8.2）"
+    assert any("百度实际返回" in note for note in real["notes"])
+    assert not any("ANALYSIS_PROVIDER=synthetic" in r.getMessage() for r in caplog.records)
+
+
 def test_the_isochrone_layer_returns_the_stored_display_shell():
     class Snapshot:
         isochrone = {"geometry": {"type": "MultiPolygon"}, "displayGeometry": {"type": "Polygon"}}
