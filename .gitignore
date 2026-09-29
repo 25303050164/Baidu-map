@@ -31,6 +31,9 @@ backend/.poi-ledgers/
 backend/.hybrid-ledgers/
 backend/.checkups/
 backend/.quota/
+# Offline benchmark outputs and local test logs
+.e82-bench/
+.baseline-pytest.log
 
 # Python algorithm artifacts (environments and large outputs live on D:)
 *.egg-info/

@@ -21,6 +21,13 @@ MAX_EXTENT_M = 1600
 BUDGET_TIERS = (200, 400, 800)
 
 
+def e82_request(origin, budget: int, *, qps: float | None = None) -> IsochroneRequest:
+    """The one request shape production uses; offline benchmarks build it here too."""
+    return IsochroneRequest(
+        origin, "bd09ll", budget=budget, max_extent=MAX_EXTENT_M, expand=False,
+        time_bands=(15,), config_version=ALGORITHM, qps=qps)
+
+
 class BaiduE82Engine:
     engine_id = "baidu_e82"
 
@@ -57,10 +64,8 @@ class BaiduE82Engine:
     async def compute(self, ask: IsochroneAsk, context: EngineContext) -> IsochroneSnapshot:
         async with AsyncExitStack() as stack:
             provider = await self._provider(stack, ask.origin)
-            request = IsochroneRequest(
-                ask.origin, "bd09ll", budget=ask.budget, max_extent=MAX_EXTENT_M, expand=False,
-                time_bands=(15,), config_version=ALGORITHM,
-                qps=self.settings.analysis_qps if provider.network else None)
+            request = e82_request(ask.origin, ask.budget,
+                                 qps=self.settings.analysis_qps if provider.network else None)
             result = await compute_e82(request, provider, context.token,
                                        on_progress=context.progress)
         payload = result.to_dict()
