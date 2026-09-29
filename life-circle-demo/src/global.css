@@ -1,36 +1,41 @@
-/* 全局基底：暖白纸面、墨色文字、细线分隔；强调色只留给主操作与关键数字。 */
+/* 全局基底：百度开放平台的蓝白体系。浅灰蓝底、白色卡片、主蓝只留给主操作、选中态与关键数字。 */
 :root {
-  --paper: #f3f1eb; --panel: #fbfaf6; --card: #ffffff;
-  --ink: #1d2327; --ink-2: #4b5459; --ink-3: #7d858a;
-  --rule: #e6e2d8; --rule-strong: #d3cec1;
-  --accent: #147d70; --accent-ink: #0d5c52; --accent-wash: #e8f1ed;
-  --warn: #b54708; --warn-wash: #fbf1e7; --danger: #b42318; --seal: #b3372c;
-  --sans: "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --paper: #f5f7fa; --panel: #ffffff; --card: #ffffff;
+  --ink: #1f2329; --ink-2: #666666; --ink-3: #999999;
+  --rule: #e9ebf0; --rule-strong: #dcdfe6;
+  --accent: #3366ff; --accent-ink: #3350cb; --accent-wash: #eff3ff;
+  --warn: #ff8a00; --warn-wash: #fff5e8; --danger: #f53f3f; --seal: #3366ff;
+  --brand-gradient: linear-gradient(90deg, #3a65ff 0%, #7b5cff 100%);
+  --shadow-card: 0 8px 28px rgba(41, 72, 152, .08);
+  --shadow-pop: 0 12px 36px rgba(120, 140, 200, .24);
+  --radius-card: 16px;
+  --sans: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
   --num: Bahnschrift, "DIN Alternate", "DIN Pro", "Roboto Condensed", "Segoe UI", sans-serif;
 }
-*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased}button,input,select{font:inherit}button{cursor:pointer}button:focus-visible,select:focus-visible,[role=button]:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}h1,h2,h3,h4,p{margin:0}button:disabled{cursor:not-allowed}::selection{background:#cfe6dc}svg text{user-select:none}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased}button,input,select{font:inherit}button{cursor:pointer}button:focus-visible,select:focus-visible,[role=button]:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}h1,h2,h3,h4,p{margin:0}button:disabled{cursor:not-allowed}::selection{background:#d6e0ff}svg text{user-select:none}
 
-/* 顶栏：品牌与算法切换同处一行；窄屏时切换换到第二行、选项等分，长标签换行而不撑出横向滚动。 */
-.wb { display: flex; flex-direction: column; height: 100dvh; min-height: 560px; }
-.wb-top { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px 20px;
-  flex-wrap: wrap; min-height: 52px; padding: 8px 18px; background: var(--panel);
-  border-bottom: 1px solid var(--rule-strong); }
-.wb-brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
-.wb-brand h1 { font-size: 16px; font-weight: 600; letter-spacing: .02em; color: var(--ink); white-space: nowrap; }
-.wb-seal { display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
-  width: 30px; height: 34px; flex: none; gap: 1px; background: var(--seal); color: #fff8f0; border-radius: 2px;
-  font: 400 13px/1 "STKaiti", "KaiTi", "Kaiti SC", "STSong", "SimSun", serif;
-  box-shadow: inset 0 0 0 2px var(--seal), inset 0 0 0 3px #fff8f099; }
-.wb-seal i { font-style: normal; display: block; }
-.algorithm-switch { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.wb-top-label { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-.algorithm-switch .ant-segmented { max-width: 100%; background: #ebe8df; }
+/* 顶栏：白底细线，左边标志与名称，右边算法切换；窄屏时切换换到第二行、选项等分。 */
+.wb { display: flex; flex-direction: column; height: 100dvh; min-height: 560px; font-size: 14px; }
+.wb-top { position: relative; z-index: 20; flex: none; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px 24px; flex-wrap: wrap; min-height: 56px; padding: 8px 24px; background: var(--panel);
+  border-bottom: 1px solid var(--rule); }
+.wb-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.wb-brand h1 { font-size: 17px; font-weight: 600; letter-spacing: .02em; color: var(--ink); white-space: nowrap; }
+.wb-logo { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none;
+  border-radius: 9px; background: var(--brand-gradient); box-shadow: 0 4px 12px rgba(58, 101, 255, .3); }
+.wb-logo svg { display: block; }
+.algorithm-switch { display: flex; align-items: center; min-width: 0; }
+.algorithm-switch .ant-segmented { max-width: 100%; padding: 3px; border-radius: 999px; background: #f0f2f5; }
+.algorithm-switch .ant-segmented-item { border-radius: 999px; }
+.algorithm-switch .ant-segmented-item-label { padding-inline: 16px; }
+.algorithm-switch .ant-segmented-item-selected { color: var(--accent); font-weight: 500;
+  box-shadow: 0 2px 8px rgba(41, 72, 152, .12); }
+.algorithm-switch .ant-segmented-thumb { border-radius: 999px; }
 .algorithm-activity { margin-left: 6px; }
-.algorithm-activity .ant-badge-status-text { font-size: 12px; color: var(--accent-ink); }
+.algorithm-activity .ant-badge-status-text { font-size: 12px; color: var(--accent); }
 @media (max-width: 640px) {
   .wb-top { padding: 8px 12px; }
   .algorithm-switch, .algorithm-switch .ant-segmented, .algorithm-switch .ant-segmented-group { width: 100%; }
-  .wb-top-label { display: none; }
   .algorithm-switch .ant-segmented-item { flex: 1 1 0; min-width: 0; }
-  .algorithm-switch .ant-segmented-item-label { white-space: normal; line-height: 1.35; min-height: 28px; padding-block: 4px; display: flex; align-items: center; justify-content: center; }
+  .algorithm-switch .ant-segmented-item-label { white-space: normal; line-height: 1.35; min-height: 28px; padding-inline: 8px; padding-block: 4px; display: flex; align-items: center; justify-content: center; }
 }

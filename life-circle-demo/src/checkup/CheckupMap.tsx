@@ -130,6 +130,8 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
   const [map, setMap] = useState<BMapMap | null>(null);
   const [error, setError] = useState(false);
   const [viewTick, setViewTick] = useState(0);
+  /** 图例可以收成一个"图例"按钮，把地图让出来；默认展开，读图先要看得懂颜色。 */
+  const [legendOpen, setLegendOpen] = useState(true);
   const pick = useRef(onPick);
   pick.current = onPick;
   const select = useRef(onSelect);
@@ -338,11 +340,12 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
     try {
       replaceGroup(instance, 'label', () => {
         const created: BMapOverlay[] = [];
-        // 结果中心用墨色，尚未体检的新选点用印章红：两者同时出现时一眼分得开。
+        // 结果中心用墨色，尚未体检的新选点用百度地图的选点红：两者同时出现时一眼分得开，
+        // 也不会和蓝色的圈面、核验点混在一起。
         const marks: Array<[number, number, string, string]> = [];
-        if (resultCenter) marks.push([resultCenter.lng, resultCenter.lat, '本次体检中心（与报告一致）', '#1d2327']);
+        if (resultCenter) marks.push([resultCenter.lng, resultCenter.lat, '本次体检中心（与报告一致）', '#1f2329']);
         if (!resultCenter || center.lng !== resultCenter.lng || center.lat !== resultCenter.lat) {
-          marks.push([center.lng, center.lat, '待体检选点（BD09LL）', '#b3372c']);
+          marks.push([center.lng, center.lat, '待体检选点（BD09LL）', '#f53f3f']);
         }
         for (const [lng, lat, title, color] of marks) {
           const icon = createDotIcon(api, { color, layered: true });
@@ -392,79 +395,84 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
         : '百度地图脚本未能加载，请检查网络及浏览器地图密钥的权限和来源限制，修复后刷新页面。')
         : '地图就绪后可点击选择体检中心。'}</p>
     </div>}
-    <div className="api-map-left">
-      <div className="api-map-caption">点击地图选点 · BD09LL
-        {resultCenter && <><br />图层与报告中心 <b>{resultCenter.lng.toFixed(6)}, {resultCenter.lat.toFixed(6)}</b></>}
-      </div>
-    </div>
     {/* 还没有任何一层画上去时不出图例：空图上的一串色块只会让人以为已经有结论。 */}
     {Object.values(drawables).some(Boolean) && (legend.length > 0 || heatOn || waterOn)
-      && <div className="api-map-legend" data-testid="checkup-legend" aria-label="体检图层图例">
-      {layers.service && <span className="api-legend-item api-legend-block" data-testid="service-legend">
-        {api && !api.Overlay ? '当前地图不支持服务覆盖热力' : <>
-          <span className="api-legend-line">
-            <i className="api-legend-ramp" style={{ background: serviceRampCss(serviceMode) }} />
-            {serviceMode === SERVICE_COMPOSITE
-              ? `三类均已知处覆盖类别占比 0–${SERVICE_SCORE_MAX}%`
-              : `${categoryLabel(serviceMode)}：已覆盖处最近设施步行 0–${SERVICE_DISTANCE_MAX_M} 米`}</span>
-          <span className="api-legend-line">
-            <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_GAP_RGB) }} />服务不足
-            <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_UNKNOWN_RGB) }} />数据未知
-            <span className="api-legend-note">· 模型估计，不是实测
-              {coverage === null && ' · 等待模型网格'}
-              {coverage !== null && coverage.samples.length === 0 && ' · 本次没有可绘制的网格'}
-              {coverage !== null && coverage.dropped > 0 && ` · ${coverage.dropped} 个格数据不全未绘制`}</span>
-          </span>
-        </>}
-      </span>}
-      {layers.density && <span className="api-legend-item" data-testid="density-legend"
-        data-points={densityInput.points.length} style={{ whiteSpace: 'normal', flexWrap: 'wrap' }}>
-        {api && !api.Overlay ? '当前地图不支持设施密度热力' : <>
-          {/* 色带连同不透明度与地图同源；竖线标出单个设施中心的读数。 */}
-          <span className="density-ramp" style={{ background: densityLegendCss() }}>
-            <i data-testid="density-single-tick"
-              style={{ left: `${(SINGLE_FACILITY_PEAK / DENSITY_SCALE_MAX) * 100}%` }} /></span>
-          {densityCategory === DENSITY_ALL ? '设施' : categoryLabel(densityCategory)}密度
-          0–{DENSITY_SCALE_MAX} {DENSITY_UNIT}（竖线：单个设施中心 {SINGLE_FACILITY_PEAK.toFixed(2)}）
-          · 核半径 {HEAT_KERNEL_RADIUS_M} 米 · 不代表服务覆盖率
-          {!drawables.facilities && ' · 等待设施结果'}
-          {drawables.facilities?.state === 'empty' && ' · 本次没有可绘制设施'}
-          {drawables.facilities?.state === 'ready' && densityInput.records === 0
-            && ` · 本次没有${categoryLabel(densityCategory)}设施`}
-          {densityInput.points.length > 0 && ` · ${densityInput.points.length} 处设施参与`}
-          {densityInput.merged > 0 && `（${densityInput.merged} 条疑似重复已合并）`}
-          {densityInput.points.length > 0 && !drawables.isochrone?.shapes.length && ' · 等待计算圈面'}
-        </>}
-      </span>}
-      {waterOn && water && <span className="api-legend-item" data-testid="water-legend"
-        data-shapes={water.shapes.length} data-crossings={water.crossings.length}
-        style={{ whiteSpace: 'normal', flexWrap: 'wrap' }}>
-        {api && !api.Overlay ? '当前地图不支持水系标注' : <>
-          {WATER_KINDS.filter(kind => water.shapes.some(shape => shape.kind === kind)).map(kind =>
-            <span key={kind} data-water-kind={kind} title={WATER_STYLES[kind].note}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 6 }}>
-              <i style={waterSwatch(WATER_STYLES[kind])} />
-              {kind === 'reach' && water.reachWidthM
-                ? `${WATER_STYLES.reach.label}（OSM，宽 ${water.reachWidthM.min === water.reachWidthM.max
-                  ? water.reachWidthM.min : `${water.reachWidthM.min}–${water.reachWidthM.max}`} m）`
-                : WATER_STYLES[kind].label}
-            </span>)}
-          {water.crossings.length > 0 && <span data-water-kind="crossing"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <i className="api-legend-dot" style={{ background: CROSSING_COLOR }} />已核实桥梁 {water.crossings.length} 座</span>}
-          · 以复核后的水系计算，底图水面仅作参照
-        </>}
-      </span>}
-      {Object.entries(LAYER_STYLES).filter(([id]) => layers[id as LayerId])
-        .map(([id, style]) => <span key={id} className="api-legend-item">
-          <i className={AREA_LAYERS.has(id as LayerId) ? 'api-legend-area' : 'api-legend-dot'}
-            style={layerSwatch(id as LayerId)} />{style.label}</span>)}
-      {layers.facilities && (drawables.facilities?.points.length ?? 0) > 0
-        && <span className="api-legend-item api-legend-cats">设施类别
-          {CATEGORY_ORDER.map(category => <span key={category} className="api-legend-item">
-            <i className="api-legend-dot" style={{ background: CATEGORY_COLORS[category] }} />
-            {categoryLabel(category)}</span>)}</span>}
-      {legend.length > 1 && <span className="api-legend-item api-legend-count">共 {legend.length} 个点，同格合并显示，数据不截断</span>}
+      && <div className="api-map-legend" data-testid="checkup-legend" aria-label="体检图层图例"
+        data-open={legendOpen ? 'yes' : 'no'}>
+      <button type="button" className="lg-head" aria-expanded={legendOpen}
+        onClick={() => setLegendOpen(open => !open)}>图例</button>
+      <div className="lg-body">
+        {layers.service && <span className="api-legend-item api-legend-block" data-testid="service-legend">
+          {api && !api.Overlay ? '当前地图不支持服务覆盖热力' : <>
+            <span className="api-legend-line">
+              <i className="api-legend-ramp" style={{ background: serviceRampCss(serviceMode) }} />
+              {serviceMode === SERVICE_COMPOSITE
+                ? `三类均已知处覆盖类别占比 0–${SERVICE_SCORE_MAX}%`
+                : `${categoryLabel(serviceMode)}：已覆盖处最近设施步行 0–${SERVICE_DISTANCE_MAX_M} 米`}</span>
+            <span className="api-legend-line">
+              <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_GAP_RGB) }} />服务不足
+              <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_UNKNOWN_RGB) }} />数据未知
+              <span className="api-legend-note">· 模型估计，不是实测
+                {coverage === null && ' · 等待模型网格'}
+                {coverage !== null && coverage.samples.length === 0 && ' · 本次没有可绘制的网格'}
+                {coverage !== null && coverage.dropped > 0 && ` · ${coverage.dropped} 个格数据不全未绘制`}</span>
+            </span>
+          </>}
+        </span>}
+        {layers.density && <span className="api-legend-item api-legend-block" data-testid="density-legend"
+          data-points={densityInput.points.length}>
+          {api && !api.Overlay ? '当前地图不支持设施密度热力' : <>
+            {/* 色带连同不透明度与地图同源；竖线标出单个设施中心的读数。 */}
+            <span className="api-legend-line">
+              <span className="density-ramp" style={{ background: densityLegendCss() }}>
+                <i data-testid="density-single-tick"
+                  style={{ left: `${(SINGLE_FACILITY_PEAK / DENSITY_SCALE_MAX) * 100}%` }} /></span>
+              <span>{densityCategory === DENSITY_ALL ? '设施' : categoryLabel(densityCategory)}密度
+              0–{DENSITY_SCALE_MAX} {DENSITY_UNIT}（竖线：单个设施中心 {SINGLE_FACILITY_PEAK.toFixed(2)}）</span>
+            </span>
+            <span className="api-legend-note">
+              · 核半径 {HEAT_KERNEL_RADIUS_M} 米 · 不代表服务覆盖率
+              {!drawables.facilities && ' · 等待设施结果'}
+              {drawables.facilities?.state === 'empty' && ' · 本次没有可绘制设施'}
+              {drawables.facilities?.state === 'ready' && densityInput.records === 0
+                && ` · 本次没有${categoryLabel(densityCategory)}设施`}
+              {densityInput.points.length > 0 && ` · ${densityInput.points.length} 处设施参与`}
+              {densityInput.merged > 0 && `（${densityInput.merged} 条疑似重复已合并）`}
+              {densityInput.points.length > 0 && !drawables.isochrone?.shapes.length && ' · 等待计算圈面'}
+            </span>
+          </>}
+        </span>}
+        {waterOn && water && <span className="api-legend-item api-legend-block" data-testid="water-legend"
+          data-shapes={water.shapes.length} data-crossings={water.crossings.length}>
+          {api && !api.Overlay ? '当前地图不支持水系标注' : <>
+            <span className="api-legend-line">
+              {WATER_KINDS.filter(kind => water.shapes.some(shape => shape.kind === kind)).map(kind =>
+                <span key={kind} data-water-kind={kind} title={WATER_STYLES[kind].note} className="api-legend-item">
+                  <i style={waterSwatch(WATER_STYLES[kind])} />
+                  {kind === 'reach' && water.reachWidthM
+                    ? `${WATER_STYLES.reach.label}（OSM，宽 ${water.reachWidthM.min === water.reachWidthM.max
+                      ? water.reachWidthM.min : `${water.reachWidthM.min}–${water.reachWidthM.max}`} m）`
+                    : WATER_STYLES[kind].label}
+                </span>)}
+              {water.crossings.length > 0 && <span data-water-kind="crossing" className="api-legend-item">
+                <i className="api-legend-dot" style={{ background: CROSSING_COLOR }} />已核实桥梁 {water.crossings.length} 座</span>}
+            </span>
+            <span className="api-legend-note">· 以复核后的水系计算，底图水面仅作参照</span>
+          </>}
+        </span>}
+        <span className="api-legend-line api-legend-layers">
+          {Object.entries(LAYER_STYLES).filter(([id]) => layers[id as LayerId])
+            .map(([id, style]) => <span key={id} className="api-legend-item">
+              <i className={AREA_LAYERS.has(id as LayerId) ? 'api-legend-area' : 'api-legend-dot'}
+                style={layerSwatch(id as LayerId)} />{style.label}</span>)}
+        </span>
+        {layers.facilities && (drawables.facilities?.points.length ?? 0) > 0
+          && <span className="api-legend-line api-legend-cats">设施类别
+            {CATEGORY_ORDER.map(category => <span key={category} className="api-legend-item">
+              <i className="api-legend-dot" style={{ background: CATEGORY_COLORS[category] }} />
+              {categoryLabel(category)}</span>)}</span>}
+        {legend.length > 1 && <span className="api-legend-note api-legend-count">共 {legend.length} 个点，同格合并显示，数据不截断</span>}
+      </div>
     </div>}
   </div>;
 }

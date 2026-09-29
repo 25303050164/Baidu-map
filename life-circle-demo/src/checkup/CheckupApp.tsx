@@ -27,7 +27,8 @@ import { LAYER_IDS, type LayerId, type Stage } from './validate';
 import { DENSITY_ALL, drawableLayer, LAYER_STYLES, serviceSamples, type LayerDrawable } from './layers';
 import { CheckupMap, DEFAULT_CHECKUP_LAYERS, layerSwatch, type CheckupLayerToggles, type HeatLayer } from './CheckupMap';
 import { CheckupReport } from './CheckupReport';
-import { CATEGORY_ORDER, categoryLabel, coverageItems, evidenceNotes, percent } from './report';
+import { Fold } from './Fold';
+import { CATEGORY_ORDER, categoryLabel, coverageItems, percent } from './report';
 import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
 import { outdatedText, recomputedText, versionView, waterView } from './water';
 import { duration, liveView, TICKING_PHASES, type LiveKind } from './live';
@@ -96,7 +97,7 @@ const PHASE_TONE: Partial<Record<CheckupState['phase'], string>> = {
 /** 一条设施路线的读法：判定与距离同进同出，没有距离就不说"在不在标准内"。 */
 function RouteDetail({ route, error }: { route: CheckupState['route']; error?: string }) {
   if (error) return <Alert type="warning" title={error} showIcon />;
-  if (!route) return <p className="api-muted">选择设施后可查询它的实际步行路线。点击详情与体检共用同一个路线闸门，额度用尽时这里会说明原因。</p>;
+  if (!route) return null;
   return <>
     <Descriptions className="wb-facts" size="small" column={1} items={[
       { key: 'facility', label: '设施', children: route.facilityId },
@@ -292,8 +293,8 @@ export default function CheckupApp({ engine }: { engine: string }) {
   const liveNow = liveView(state, now);
 
   const overall = snapshot?.report?.overall ?? snapshot?.scores?.overall ?? null;
-  const notes = useMemo(() => snapshot ? evidenceNotes(snapshot) : [], [snapshot]);
   const items = useMemo(() => snapshot ? coverageItems(snapshot) : [], [snapshot]);
+  const idle = state.phase === 'idle';
 
   const facts = task && <Descriptions className="wb-facts" size="small" column={1} items={[
     { key: 'task', label: '任务', children: <span data-testid="checkup-task-id">{task.taskId}</span> },
@@ -323,67 +324,78 @@ export default function CheckupApp({ engine }: { engine: string }) {
           : `${duration(liveNow.activityAgo)}前`}</span> }] : []),
   ]} />;
 
-  return <main className="wb-body" data-stage={state.phase === 'idle' ? 'idle' : 'active'}>
+  return <main className="wb-body" data-stage={idle ? 'idle' : 'active'}>
     <aside className="wb-panel wb-side" aria-label="体检条件">
       <div className="wb-scroll">
-        <section className="wb-sec">
-          <h2 className="wb-h">体检中心</h2>
+        <section className="wb-sec wb-setup">
           <LocationControls center={center} onPick={choose} />
           <div className="wb-coords">
-            <label className="wb-field"><span>经度</span><InputNumber aria-label="经度" value={lng}
-              onChange={value => edit('lng', value)} precision={6} controls={false} /></label>
-            <label className="wb-field"><span>纬度</span><InputNumber aria-label="纬度" value={lat}
-              onChange={value => edit('lat', value)} precision={6} controls={false} /></label>
+            <InputNumber aria-label="经度" prefix="经度" value={lng}
+              onChange={value => edit('lng', value)} precision={6} controls={false} />
+            <InputNumber aria-label="纬度" prefix="纬度" value={lat}
+              onChange={value => edit('lat', value)} precision={6} controls={false} />
           </div>
-          <p className="wb-hint">也可以直接在地图上点选。评估域以该点为中心划定，域外面积不计入覆盖率。</p>
           {!valid && <Alert type="error" title="请输入有效坐标：经度 −180～180，纬度大于 −85 且小于 85" />}
-        </section>
-        <section className="wb-sec">
-          <h2 className="wb-h">引擎与预算</h2>
+          <div className="wb-inline">
+            <span>采样预算</span>
+            <Select aria-label="调用预算" value={budget ?? undefined} placeholder="—" onChange={setBudget}
+              options={(selectedEngine?.budgets ?? []).map(value => ({ value, label: `${value} 次` }))} />
+          </div>
           {capabilityError && <Alert type="error" title={capabilityError} showIcon />}
-          <p className="wb-hint" data-testid="checkup-engine">引擎：{selectedEngine?.label
-            ?? (view ? `${engine}（后端能力表未提供，无法提交）`
-              : capabilityError ? '未能读取能力表，暂不能提交' : '正在读取能力表')}
-            {selectedEngine?.engineVersion && <span className="wb-version">v{selectedEngine.engineVersion}</span>}</p>
-          <label className="wb-field"><span>等时圈采样预算</span><Select aria-label="调用预算"
-            value={budget ?? undefined} placeholder="—"
-            onChange={setBudget}
-            options={(selectedEngine?.budgets ?? []).map(value => ({ value, label: `${value} 次` }))} /></label>
-          <p className="wb-hint">步行 900 秒 · 服务标准 1000 米 · 坐标 BD09LL</p>
-          {selectedEngine?.caveat && <Alert type="warning" title={selectedEngine.caveat} />}
+          {selectedEngine?.alert && <Alert type="warning" showIcon title={selectedEngine.alert} />}
         </section>
-        <section className="wb-sec">
-          <h2 className="wb-h">地图图层</h2>
-          <p className="wb-group">热力 · 二选一</p>
-          <div className="wb-layer">
-            <Checkbox checked={!!toggles.service}
-              onChange={event => toggleHeat('service', event.target.checked)}>服务覆盖热力</Checkbox>
-            {toggles.service && <Select className="wb-layer-select" size="small" aria-label="覆盖类别"
-              value={serviceMode} onChange={setServiceMode} options={SERVICE_MODES} popupMatchSelectWidth={false} />}
-          </div>
-          <div className="wb-layer">
-            <Checkbox checked={!!toggles.density}
-              onChange={event => toggleHeat('density', event.target.checked)}>设施密度热力</Checkbox>
-            {toggles.density && <Select className="wb-layer-select" size="small" aria-label="密度类别"
-              value={densityCategory} onChange={setDensityCategory} options={DENSITY_CATEGORIES}
-              popupMatchSelectWidth={false} />}
-          </div>
-          <p className="wb-group">叠加</p>
-          <div className="wb-layer">
-            <Checkbox checked={!!toggles.water}
-              onChange={event => setToggles({ ...toggles, water: event.target.checked })}>
-              <i className="api-swatch wb-swatch-water" />水系标注</Checkbox>
-          </div>
-          {MAP_LAYERS.map(id => <div className="wb-layer" key={id}>
-            <Checkbox checked={!!toggles[id]}
-              onChange={event => setToggles({ ...toggles, [id]: event.target.checked })}>
-              <i className="api-swatch" style={layerSwatch(id)} />
-              {LAYER_STYLES[id].label}</Checkbox>
-            {layerErrors[id] && <p className="wb-layer-error">{layerErrors[id]}</p>}
-          </div>)}
-          <details className="wb-more wb-notes">
-            <summary>读图说明</summary>
+        <footer className="wb-actions">
+          <Button aria-label="开始体检" type="primary" size="large" block onClick={start}
+            disabled={!canStart}>开始体检</Button>
+          {(live || (!busy && !idle)) && <div className="wb-actions-row">
+            {live && <Button onClick={() => void controller.cancel()}
+              disabled={state.phase === 'cancelling'}>取消任务</Button>}
+            {!live && !busy && !idle && <Button onClick={clear}>清除结果</Button>}
+          </div>}
+          {live && <p className="wb-hint" data-testid="checkup-live-note">任务进行中：切页、切换算法或刷新都不会取消它。</p>}
+        </footer>
+        <nav className="wb-dir" aria-label="目录">
+          <Fold title="图层" defaultOpen className="wb-layers">
+            <p className="wb-group">热力 · 二选一</p>
+            <div className="wb-layer">
+              <Checkbox checked={!!toggles.service}
+                onChange={event => toggleHeat('service', event.target.checked)}>服务覆盖热力</Checkbox>
+              {toggles.service && <Select className="wb-layer-select" size="small" aria-label="覆盖类别"
+                value={serviceMode} onChange={setServiceMode} options={SERVICE_MODES} popupMatchSelectWidth={false} />}
+            </div>
+            <div className="wb-layer">
+              <Checkbox checked={!!toggles.density}
+                onChange={event => toggleHeat('density', event.target.checked)}>设施密度热力</Checkbox>
+              {toggles.density && <Select className="wb-layer-select" size="small" aria-label="密度类别"
+                value={densityCategory} onChange={setDensityCategory} options={DENSITY_CATEGORIES}
+                popupMatchSelectWidth={false} />}
+            </div>
+            <p className="wb-group">叠加</p>
+            <div className="wb-layer">
+              <Checkbox checked={!!toggles.water}
+                onChange={event => setToggles({ ...toggles, water: event.target.checked })}>
+                <i className="api-swatch wb-swatch-water" />水系标注</Checkbox>
+            </div>
+            {MAP_LAYERS.map(id => <div className="wb-layer" key={id}>
+              <Checkbox checked={!!toggles[id]}
+                onChange={event => setToggles({ ...toggles, [id]: event.target.checked })}>
+                <i className="api-swatch" style={layerSwatch(id)} />
+                {LAYER_STYLES[id].label}</Checkbox>
+              {layerErrors[id] && <p className="wb-layer-error">{layerErrors[id]}</p>}
+            </div>)}
+          </Fold>
+          <Fold title="说明" className="wb-notes">
             <dl>
+              <dt>算法</dt>
+              <dd data-testid="checkup-engine">引擎：{selectedEngine?.label
+                ?? (view ? `${engine}（后端能力表未提供，无法提交）`
+                  : capabilityError ? '未能读取能力表，暂不能提交' : '正在读取能力表')}
+                {selectedEngine?.engineVersion && <span className="wb-version">v{selectedEngine.engineVersion}</span>}</dd>
+              {selectedEngine?.caveat && <dd>{selectedEngine.caveat}</dd>}
+              <dt>口径</dt>
+              <dd>步行 900 秒成圈 · 服务标准步行 1000 米 · 坐标 BD09LL。可以直接在地图上点选中心；评估域以该点划定，域外面积不计入覆盖率。</dd>
+              <dt>未知与灰区</dt>
+              <dd>未知不等于不可达：灰区只覆盖"路网与检索数据都足够、却仍超出服务标准"的连片区域。评分区间是上界与下界，不是一个确定的百分比。</dd>
               <dt>服务覆盖热力</dt>
               <dd>后端评估格的结论连成渐变面：已覆盖按最近设施步行距离着色，服务不足为灰，数据未知为淡紫。模型估计，不是实测。</dd>
               <dt>设施密度热力</dt>
@@ -396,21 +408,19 @@ export default function CheckupApp({ engine }: { engine: string }) {
                     + '底图水面只作参照，不代表计算结果。'}</dd>
               {MAP_LAYERS.map(id => <div key={id}><dt>{LAYER_STYLES[id].label}</dt>
                 <dd>{LAYER_STYLES[id].note}</dd></div>)}
+              {view && <>
+                <dt>预算</dt>
+                <dd className="wb-quota">
+                  {view.quota.label && <p data-testid="quota-label">
+                    {/* 余额的说法逐字来自后端：它只算本应用自己的额度。 */}
+                    {view.quota.label}</p>}
+                  {view.quota.lines.map(line => <p key={line}>{line}</p>)}
+                </dd>
+              </>}
             </dl>
-          </details>
-        </section>
+          </Fold>
+        </nav>
       </div>
-      <footer className="wb-actions">
-        <Button aria-label="开始体检" type="primary" size="large" block onClick={start}
-          disabled={!canStart}>开始体检</Button>
-        {(live || (!busy && state.phase !== 'idle')) && <div className="wb-actions-row">
-          {live && <Button onClick={() => void controller.cancel()}
-            disabled={state.phase === 'cancelling'}>取消任务</Button>}
-          {!live && !busy && state.phase !== 'idle' && <Button onClick={clear}>清除结果</Button>}
-        </div>}
-        {live && <p className="wb-hint" data-testid="checkup-live-note">当前任务尚未结束：切换页面、切换算法或刷新都不会取消它。
-          要按新条件体检，请等它完成，或先点"取消任务"。</p>}
-      </footer>
     </aside>
 
     <section className="wb-map api-map-section" data-testid="checkup-map-section"
@@ -425,61 +435,37 @@ export default function CheckupApp({ engine }: { engine: string }) {
         selectedId={selected} onSelect={setSelected} />
       <div className="wb-map-banners">
         {snapshot && stale && <Alert type="warning" showIcon
-          title="条件已修改。地图与报告仍是上一次体检的结果，需重新体检才会更新。" />}
+          title="中心已修改：地图与报告仍是上次体检的结果" />}
         {!snapshot && live && stale && <Alert type="info" showIcon
-          title="进行中的任务仍按它提交时的中心计算；新选点要等它结束后再体检。" />}
+          title="进行中的任务仍按原中心计算" />}
         {version && version.outdatedBy.length > 0 && <Alert type="warning" showIcon
           data-testid="checkup-outdated" title={`旧版本（第 ${snapshot?.revision} 版）：水系数据已修订`}
           description={outdatedText(version)} />}
       </div>
     </section>
 
-    <aside className="wb-panel wb-results" aria-label="体检结果">
+    {!idle && <aside className="wb-panel wb-results" aria-label="体检结果">
       <div className="wb-scroll">
-        <section className="wb-sec">
+        <section className="wb-sec wb-status">
           <div className="wb-sec-head">
-            <h2 className="wb-h">体检进度</h2>
-            {state.phase !== 'idle' && <span className="wb-phase" data-testid="checkup-phase"
+            <span className="wb-phase" data-testid="checkup-phase"
               data-phase={state.phase} data-tone={PHASE_TONE[state.phase] ?? 'live'}>
-              {PHASE_LABELS[state.phase] ?? state.phase}</span>}
+              {PHASE_LABELS[state.phase] ?? state.phase}</span>
+            {task && <b className="wb-clock" data-testid="checkup-elapsed"
+              data-seconds={liveNow ? liveNow.elapsed ?? '' : task.elapsedSeconds}>
+              {liveNow ? liveNow.kind === 'queued' ? `尚未开始（已排队 ${duration(liveNow.queued)}）`
+                : liveNow.elapsed === null ? '尚未开始' : duration(liveNow.elapsed)
+                : `${task.elapsedSeconds.toFixed(1)} 秒`}</b>}
           </div>
-          {state.phase === 'idle' && <div className="wb-empty">
-            <p className="wb-empty-title">还没有体检结果</p>
-            <p>在地图上选好中心，点左下角“开始体检”。一次体检会给出：</p>
-            <ul>
-              <li>购物、医疗、教育三类设施的步行覆盖率区间</li>
-              <li>超出 1000 米服务标准的灰区与改进建议</li>
-              <li>抽样设施的真实步行路线核验</li>
-            </ul>
-          </div>}
-          {state.input && state.phase !== 'idle' && <p className="wb-hint wb-center">
-            中心 {state.input.center.lng.toFixed(6)}, {state.input.center.lat.toFixed(6)}</p>}
+          {task && <StageProgress stage={task.stage} />}
           {liveNow && <div className="wb-live" role="status" data-testid="checkup-live"
             data-kind={liveNow.kind} data-tone={LIVE_ALERT[liveNow.kind]}>
             <strong>{liveNow.title}</strong>
             <p>{liveNow.hint + (liveNow.kind === 'restoring' && state.input
               ? `（请求标识 ${state.input.clientRequestId}）` : '')}</p>
           </div>}
-          {task && <>
-            <div className="wb-clock">
-              <span>已用时</span>
-              <b data-testid="checkup-elapsed"
-                data-seconds={liveNow ? liveNow.elapsed ?? '' : task.elapsedSeconds}>
-                {liveNow ? liveNow.kind === 'queued' ? `尚未开始（已排队 ${duration(liveNow.queued)}）`
-                  : liveNow.elapsed === null ? '尚未开始' : duration(liveNow.elapsed)
-                  : `${task.elapsedSeconds.toFixed(1)} 秒`}</b>
-            </div>
-            <StageProgress stage={task.stage} />
-            {liveNow ? facts : <details className="wb-more"><summary>任务信息</summary>{facts}</details>}
-            {version && snapshot?.taskId === task.taskId && <p className="wb-hint" data-testid="checkup-version"
-              data-recomputed={version.recomputed ? 'yes' : 'no'}>
-              {`结果版本：第 ${snapshot.revision} 版 · 水系 `
-                + (version.applied === null ? '早于水系复核' : version.applied.length === 0 ? 'OSM 原样（未采用复核）'
-                  : version.applied.join('、'))}
-              {version.recomputed && <><br />{recomputedText(version.recomputed)}</>}</p>}
-          </>}
           {state.phase === 'cancelled' && <Alert type="info" title="任务已取消"
-            description="取消只停住后续请求；已经发出的调用仍会计入本应用的预算账本。" />}
+            description="已经发出的调用仍计入本应用的预算账本。" />}
           {state.error && <Alert type="error" title={state.error} showIcon data-testid="checkup-error"
             action={<Button aria-label="重试" size="small"
               onClick={() => void controller.retry()}>{state.recovery === 'unconfirmed' ? '重新提交'
@@ -487,13 +473,13 @@ export default function CheckupApp({ engine }: { engine: string }) {
         </section>
 
         {snapshot && <section className="wb-sec wb-summary" aria-label="覆盖区间摘要">
-          <h2 className="wb-h">覆盖率区间</h2>
+          <p className="wb-label">覆盖率</p>
           {overall && overall.available ? <>
             <p className="wb-range"><b>{fixed(overall.coverageLowerPct)}</b><span>～</span>
               <b>{fixed(overall.coverageUpperPct)}</b><small>%</small></p>
             <RangeMeter lower={overall.coverageLowerPct} upper={overall.coverageUpperPct} />
             <p className="wb-meter-key"><i className="k-known" />已知覆盖<i className="k-unknown" />未知
-              <span>可评估 {percent(overall.assessablePct)} · 未知 {percent(overall.unknownPct)}</span></p>
+              <span>可评估 {percent(overall.assessablePct)}</span></p>
           </> : <Alert type="warning" showIcon
             title="总体区间暂不给出" description={overall?.reason ?? '缺少分类结论'} />}
           <ul className="wb-cats">{items.map(item => <li key={item.category}>
@@ -502,39 +488,35 @@ export default function CheckupApp({ engine }: { engine: string }) {
             <span className="wb-cat-value">{item.supported
               ? `${fixed(item.lowerPct)}–${fixed(item.upperPct)}%` : '无法确定'}</span>
           </li>)}</ul>
-          <Button block onClick={() => setReportOpen(true)}>查看体检报告</Button>
+          <Button block type="primary" ghost onClick={() => setReportOpen(true)}>查看体检报告</Button>
         </section>}
 
-        {snapshot && <section className="wb-sec">
-          <h2 className="wb-h">设施详情</h2>
-          {selectedPoint ? <>
-            <Descriptions className="wb-facts" size="small" column={1} items={[
-              { key: 'id', label: '设施', children: selectedPoint.key },
-              { key: 'title', label: '摘要', children: selectedPoint.title },
-            ]} />
-            <Button onClick={() => void controller.detail(selectedPoint.key)}
+        {snapshot && (selectedPoint || state.route || state.routeError) && <section className="wb-sec wb-facility">
+          <p className="wb-label">设施</p>
+          {selectedPoint && <>
+            <p className="wb-facility-title">{selectedPoint.title}</p>
+            <Button size="small" onClick={() => void controller.detail(selectedPoint.key)}
               disabled={busy}>查询步行路线</Button>
-          </> : <p className="wb-hint">在地图上点一个设施点位，可查询它的实际步行路线。</p>}
-          {(selectedPoint || state.route || state.routeError)
-            && <RouteDetail route={state.route} error={state.routeError} />}
+          </>}
+          <RouteDetail route={state.route} error={state.routeError} />
         </section>}
 
-        {notes.length > 0 && <details className="wb-sec wb-more">
-          <summary>证据说明 · {notes.length} 条</summary>
-          <ul className="checkup-notes">{notes.map(note => <li key={note.text}>{note.text}</li>)}</ul>
-        </details>}
-
-        <footer className="wb-fine">
-          {view?.quota.label && <p data-testid="quota-label">
-            {/* 余额的说法逐字来自后端：它只算本应用自己的额度。 */}
-            {view.quota.label}</p>}
-          {view && view.quota.lines.map(line => <p key={line}>{line}</p>)}
-          <p>未知不等于不可达：灰区只覆盖"路网与检索数据都足够、却仍超出服务标准"的连片区域。评分区间是上界与下界，不是一个确定的百分比。</p>
-        </footer>
+        {task && <Fold title="任务信息" className="wb-task">
+          {facts}
+          {state.input && <p className="wb-hint wb-center">
+            中心 {state.input.center.lng.toFixed(6)}, {state.input.center.lat.toFixed(6)}</p>}
+          {version && snapshot?.taskId === task.taskId && <p className="wb-hint" data-testid="checkup-version"
+            data-recomputed={version.recomputed ? 'yes' : 'no'}>
+            {`结果版本：第 ${snapshot.revision} 版 · 水系 `
+              + (version.applied === null ? '早于水系复核' : version.applied.length === 0 ? 'OSM 原样（未采用复核）'
+                : version.applied.join('、'))}
+            {version.recomputed && <><br />{recomputedText(version.recomputed)}</>}</p>}
+        </Fold>}
       </div>
-    </aside>
+    </aside>}
 
-    <Drawer title="体检报告" open={reportOpen} onClose={() => setReportOpen(false)} size={760}>
+    <Drawer title="体检报告" open={reportOpen} onClose={() => setReportOpen(false)} size={960}
+      rootClassName="rp-drawer">
       {snapshot ? <CheckupReport snapshot={snapshot} stale={stale} waterReviews={view?.waterReviews} />
         : <p className="api-muted">体检完成后在这里显示报告。</p>}
     </Drawer>

@@ -41,7 +41,7 @@ export type WaterStyle = {
 export const WATER_KINDS: WaterKind[] = ['extent', 'reach', 'supplement', 'misdrawn', 'conflict'];
 
 export const WATER_STYLES: Record<WaterKind, WaterStyle> = {
-  extent: { label: '水系复核范围', stroke: '#0f766e', fill: null, hatch: null, dash: [8, 5],
+  extent: { label: '水系复核范围', stroke: '#13a8a8', fill: null, hatch: null, dash: [8, 5],
     note: '范围内的河道位置、河宽、补录水体与桥梁经独立影像和第二家地图核对；范围外按 OSM 原样计算。' },
   reach: { label: '已核实河道', stroke: '#1d4ed8', fill: 'rgba(37, 99, 235, 0.28)', hatch: null, dash: [],
     note: '计算用的河道：OSM 位置经影像核对，按实测河宽成面。底图上的河道画在别处时，以这里为准。' },

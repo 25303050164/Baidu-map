@@ -28,7 +28,15 @@ export type QuotaSummary = {
 export type EngineView = EngineOption & {
   /** 选了它之前该知道的事：需要路网而路网没配好，或者引擎自己写的备注。 */
   caveat: string | null;
+  /**
+   * 必须摆在提交按钮旁边、不能收进说明里的那一部分：路网缺失会让提交被拒，合成替身画出的
+   * 正圆和真实结果长得一样。普通备注是 null —— 它们留在说明里。
+   */
+  alert: string | null;
 };
+
+/** 后端给合成替身的标签后缀；有它就说明这一档画的是正圆，不是百度实测。 */
+const SYNTHETIC_MARK = '合成替身';
 
 export type CapabilityView = {
   engines: EngineView[];
@@ -71,10 +79,12 @@ export function quotaSummary(value: Capabilities): QuotaSummary {
 
 function engineView(engine: EngineOption, graphConfigured: boolean | null): EngineView {
   const notes = engine.notes.filter(text);
-  const caveat = engine.requiresOsmGraph && graphConfigured === false
+  const graphMissing = engine.requiresOsmGraph && graphConfigured === false;
+  const caveat = graphMissing
     ? '该引擎需要本地 OSM 路网，本次部署未检测到路网缓存；提交后可能被后端拒绝。'
     : notes.length > 0 ? notes.join('；') : null;
-  return { ...engine, notes, caveat };
+  const alert = graphMissing || engine.label.includes(SYNTHETIC_MARK) ? caveat ?? engine.label : null;
+  return { ...engine, notes, caveat, alert };
 }
 
 export function capabilityView(value: Capabilities): CapabilityView {

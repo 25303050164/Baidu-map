@@ -69,11 +69,16 @@ export default function AlgorithmApp() {
   return <div className="wb">
     <header className="wb-top">
       <div className="wb-brand">
-        <span className="wb-seal" aria-hidden="true"><i>邻</i><i>里</i></span>
+        <span className="wb-logo" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <circle cx="9" cy="9" r="7.25" stroke="#fff" strokeOpacity=".55" strokeWidth="1.5" />
+            <circle cx="9" cy="9" r="4" stroke="#fff" strokeWidth="1.5" />
+            <circle cx="9" cy="9" r="1.6" fill="#fff" />
+          </svg>
+        </span>
         <h1>15 分钟生活圈体检</h1>
       </div>
-      <nav className="algorithm-switch" aria-label="算法">
-        <span className="wb-top-label">成圈算法</span>
+      <nav className="algorithm-switch" aria-label="成圈算法">
         <Segmented<Algorithm>
           aria-label="算法选择"
           value={algorithm}

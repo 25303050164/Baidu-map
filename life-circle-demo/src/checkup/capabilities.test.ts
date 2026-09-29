@@ -58,6 +58,17 @@ describe('engine list', () => {
     expect(view.engines[0].notes).toEqual([]);
   });
 
+  it('raises only a blocker or a stand-in next to the start button', () => {
+    // 普通备注收进说明；路网缺失与合成替身必须在提交前就看得见。
+    expect(capabilityView(capabilities({ coverage: {} })).engines.map(item => item.alert))
+      .toEqual([null, null]);
+    const missing = capabilityView(capabilities({ coverage: { graphConfigured: false } }));
+    expect(missing.engines[1].alert).toContain('未检测到路网缓存');
+    const synthetic = capabilityView(capabilities({ engines: [engine({
+      label: '百度边界搜索（E8.2）· 合成替身', notes: ['边界是半径约 1080 米的正圆，不是百度实测'] })] }));
+    expect(synthetic.engines[0].alert).toBe('边界是半径约 1080 米的正圆，不是百度实测');
+  });
+
   it('switches the budget tier with the engine, because the tiers differ', () => {
     const view = capabilityView(capabilities());
     expect(budgetFor(view, 'osm_hybrid')).toBe(400);

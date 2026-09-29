@@ -30,28 +30,28 @@ export type LayerStyle = {
 };
 
 export const LAYER_STYLES: Record<LayerId, LayerStyle> = {
-  isochrone: { label: '步行等时圈', strokeColor: '#147d70', fillColor: '#2da990',
+  isochrone: { label: '步行等时圈', strokeColor: '#3366ff', fillColor: '#3366ff',
     fillOpacity: 0.26, strokeWeight: 2, note: '按相同步行预算圈出的边界，不是服务覆盖结论。' },
-  accessibility: { label: '评估域', strokeColor: '#64748b', fillColor: '#64748b',
+  accessibility: { label: '评估域', strokeColor: '#8a94a6', fillColor: '#8a94a6',
     fillOpacity: 0, strokeWeight: 1, strokeStyle: 'dashed',
     note: '所有面积比例的分母。域外一律不评估，也不计入覆盖率。' },
-  service_gaps: { label: '服务灰区', strokeColor: '#4b5563', fillColor: '#6b7280',
+  service_gaps: { label: '服务灰区', strokeColor: '#5c6370', fillColor: '#8a94a6',
     fillOpacity: 0.38, strokeWeight: 1, note: '步行超出服务标准的连片区域，按面积降序编号。' },
-  facilities: { label: '设施点位', strokeColor: '#ffffff', fillColor: '#64748b',
+  facilities: { label: '设施点位', strokeColor: '#ffffff', fillColor: '#8a94a6',
     fillOpacity: 1, strokeWeight: 2, note: '检索并被接受的设施；审核候选与隔离记录不上图。' },
-  heatmap: { label: '模型网格采样', strokeColor: '#ffffff', fillColor: '#c78b36',
+  heatmap: { label: '模型网格采样', strokeColor: '#ffffff', fillColor: '#ff9f1a',
     fillOpacity: 1, strokeWeight: 2, note: '路网模型估计的最近设施距离与覆盖状态，不是百度路线实测。' },
-  verification: { label: '核验设施', strokeColor: '#ffffff', fillColor: '#147d70',
+  verification: { label: '核验设施', strokeColor: '#ffffff', fillColor: '#3366ff',
     fillOpacity: 1, strokeWeight: 2, note: '问过路的那几家设施及其结论。' },
-  report: { label: '体检报告', strokeColor: '#147d70', fillColor: '#147d70',
+  report: { label: '体检报告', strokeColor: '#3366ff', fillColor: '#3366ff',
     fillOpacity: 0, strokeWeight: 0, note: '报告是文档，没有形状。' },
 };
 
 /** 点色：设施与热力按大类，核验按结论。缺的属性给中性灰，不猜。 */
 export const POINT_COLORS: Record<string, string> = {
-  shopping: '#168875', medical: '#397ac6', education: '#c78b36',
-  covered: '#147d70', gap: '#b54708', unknown: '#64748b',
-  verified_reachable: '#147d70', verified_unreachable: '#b54708', pending: '#64748b',
+  shopping: '#12b886', medical: '#7b5cff', education: '#ff9f1a',
+  covered: '#3366ff', gap: '#ff8a00', unknown: '#8a94a6',
+  verified_reachable: '#3366ff', verified_unreachable: '#ff8a00', pending: '#8a94a6',
 };
 
 export type LayerShape = { key: string; geometry: DrawableGeometry;
@@ -135,7 +135,7 @@ export function drawableLayer(layerId: LayerId, layer: CheckupLayer | undefined)
       // 灰区的颜色按"有没有完成设施检索"分：检索没跑完的灰区不是同一种结论。
       properties,
       style: properties.queryStatus === 'partial'
-        ? { ...style, strokeColor: '#b54708', fillColor: '#b54708', fillOpacity: 0.28 } : style,
+        ? { ...style, strokeColor: '#ff8a00', fillColor: '#ff8a00', fillOpacity: 0.28 } : style,
     });
   });
   return { state: shapes.length + points.length === 0 ? 'empty' : 'ready', shapes, points,
