@@ -464,9 +464,13 @@ test('中心标记跟随坐标输入，+/- 按钮走 SDK 的 zoomIn/zoomOut', as
   }).toEqual({ lng: 116.418, lat: 39.923 });
   expect((await audit(page)).pans.at(-1)).toEqual({ lng: 116.418, lat: 39.923 });
   // 缩放按钮在地图右上角：替身记下调用的是哪一个，不模拟真实级别。
+  const pansBefore = (await audit(page)).pans.length;
   await page.getByRole('button', { name: '放大' }).click();
   await page.getByRole('button', { name: '缩小' }).click();
   await expect.poll(async () => (await audit(page)).zooms).toEqual(['in', 'out']);
+  // 点按钮不允许穿透成"在地图上选点"：选点与视野都不变。
+  expect((await audit(page)).pans.length).toBe(pansBefore);
+  expect((await audit(page)).pans.at(-1)).toEqual({ lng: 116.418, lat: 39.923 });
   await page.locator('.api-map-shell').screenshot({ path: 'output/checkup-ui/zoom-controls.png' });
 });
 

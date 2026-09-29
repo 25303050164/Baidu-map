@@ -102,15 +102,18 @@
 .wb-actions-row .ant-btn{flex:1}
 .wb-actions .wb-hint{margin:0}
 
-/* 地图：占满中间一栏，与左、右栏同一种卡片边。 */
-.wb-map{position:relative;min-width:0;min-height:0;background:#e9e6de;
+/* 地图：占满中间一栏，与左、右栏同一种卡片边。z-index:0 立一个层叠上下文，
+   缩放按钮才能用一个很高的层级压过 BMapGL 自己那叠 pane，又不会盖到抽屉等全局浮层。 */
+.wb-map{position:relative;z-index:0;min-width:0;min-height:0;background:#e9e6de;
   border:1px solid var(--rule-strong);border-radius:6px;overflow:hidden}
 .api-map-shell{position:absolute;inset:0;overflow:hidden;background:#e9e6de}
 .api-map{position:absolute;inset:0}
-/* 缩放：右上角的两枚按钮，走 SDK 的 zoomIn/zoomOut，与滚轮是同一条路径。 */
-.api-map-zoom{position:absolute;top:12px;right:12px;z-index:4;display:grid;gap:1px;
+/* 缩放：右上角的两枚按钮，走 SDK 的 zoomIn/zoomOut，与滚轮是同一条路径。
+   层级要压过 BMapGL 的交互 pane（它在父级层叠上下文里最大能到四位数），
+   指针事件再由组件用原生监听就地拦下，防止点按钮变成点地图。 */
+.api-map-zoom{position:absolute;top:12px;right:12px;z-index:9999;display:grid;gap:1px;
   border:1px solid var(--rule-strong);border-radius:3px;overflow:hidden;background:var(--rule-strong);
-  box-shadow:0 1px 4px #0000001a}
+  box-shadow:0 1px 4px #0000001a;pointer-events:auto}
 .api-map-zoom button{display:flex;align-items:center;justify-content:center;width:32px;height:32px;
   border:0;background:#fbfaf6f2;color:var(--ink);font:400 18px/1 var(--num)}
 .api-map-zoom button:hover{background:#fff}

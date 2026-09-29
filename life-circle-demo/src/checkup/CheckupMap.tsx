@@ -393,12 +393,33 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
   }, [api, map, resultCenter, selectedId, drawables]);
 
   // 缩放按钮：走 SDK 自己的 zoomIn/zoomOut，和滚轮缩放是同一条路径。
-  function zoom(direction: 'in' | 'out') {
-    if (!map) return;
-    try {
-      if (direction === 'in') map.zoomIn(); else map.zoomOut();
-    } catch { setError(true); }
-  }
+  //
+  // 事件必须就地拦下：BMapGL 在容器上铺了一层透明的交互层，光靠 z-index 把按钮画在上面
+  // 不够 —— 指针事件仍可能落到地图上，点一下 + 就变成"在地图上选点"，视角跟着跳走。
+  // 这里在按钮容器上挂原生监听：click 直接执行缩放，其余指针事件一律 stopPropagation，
+  // 地图的 click / mousedown / wheel 都收不到。CSS 里另给了它高于地图所有 pane 的层级。
+  const zoomBox = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = zoomBox.current;
+    if (!node || !map) return;
+    const stop = (event: Event) => event.stopPropagation();
+    const onZoom = (event: Event) => {
+      event.stopPropagation();
+      const button = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-zoom]');
+      try {
+        if (button?.dataset.zoom === 'in') map.zoomIn();
+        else if (button?.dataset.zoom === 'out') map.zoomOut();
+      } catch { setError(true); }
+    };
+    const stopped: string[] = ['dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup',
+      'touchstart', 'touchend', 'contextmenu', 'wheel'];
+    node.addEventListener('click', onZoom);
+    for (const type of stopped) node.addEventListener(type, stop);
+    return () => {
+      node.removeEventListener('click', onZoom);
+      for (const type of stopped) node.removeEventListener(type, stop);
+    };
+  }, [map]);
 
   const legend = useMemo(() => POINT_LAYERS
     .flatMap(id => (drawables[id]?.points ?? []).map(point => ({ id, color: point.color,
@@ -409,9 +430,9 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
   const unavailable = error || mode === 'fallback';
   return <div className="api-map-shell">
     <div ref={container} className="api-map" data-testid="checkup-map" aria-label="体检图层地图" />
-    {map && !unavailable && <div className="api-map-zoom" role="group" aria-label="地图缩放">
-      <button type="button" aria-label="放大" title="放大" onClick={() => zoom('in')}>+</button>
-      <button type="button" aria-label="缩小" title="缩小" onClick={() => zoom('out')}>−</button>
+    {map && !unavailable && <div ref={zoomBox} className="api-map-zoom" role="group" aria-label="地图缩放">
+      <button type="button" aria-label="放大" title="放大" data-zoom="in">+</button>
+      <button type="button" aria-label="缩小" title="缩小" data-zoom="out">−</button>
     </div>}
     {(unavailable || mode === 'loading') && <div className="api-map-notice" role="status">
       <strong>{unavailable ? '地图不可用' : '正在加载百度地图'}</strong>
