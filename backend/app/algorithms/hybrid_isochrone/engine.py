@@ -1,4 +1,5 @@
 """Budgeted orchestration with no facility calls or hidden offline fallback."""
+import asyncio
 import math
 import time
 from collections import Counter
@@ -29,6 +30,9 @@ class HybridIsochroneProvider:
         budget = config.max_baidu_requests
         started = time.perf_counter()
         build_seconds = 0.
+        # Rebuilds run on a worker thread (``await asyncio.to_thread(rebuild)``):
+        # one can take seconds late in a run, and the server keeps answering
+        # meanwhile. The session is not touched until the rebuild returns.
         def rebuild():
             nonlocal build_seconds
             tick = time.perf_counter()
@@ -42,7 +46,9 @@ class HybridIsochroneProvider:
         await search.initialize(min(radial_limit, math.floor(budget * .4)))
         await search.angular(min(radial_limit, math.floor(budget * .5)))
         if self.guidance:
-            for xy in self.guidance.candidates(max(1, budget // 20)):
+            # Ranking the proposals inspects every one of them: a second or so.
+            proposals = await asyncio.to_thread(self.guidance.candidates, max(1, budget // 20))
+            for xy in proposals:
                 if session.requests_used >= radial_limit or not session.available:
                     break
                 await session.query(xy, "OSM_GUIDED", "topology_proposal")
@@ -54,7 +60,7 @@ class HybridIsochroneProvider:
             if not session.available:
                 break
             await session.query(xy, "GEOMETRIC", "independent_2d_exploration")
-        built, coverage = rebuild()
+        built, coverage = await asyncio.to_thread(rebuild)
         conflicts = []
         unknown_probes = []
         # Both known time boundaries and unsupported frontier require verification.
@@ -80,7 +86,7 @@ class HybridIsochroneProvider:
         attempted = set()
         skipped_interior = 0
         while session.available:
-            built, coverage = rebuild()
+            built, coverage = await asyncio.to_thread(rebuild)
             candidates = []
             for candidate in built.refinement:
                 p = Point(candidate[2])
@@ -110,7 +116,7 @@ class HybridIsochroneProvider:
             _, _, xy, reason, level = candidate
             attempted.add(session.coordinate(xy))
             await session.query(xy, "TOPOLOGY_RISK" if reason == "topology_risk" else "BOUNDARY_REFINEMENT", reason, level)
-        built, coverage = rebuild()
+        built, coverage = await asyncio.to_thread(rebuild)
         search_info = search.diagnostics()
         warnings = list(self.guidance.warnings if self.guidance else ["osm_guidance_unavailable"])
         warnings.extend(self.obstacles.warnings)
@@ -175,6 +181,7 @@ class HybridIsochroneProvider:
                                   "hard_obstacle_source": self.obstacles.source,
                                   "hard_obstacle_unresolved": self.obstacles.unresolved,
                                   "unresolved_water_lines_affecting_shell": sum(line.intersects(coverage.shell) for line in self.obstacles.unresolved_lines),
+                                  "water_data_conflict_area_in_shell_m2": self.obstacles.conflicts.intersection(coverage.shell).area,
                                   "sampling_reasons": dict(Counter(s.reason for s in session.samples)),
                                   "budget_policy": "no_near_field_reserve_outer_boundary_priority",
                                   "outer_boundary_refinement_requests": sum(
@@ -191,5 +198,5 @@ class HybridIsochroneProvider:
                                   "support_area_m2": built.support.area,
                                   "error_estimate_scope": "observed_radial_brackets_only_not_global_bound",
                                   "samples": [s.to_dict() for s in session.samples]}}
-        session.flush()
+        await session.persist()
         return result

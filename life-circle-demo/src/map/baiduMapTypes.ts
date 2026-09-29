@@ -14,6 +14,21 @@ export interface BMapSize {
   height: number;
 }
 
+/** 覆盖物像素坐标：与页面 CSS 像素同一尺度，随缩放变化。 */
+export interface BMapPixel {
+  x: number;
+  y: number;
+}
+
+/** 地图容器内公开的覆盖物容器；不同版本提供的键名不完全一致。 */
+export interface BMapPanes {
+  mapPane?: HTMLElement;
+  overlayPane?: HTMLElement;
+  markerPane?: HTMLElement;
+  labelPane?: HTMLElement;
+  floatPane?: HTMLElement;
+}
+
 /** 地图 click 事件（GL 版坐标在 e.latlng 上）。 */
 export interface BMapClickEvent {
   latlng: { lng: number; lat: number };
@@ -64,6 +79,20 @@ export interface BMapOverlay {
   removeEventListener(type: string, handler: () => void): void;
 }
 
+/**
+ * 自定义覆盖物：继承 SDK 的 Overlay 基类后由 SDK 调用。
+ * initialize 返回的 DOM 元素会被挂进 getPanes 指定的容器。
+ */
+export interface BMapOverlayInstance extends BMapOverlay {
+  initialize?(map: BMapMap): HTMLElement | undefined;
+  draw?(): void;
+  getPanes?(): BMapPanes;
+  remove?(): void;
+}
+
+/** 视角变化事件；覆盖物只在真实移动/缩放结束后重绘。 */
+export type BMapViewEventType = 'moveend' | 'zoomend' | 'resize';
+
 export interface BMapMap {
   centerAndZoom(center: BMapPoint, zoom: number): void;
   panTo(center: BMapPoint): void;
@@ -72,10 +101,18 @@ export interface BMapMap {
   zoomOut(): void;
   enableScrollWheelZoom(enable: boolean): void;
   addOverlay(overlay: BMapOverlay): void;
+  /** 摘除单个覆盖物；测试替身可能不提供。 */
+  removeOverlay?(overlay: BMapOverlay): void;
   clearOverlays(): void;
   openInfoWindow(window: BMapInfoWindow, point: BMapPoint): void;
   closeInfoWindow(): void;
   addEventListener(type: 'click', handler: (event: BMapClickEvent) => void): void;
+  addEventListener(type: BMapViewEventType, handler: () => void): void;
+  /** 与 addEventListener 成对；旧脚本或测试替身可能不提供。 */
+  removeEventListener?(type: string, handler: () => void): void;
+  /** 经纬度 → 覆盖物像素；Canvas 热力图的全部几何都走这一个转换。 */
+  pointToOverlayPixel(point: BMapPoint): BMapPixel;
+  getPanes?(): BMapPanes;
   /** GL 版提供 destroy；声明为可选，实例化失败时不致命。 */
   destroy?(): void;
 }
@@ -161,6 +198,8 @@ export interface BaiduMapApi {
   Marker: new (point: BMapPoint, options?: BMapMarkerOptions) => BMapOverlay;
   Icon: new (url: string, size: BMapSize, options?: BMapIconOptions) => BMapIcon;
   InfoWindow: new (content: string, options?: BMapInfoWindowOptions) => BMapInfoWindow;
+  /** 自定义覆盖物基类；缺失时 Canvas 热力层不挂载，界面给出提示。 */
+  Overlay?: new () => BMapOverlayInstance;
   /** 定位与检索构造器为可选：旧版脚本或测试替身可能不提供，调用方必须运行时判断。 */
   Geolocation?: new () => BMapGeolocation;
   LocalSearch?: new (location: string | BMapMap | BMapPoint, options?: BMapLocalSearchOptions) => BMapLocalSearch;

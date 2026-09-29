@@ -1,4 +1,4 @@
-import type { BaiduMapApi, BMapMap, BMapPolygonOptions } from '../map/baiduMapTypes';
+import type { BaiduMapApi, BMapMap, BMapOverlay, BMapPolygonOptions } from '../map/baiduMapTypes';
 import type { BusinessGeometry, Isochrone } from './types';
 import type { Geometry } from '../api-contract';
 
@@ -24,17 +24,24 @@ export function polygonPaths(geometry: DrawableGeometry | null): string[][] {
     });
   });
 }
-export function drawGeometry(map: BMapMap, api: BaiduMapApi, geometry: DrawableGeometry | null, style: BMapPolygonOptions) {
-  for (const rings of polygonPaths(geometry)) map.addOverlay(new api.Polygon(rings, style));
+/** 画出几何并返回本次新增的覆盖物：调用方按图层组逐一摘除，不必清空整张地图。 */
+export function drawGeometry(map: BMapMap, api: BaiduMapApi, geometry: DrawableGeometry | null, style: BMapPolygonOptions): BMapOverlay[] {
+  return polygonPaths(geometry).map(rings => {
+    const overlay = new api.Polygon(rings, style);
+    map.addOverlay(overlay);
+    return overlay;
+  });
 }
 
 /** Display-only exterior paths. Preserve components; never connect across gaps. */
-export function drawOutline(map: BMapMap, api: BaiduMapApi, geometry: DrawableGeometry | null) {
-  for (const rings of polygonPaths(geometry)) {
-    map.addOverlay(new api.Polygon([rings[0]], {
+export function drawOutline(map: BMapMap, api: BaiduMapApi, geometry: DrawableGeometry | null): BMapOverlay[] {
+  return polygonPaths(geometry).map(rings => {
+    const overlay = new api.Polygon([rings[0]], {
       strokeColor: '#147d70', strokeWeight: 2, fillOpacity: 0,
-    }));
-  }
+    });
+    map.addOverlay(overlay);
+    return overlay;
+  });
 }
 export function geometryMessage(geometry: BusinessGeometry | null) {
   if (geometry === null) return '证据不足，无法确定可达区域';

@@ -77,3 +77,22 @@ it('sanitizes transport failure and keeps user abort distinct from network failu
   const signal = AbortSignal.abort();
   await expect(api.status('one', signal)).rejects.toMatchObject({ name: 'AbortError' });
 });
+
+it('looks a lost create up by request key and marks network failures as retryable', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(task), { status: 200 }));
+  expect((await createApiService('', fetcher).byRequest('lost key')).taskId).toBe('one');
+  expect(fetcher.mock.calls[0][0]).toBe('/api/analyses/by-request/lost%20key');
+  expect(fetcher.mock.calls[0][1]!.method).toBe('GET');
+  const down = createApiService('', async () => { throw new TypeError('Failed to fetch'); });
+  await expect(down.status('one')).rejects.toMatchObject({ status: 0 });
+});
+
+it('passes the backend occupancy note through for a busy create, but nothing else from a 409', async () => {
+  const busy = '分析服务忙：另一项分析正在进行（已运行 42 秒，已用 17/400 次调用）。请等待其完成或取消后重试';
+  const api = createApiService('', async () => new Response(JSON.stringify({ detail: busy }), { status: 409 }));
+  await expect(api.create({ center: { lng: 0, lat: 0 }, budget: 400, clientRequestId: 'k' }))
+    .rejects.toMatchObject({ message: busy, status: 409, busy: true });
+  const conflict = createApiService('', async () => new Response(JSON.stringify({ detail: '请求标识已用于不同分析' }), { status: 409 }));
+  await expect(conflict.create({ center: { lng: 0, lat: 0 }, budget: 400, clientRequestId: 'k' }))
+    .rejects.toMatchObject({ message: '任务状态冲突，服务可能仍在运行其他分析，请稍后重试', busy: false });
+});

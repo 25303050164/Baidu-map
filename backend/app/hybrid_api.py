@@ -27,8 +27,8 @@ def content_hash(value):
                                     ensure_ascii=False, allow_nan=False).encode()).hexdigest()
 
 
-def fail(status, code):
-    raise HTTPException(status, detail={"code": code, "message": code})
+def fail(status, code, message=None):
+    raise HTTPException(status, detail={"code": code, "message": message or code})
 
 
 @dataclass
@@ -92,8 +92,12 @@ class HybridManager:
                 if job.payload != payload:
                     fail(409, "hybrid_request_id_conflict")
                 return job
-        if any(j.task and not j.task.done() for j in self.jobs.values()):
-            fail(409, "hybrid_busy")
+        running = next((j for j in self.jobs.values() if j.task and not j.task.done()), None)
+        if running:
+            # Describe the occupant without its task ID, request key or origin.
+            view = running.view()
+            fail(409, "hybrid_busy", f"另一项 OSM＋百度分析正在进行（已运行 {view.elapsed_seconds:.0f} 秒，"
+                                     f"已用 {view.requests}/{view.budget} 次百度调用）。请等待其完成或取消后重试")
         if not self.provider_factory and not self.settings.ak_configured:
             fail(503, "baidu_walking_not_configured")
         job = HybridJob(payload)
@@ -121,7 +125,8 @@ class HybridManager:
             extent = computation_extent(origin_xy, config)
             obstacle_started = time.perf_counter()
             obstacles = await asyncio.to_thread(load_obstacles, self.settings.hybrid_obstacle_path,
-                projection, self.settings.osm_data_version, extent)
+                projection, self.settings.osm_data_version, extent,
+                getattr(self.settings, "water_review_dir", None))
             obstacle_seconds = time.perf_counter() - obstacle_started
             ready = dict(graph_available=store is not None,
                          data_version_matches=bool(store and store.graph.graph.get("osm_data_version") == self.settings.osm_data_version),

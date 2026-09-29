@@ -1,0 +1,8796 @@
+{
+ "generatedAt": "2026-09-27T19:27:32.516Z",
+ "tasks": {
+  "e82": {
+   "engine": "baidu_e82",
+   "label": "百度边界搜索（E8.2）",
+   "taskId": "f6128318-828e-48c0-bdc5-f164c6ece0db",
+   "clientRequestId": "d33ffe23-a880-43f6-b6fa-725a95d49274",
+   "revision": 5,
+   "resultHash": [
+    "5c083bb237e5be67519e9923afe0771953c0368b823c7131cc2a0ba0c66423bc"
+   ],
+   "medicalCellCounts": {
+    "covered": 290,
+    "gap": 29,
+    "unknown": 496
+   }
+  },
+  "hybrid": {
+   "engine": "osm_hybrid",
+   "label": "OSM＋百度",
+   "taskId": "5e710014-84f5-42e7-ae77-525bd429ae8a",
+   "clientRequestId": "4a1d467f-a3ba-4174-b232-9411dcaae066",
+   "revision": 5,
+   "resultHash": [
+    "2b11ca91acdae77afada0c890d156376c1538453dfef081cc3ea5d4e32caf94a"
+   ],
+   "medicalCellCounts": {
+    "covered": 383,
+    "gap": 28,
+    "unknown": 480
+   }
+  }
+ },
+ "guard": {
+  "blockedRequests": [],
+  "taskIdsRequested": [
+   "f6128318-828e-48c0-bdc5-f164c6ece0db",
+   "5e710014-84f5-42e7-ae77-525bd429ae8a"
+  ],
+  "pageErrors": []
+ },
+ "e82.service": {
+  "category": "medical",
+  "views": {
+   "z16": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.518253,
+      "lat": 31.315653
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.514253,
+      "lat": 31.317631
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z17": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.518253,
+      "lat": 31.315653
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.514253,
+      "lat": 31.317631
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z17pan": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.518253,
+      "lat": 31.315653
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.514253,
+      "lat": 31.317631
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "narrow": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.518253,
+      "lat": 31.315653
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.514253,
+      "lat": 31.317631
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "restored": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.518253,
+      "lat": 31.315653
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.514253,
+      "lat": 31.317631
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "hole": {
+   "centre": {
+    "lng": 121.518666,
+    "lat": 31.314294
+   },
+   "areaM2": 73,
+   "readings": [
+    {
+     "name": "hole-centre",
+     "point": {
+      "lng": 121.518666,
+      "lat": 31.314294
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "hole-rim",
+     "point": {
+      "lng": 121.518626,
+      "lat": 31.314211
+     },
+     "expected": {
+      "kind": "visible",
+      "minAlpha": 60
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "e82-service-medical-z16.png",
+   "e82-service-medical-z17-pan-narrow.png",
+   "e82-service-hole-z19.png"
+  ],
+  "holeNote": null
+ },
+ "e82.density": {
+  "facilities": 4,
+  "legend": "设施密度 0–4 个/公顷（竖线：单个设施中心 0.66） · 核半径 120 米 · 不代表服务覆盖率 · 4 处设施参与",
+  "views": {
+   "z16": [
+    {
+     "name": "facility-1",
+     "point": {
+      "lng": 121.511092,
+      "lat": 31.311167
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       150,
+       136,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      136,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+60m-east",
+     "point": {
+      "lng": 121.511723,
+      "lat": 31.311167
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       57,
+       155,
+       126,
+       119
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      58,
+      154,
+      126,
+      119
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+90m-north",
+     "point": {
+      "lng": 121.511092,
+      "lat": 31.311976
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      173,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "mid-1-3",
+     "point": {
+      "lng": 121.511653,
+      "lat": 31.311222
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       57,
+       155,
+       126,
+       120
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      58,
+      154,
+      126,
+      119
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+60m-east",
+     "point": {
+      "lng": 121.510036,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      138,
+      160,
+      107
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+90m-north",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.315989
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      173,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       150,
+       136,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+60m-east",
+     "point": {
+      "lng": 121.512846,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+90m-north",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.312086
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      131,
+      175,
+      99
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+60m-east",
+     "point": {
+      "lng": 121.514684,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+90m-north",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      48,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "zero-density",
+     "point": {
+      "lng": 121.515504,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z17": [
+    {
+     "name": "facility-1",
+     "point": {
+      "lng": 121.511092,
+      "lat": 31.311167
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       150,
+       136,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      136,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+60m-east",
+     "point": {
+      "lng": 121.511723,
+      "lat": 31.311167
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       57,
+       155,
+       126,
+       119
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      57,
+      155,
+      125,
+      120
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+90m-north",
+     "point": {
+      "lng": 121.511092,
+      "lat": 31.311976
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      173,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "mid-1-3",
+     "point": {
+      "lng": 121.511653,
+      "lat": 31.311222
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       57,
+       155,
+       126,
+       120
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      57,
+      155,
+      125,
+      120
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+60m-east",
+     "point": {
+      "lng": 121.510036,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+90m-north",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.315989
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      173,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       150,
+       136,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      136,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+60m-east",
+     "point": {
+      "lng": 121.512846,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+90m-north",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.312086
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+60m-east",
+     "point": {
+      "lng": 121.514684,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+90m-north",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      173,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "zero-density",
+     "point": {
+      "lng": 121.515504,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z18": [
+    {
+     "name": "facility-1",
+     "point": {
+      "lng": 121.511092,
+      "lat": 31.311167
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       150,
+       136,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      136,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+60m-east",
+     "point": {
+      "lng": 121.511723,
+      "lat": 31.311167
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       57,
+       155,
+       126,
+       119
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      58,
+      154,
+      126,
+      119
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+90m-north",
+     "point": {
+      "lng": 121.511092,
+      "lat": 31.311976
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "mid-1-3",
+     "point": {
+      "lng": 121.511653,
+      "lat": 31.311222
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       57,
+       155,
+       126,
+       120
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      57,
+      155,
+      125,
+      120
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+60m-east",
+     "point": {
+      "lng": 121.510036,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+90m-north",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.315989
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "facility-3",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       150,
+       136,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      136,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+60m-east",
+     "point": {
+      "lng": 121.512846,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+90m-north",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.312086
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+60m-east",
+     "point": {
+      "lng": 121.514684,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      49,
+      140,
+      159,
+      109
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+90m-north",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "zero-density",
+     "point": {
+      "lng": 121.515504,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": null,
+     "ok": false
+    }
+   ],
+   "education": [
+    {
+     "name": "facility-1",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+60m-east",
+     "point": {
+      "lng": 121.514684,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+90m-north",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      48,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "zero-density",
+     "point": {
+      "lng": 121.515504,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "e82-density-real-z17.png"
+  ],
+  "educationFacilities": 1
+ },
+ "e82.composite": {
+  "classesOnScanGrid": {
+   "all-covered": 1010,
+   "unknown": 1206,
+   "transition": 249,
+   "partial": 7
+  },
+  "flatProbes": 4,
+  "blendProbes": 3,
+  "views": {
+   "z16": [
+    {
+     "name": "composite-all-covered-1",
+     "point": {
+      "lng": 121.513925,
+      "lat": 31.313259
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-all-covered-2",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-1",
+     "point": {
+      "lng": 121.514346,
+      "lat": 31.312539
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-2",
+     "point": {
+      "lng": 121.515399,
+      "lat": 31.31146
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.518253,
+      "lat": 31.315653
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.514253,
+      "lat": 31.317631
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z18": [
+    {
+     "name": "composite-all-covered-1",
+     "point": {
+      "lng": 121.513925,
+      "lat": 31.313259
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-all-covered-2",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-1",
+     "point": {
+      "lng": 121.514346,
+      "lat": 31.312539
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-2",
+     "point": {
+      "lng": 121.515399,
+      "lat": 31.31146
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-1",
+     "point": {
+      "lng": 121.513714,
+      "lat": 31.31218
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       147,
+       141,
+       226,
+       108
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      154,
+      140,
+      233,
+      106
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-2",
+     "point": {
+      "lng": 121.515399,
+      "lat": 31.31236
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       33,
+       151,
+       89,
+       163
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      35,
+      151,
+      90,
+      162
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-partial-1",
+     "point": {
+      "lng": 121.519188,
+      "lat": 31.310561
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       252,
+       141,
+       89,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    }
+   ],
+   "z18AfterSwitch": [
+    {
+     "name": "composite-all-covered-1",
+     "point": {
+      "lng": 121.513925,
+      "lat": 31.313259
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-all-covered-2",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-1",
+     "point": {
+      "lng": 121.514346,
+      "lat": 31.312539
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-2",
+     "point": {
+      "lng": 121.515399,
+      "lat": 31.31146
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-1",
+     "point": {
+      "lng": 121.513714,
+      "lat": 31.31218
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       147,
+       141,
+       226,
+       108
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      154,
+      140,
+      233,
+      106
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-2",
+     "point": {
+      "lng": 121.515399,
+      "lat": 31.31236
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       33,
+       151,
+       89,
+       163
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      35,
+      151,
+      90,
+      162
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-partial-1",
+     "point": {
+      "lng": 121.519188,
+      "lat": 31.310561
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       252,
+       141,
+       89,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    }
+   ],
+   "mixedCentred": [
+    {
+     "name": "composite-transition-1",
+     "point": {
+      "lng": 121.513714,
+      "lat": 31.31218
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       147,
+       141,
+       226,
+       108
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      150,
+      141,
+      229,
+      107
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-2",
+     "point": {
+      "lng": 121.515399,
+      "lat": 31.31236
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       33,
+       151,
+       89,
+       163
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      35,
+      151,
+      90,
+      162
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-partial-1",
+     "point": {
+      "lng": 121.519188,
+      "lat": 31.310561
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       252,
+       141,
+       89,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      252,
+      141,
+      90,
+      168
+     ],
+     "ok": true
+    }
+   ],
+   "z17": [
+    {
+     "name": "composite-all-covered-1",
+     "point": {
+      "lng": 121.513925,
+      "lat": 31.313259
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-all-covered-2",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-1",
+     "point": {
+      "lng": 121.514346,
+      "lat": 31.312539
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-2",
+     "point": {
+      "lng": 121.515399,
+      "lat": 31.31146
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.518253,
+      "lat": 31.315653
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.514253,
+      "lat": 31.317631
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "e82-service-composite-z16.png",
+   "e82-service-composite-partial-z18.png",
+   "e82-service-composite-z17.png"
+  ]
+ },
+ "hybrid.service": {
+  "category": "medical",
+  "views": {
+   "z16": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.519552,
+      "lat": 31.313309
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.516813,
+      "lat": 31.313143
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.515736,
+      "lat": 31.31538
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       208,
+       217,
+       121,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      208,
+      217,
+      121,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.513829,
+      "lat": 31.31185
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       195,
+       215,
+       116,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      194,
+      216,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.517151,
+      "lat": 31.316634
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.509361,
+      "lat": 31.310159
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z17": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.519552,
+      "lat": 31.313309
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.516813,
+      "lat": 31.313143
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.515736,
+      "lat": 31.31538
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       208,
+       217,
+       121,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      208,
+      217,
+      121,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.513829,
+      "lat": 31.31185
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       195,
+       215,
+       116,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      194,
+      216,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.517151,
+      "lat": 31.316634
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.509361,
+      "lat": 31.310159
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z17pan": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.519552,
+      "lat": 31.313309
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.516813,
+      "lat": 31.313143
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.515736,
+      "lat": 31.31538
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       208,
+       217,
+       121,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      208,
+      217,
+      121,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.513829,
+      "lat": 31.31185
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       195,
+       215,
+       116,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      194,
+      216,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.517151,
+      "lat": 31.316634
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.509361,
+      "lat": 31.310159
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "narrow": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.519552,
+      "lat": 31.313309
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.516813,
+      "lat": 31.313143
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.515736,
+      "lat": 31.31538
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       208,
+       217,
+       121,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      208,
+      217,
+      121,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.513829,
+      "lat": 31.31185
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       195,
+       215,
+       116,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      194,
+      216,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.517151,
+      "lat": 31.316634
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.509361,
+      "lat": 31.310159
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "restored": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.519552,
+      "lat": 31.313309
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.516813,
+      "lat": 31.313143
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.515736,
+      "lat": 31.31538
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       208,
+       217,
+       121,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      208,
+      217,
+      121,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.513829,
+      "lat": 31.31185
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       195,
+       215,
+       116,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      194,
+      216,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.517151,
+      "lat": 31.316634
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.509361,
+      "lat": 31.310159
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "hole": null,
+  "screenshots": [
+   "hybrid-service-medical-z16.png",
+   "hybrid-service-medical-z17-pan-narrow.png"
+  ],
+  "holeNote": "等时圈没有面积 ≥ 40 平方米的孔"
+ },
+ "hybrid.density": {
+  "facilities": 4,
+  "legend": "设施密度 0–4 个/公顷（竖线：单个设施中心 0.66） · 核半径 120 米 · 不代表服务覆盖率 · 4 处设施参与",
+  "views": {
+   "z16": [
+    {
+     "name": "facility-1",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+60m-east",
+     "point": {
+      "lng": 121.510036,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      138,
+      162,
+      107
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+90m-north",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.315989
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      173,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+60m-east",
+     "point": {
+      "lng": 121.512846,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      138,
+      162,
+      107
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+90m-north",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.312086
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      173,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3",
+     "point": {
+      "lng": 121.512408,
+      "lat": 31.307811
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+60m-east",
+     "point": {
+      "lng": 121.51304,
+      "lat": 31.307811
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+90m-north",
+     "point": {
+      "lng": 121.512408,
+      "lat": 31.30862
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      131,
+      175,
+      99
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+60m-east",
+     "point": {
+      "lng": 121.514684,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+90m-north",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      48,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "zero-density",
+     "point": {
+      "lng": 121.515504,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z17": [
+    {
+     "name": "facility-1",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+60m-east",
+     "point": {
+      "lng": 121.510036,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+90m-north",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.315989
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      173,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+60m-east",
+     "point": {
+      "lng": 121.512846,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      49,
+      140,
+      159,
+      109
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+90m-north",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.312086
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      131,
+      175,
+      99
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3",
+     "point": {
+      "lng": 121.512408,
+      "lat": 31.307811
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+60m-east",
+     "point": {
+      "lng": 121.51304,
+      "lat": 31.307811
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3+90m-north",
+     "point": {
+      "lng": 121.512408,
+      "lat": 31.30862
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+60m-east",
+     "point": {
+      "lng": 121.514684,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      49,
+      140,
+      159,
+      109
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+90m-north",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      173,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "zero-density",
+     "point": {
+      "lng": 121.515504,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z18": [
+    {
+     "name": "facility-1",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "facility-1+60m-east",
+     "point": {
+      "lng": 121.510036,
+      "lat": 31.31518
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "facility-1+90m-north",
+     "point": {
+      "lng": 121.509404,
+      "lat": 31.315989
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "facility-2",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+60m-east",
+     "point": {
+      "lng": 121.512846,
+      "lat": 31.311276
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-2+90m-north",
+     "point": {
+      "lng": 121.512215,
+      "lat": 31.312086
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-3",
+     "point": {
+      "lng": 121.512408,
+      "lat": 31.307811
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "facility-3+60m-east",
+     "point": {
+      "lng": 121.51304,
+      "lat": 31.307811
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "facility-3+90m-north",
+     "point": {
+      "lng": 121.512408,
+      "lat": 31.30862
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "facility-4",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+60m-east",
+     "point": {
+      "lng": 121.514684,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-4+90m-north",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      131,
+      175,
+      99
+     ],
+     "ok": true
+    },
+    {
+     "name": "zero-density",
+     "point": {
+      "lng": 121.515504,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": null,
+     "ok": false
+    }
+   ],
+   "education": [
+    {
+     "name": "facility-1",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+60m-east",
+     "point": {
+      "lng": 121.514684,
+      "lat": 31.313108
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       50,
+       139,
+       158,
+       109
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      50,
+      139,
+      158,
+      108
+     ],
+     "ok": true
+    },
+    {
+     "name": "facility-1+90m-north",
+     "point": {
+      "lng": 121.514053,
+      "lat": 31.313917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       46,
+       131,
+       175,
+       99
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      48,
+      133,
+      176,
+      100
+     ],
+     "ok": true
+    },
+    {
+     "name": "zero-density",
+     "point": {
+      "lng": 121.515504,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "hybrid-density-real-z17.png"
+  ],
+  "educationFacilities": 1
+ },
+ "hybrid.composite": {
+  "classesOnScanGrid": {
+   "all-covered": 1098,
+   "unknown": 1325,
+   "transition": 306,
+   "partial": 10
+  },
+  "flatProbes": 4,
+  "blendProbes": 4,
+  "views": {
+   "z16": [
+    {
+     "name": "composite-all-covered-1",
+     "point": {
+      "lng": 121.514136,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-all-covered-2",
+     "point": {
+      "lng": 121.512662,
+      "lat": 31.313619
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-1",
+     "point": {
+      "lng": 121.514136,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-2",
+     "point": {
+      "lng": 121.516662,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.517151,
+      "lat": 31.316634
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.509361,
+      "lat": 31.310159
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ],
+   "z18": [
+    {
+     "name": "composite-all-covered-1",
+     "point": {
+      "lng": 121.514136,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-all-covered-2",
+     "point": {
+      "lng": 121.512662,
+      "lat": 31.313619
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-1",
+     "point": {
+      "lng": 121.514136,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-2",
+     "point": {
+      "lng": 121.516662,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-1",
+     "point": {
+      "lng": 121.513714,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       113,
+       144,
+       185,
+       120
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      113,
+      144,
+      185,
+      120
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-2",
+     "point": {
+      "lng": 121.51582,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       34,
+       151,
+       90,
+       162
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      35,
+      151,
+      90,
+      162
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-partial-1",
+     "point": {
+      "lng": 121.518978,
+      "lat": 31.310561
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       224,
+       139,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "composite-partial-2",
+     "point": {
+      "lng": 121.520451,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       252,
+       141,
+       89,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    }
+   ],
+   "z18AfterSwitch": [
+    {
+     "name": "composite-all-covered-1",
+     "point": {
+      "lng": 121.514136,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-all-covered-2",
+     "point": {
+      "lng": 121.512662,
+      "lat": 31.313619
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-1",
+     "point": {
+      "lng": 121.514136,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-2",
+     "point": {
+      "lng": 121.516662,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-1",
+     "point": {
+      "lng": 121.513714,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       113,
+       144,
+       185,
+       120
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      113,
+      144,
+      185,
+      120
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-2",
+     "point": {
+      "lng": 121.51582,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       34,
+       151,
+       90,
+       162
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      35,
+      151,
+      90,
+      162
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-partial-1",
+     "point": {
+      "lng": 121.518978,
+      "lat": 31.310561
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       224,
+       139,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    },
+    {
+     "name": "composite-partial-2",
+     "point": {
+      "lng": 121.520451,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       252,
+       141,
+       89,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": null,
+     "ok": false
+    }
+   ],
+   "mixedCentred": [
+    {
+     "name": "composite-transition-1",
+     "point": {
+      "lng": 121.513714,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       113,
+       144,
+       185,
+       120
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      113,
+      144,
+      185,
+      120
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-transition-2",
+     "point": {
+      "lng": 121.51582,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       34,
+       151,
+       90,
+       162
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      35,
+      151,
+      91,
+      162
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-partial-1",
+     "point": {
+      "lng": 121.518978,
+      "lat": 31.310561
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       224,
+       139,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      225,
+      140,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-partial-2",
+     "point": {
+      "lng": 121.520451,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       252,
+       141,
+       89,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      252,
+      141,
+      90,
+      168
+     ],
+     "ok": true
+    }
+   ],
+   "z17": [
+    {
+     "name": "composite-all-covered-1",
+     "point": {
+      "lng": 121.514136,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-all-covered-2",
+     "point": {
+      "lng": 121.512662,
+      "lat": 31.313619
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       26,
+       152,
+       80,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      26,
+      152,
+      80,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-1",
+     "point": {
+      "lng": 121.514136,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "composite-unknown-2",
+     "point": {
+      "lng": 121.516662,
+      "lat": 31.312899
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-1",
+     "point": {
+      "lng": 121.517151,
+      "lat": 31.316634
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    },
+    {
+     "name": "outside-2",
+     "point": {
+      "lng": 121.509361,
+      "lat": 31.310159
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "hybrid-service-composite-z16.png",
+   "hybrid-service-composite-partial-z18.png",
+   "hybrid-service-composite-z17.png"
+  ]
+ },
+ "e82.water": {
+  "source": "OSM geofabrik-shanghai-20260912 硬障碍层 ∩ 第 5 版评估域",
+  "areaM2": 329,
+  "scannedPixels1m": 330,
+  "usablePixels": 112,
+  "coveredWeightMaxAllPixels": 0,
+  "coveredShareMax": 0,
+  "nearestCoveredCellM": 26.1,
+  "views": {
+   "medicalZ19": [
+    {
+     "name": "water-1",
+     "point": {
+      "lng": 121.514601,
+      "lat": 31.307729
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "water-2",
+     "point": {
+      "lng": 121.514507,
+      "lat": 31.307702
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "water-3",
+     "point": {
+      "lng": 121.514401,
+      "lat": 31.307675
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "water-4",
+     "point": {
+      "lng": 121.514296,
+      "lat": 31.307648
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-1",
+     "point": {
+      "lng": 121.514022,
+      "lat": 31.307679
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-2",
+     "point": {
+      "lng": 121.514541,
+      "lat": 31.307913
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       171,
+       153,
+       224,
+       110
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      172,
+      153,
+      225,
+      110
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-3",
+     "point": {
+      "lng": 121.514802,
+      "lat": 31.307917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-4",
+     "point": {
+      "lng": 121.513761,
+      "lat": 31.307675
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-covered-5",
+     "point": {
+      "lng": 121.51428,
+      "lat": 31.307909
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       192,
+       214,
+       115,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      191,
+      214,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-covered-6",
+     "point": {
+      "lng": 121.514019,
+      "lat": 31.307904
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       181,
+       213,
+       110,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      182,
+      212,
+      109,
+      168
+     ],
+     "ok": true
+    }
+   ],
+   "medicalZ18": [
+    {
+     "name": "water-1",
+     "point": {
+      "lng": 121.514601,
+      "lat": 31.307729
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "water-2",
+     "point": {
+      "lng": 121.514507,
+      "lat": 31.307702
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "water-3",
+     "point": {
+      "lng": 121.514401,
+      "lat": 31.307675
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "water-4",
+     "point": {
+      "lng": 121.514296,
+      "lat": 31.307648
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-1",
+     "point": {
+      "lng": 121.514022,
+      "lat": 31.307679
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-2",
+     "point": {
+      "lng": 121.514541,
+      "lat": 31.307913
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       171,
+       153,
+       224,
+       110
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      172,
+      153,
+      223,
+      110
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-3",
+     "point": {
+      "lng": 121.514802,
+      "lat": 31.307917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-4",
+     "point": {
+      "lng": 121.513761,
+      "lat": 31.307675
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-covered-5",
+     "point": {
+      "lng": 121.51428,
+      "lat": 31.307909
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       192,
+       214,
+       115,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      191,
+      212,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-covered-6",
+     "point": {
+      "lng": 121.514019,
+      "lat": 31.307904
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       181,
+       213,
+       110,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      182,
+      212,
+      109,
+      168
+     ],
+     "ok": true
+    }
+   ],
+   "compositeZ19": [
+    {
+     "name": "water-1",
+     "point": {
+      "lng": 121.514601,
+      "lat": 31.307729
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "water-2",
+     "point": {
+      "lng": 121.514507,
+      "lat": 31.307702
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "water-3",
+     "point": {
+      "lng": 121.514401,
+      "lat": 31.307675
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "water-4",
+     "point": {
+      "lng": 121.514296,
+      "lat": 31.307648
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-1",
+     "point": {
+      "lng": 121.514022,
+      "lat": 31.307679
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-2",
+     "point": {
+      "lng": 121.514541,
+      "lat": 31.307913
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-3",
+     "point": {
+      "lng": 121.514802,
+      "lat": 31.307917
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-unknown-4",
+     "point": {
+      "lng": 121.513761,
+      "lat": 31.307675
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-covered-5",
+     "point": {
+      "lng": 121.51428,
+      "lat": 31.307909
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "shore-covered-6",
+     "point": {
+      "lng": 121.514019,
+      "lat": 31.307904
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "e82-water-medical-z19.png",
+   "e82-water-composite-z19.png"
+  ]
+ },
+ "e82.osmWater": {
+  "source": "OSM geofabrik-shanghai-20260912 硬障碍层（地表水体），红线 / 红框",
+  "baiduWater": {
+   "rgb": [
+    117,
+    224,
+    249
+   ],
+   "tolerance": 24
+  },
+  "overlays": 35,
+  "features": [
+   {
+    "osmId": 39408800,
+    "name": "虬江",
+    "width": "10",
+    "inDomain": 35.7,
+    "inDomainUnit": "m",
+    "distanceToDomainM": 0,
+    "type": "MultiLineString"
+   },
+   {
+    "osmId": 166720423,
+    "name": null,
+    "width": null,
+    "inDomain": 0,
+    "inDomainUnit": "m2",
+    "distanceToDomainM": 68.6,
+    "type": "Polygon"
+   },
+   {
+    "osmId": 302226354,
+    "name": null,
+    "width": null,
+    "inDomain": 0,
+    "inDomainUnit": "m2",
+    "distanceToDomainM": 605.9,
+    "type": "Polygon"
+   },
+   {
+    "osmId": 407413898,
+    "name": null,
+    "width": null,
+    "inDomain": 0,
+    "inDomainUnit": "m2",
+    "distanceToDomainM": 38.2,
+    "type": "Polygon"
+   },
+   {
+    "osmId": 407413899,
+    "name": null,
+    "width": null,
+    "inDomain": 0,
+    "inDomainUnit": "m2",
+    "distanceToDomainM": 107.1,
+    "type": "Polygon"
+   },
+   {
+    "osmId": 407413900,
+    "name": null,
+    "width": null,
+    "inDomain": 0,
+    "inDomainUnit": "m2",
+    "distanceToDomainM": 64.3,
+    "type": "Polygon"
+   },
+   {
+    "osmId": 407413902,
+    "name": null,
+    "width": null,
+    "inDomain": 0,
+    "inDomainUnit": "m2",
+    "distanceToDomainM": 77.4,
+    "type": "Polygon"
+   },
+   {
+    "osmId": 407413904,
+    "name": null,
+    "width": null,
+    "inDomain": 0,
+    "inDomainUnit": "m2",
+    "distanceToDomainM": 52.1,
+    "type": "Polygon"
+   },
+   {
+    "osmId": 407413905,
+    "name": null,
+    "width": null,
+    "inDomain": 0,
+    "inDomainUnit": "m2",
+    "distanceToDomainM": 43.3,
+    "type": "Polygon"
+   }
+  ],
+  "offsets": {
+   "z16": {
+    "mpp": 3.397,
+    "waterPixels": 3785,
+    "features": [
+     {
+      "osmId": 39408800,
+      "name": "虬江",
+      "kind": "line",
+      "samples": 206,
+      "noWaterWithin200px": 0,
+      "medianPx": 40.2,
+      "medianM": 136.5,
+      "p10M": 53.8,
+      "p90M": 183.9,
+      "maxM": 197.9,
+      "within3pxShare": 0,
+      "profile": [
+       {
+        "lng": 121.512983,
+        "lat": 31.307204,
+        "m": 72.1
+       },
+       {
+        "lng": 121.51466,
+        "lat": 31.307735,
+        "m": 56.6
+       },
+       {
+        "lng": 121.516336,
+        "lat": 31.308266,
+        "m": 108.6
+       },
+       {
+        "lng": 121.517738,
+        "lat": 31.309127,
+        "m": 126.1
+       },
+       {
+        "lng": 121.519244,
+        "lat": 31.309371,
+        "m": 180.3
+       },
+       {
+        "lng": 121.520635,
+        "lat": 31.310111,
+        "m": 166.2
+       },
+       {
+        "lng": 121.522198,
+        "lat": 31.310444,
+        "m": 187.5
+       },
+       {
+        "lng": 121.523615,
+        "lat": 31.310973,
+        "m": 148.3
+       },
+       {
+        "lng": 121.524997,
+        "lat": 31.311467,
+        "m": 95
+       }
+      ]
+     },
+     {
+      "osmId": 166720423,
+      "name": null,
+      "kind": "polygon",
+      "samples": 58,
+      "noWaterWithin200px": 0,
+      "medianPx": 1,
+      "medianM": 3.4,
+      "p10M": 0,
+      "p90M": 11.5,
+      "maxM": 12.7,
+      "within3pxShare": 0.9,
+      "profile": [
+       {
+        "lng": 121.523132,
+        "lat": 31.313546,
+        "m": 0
+       },
+       {
+        "lng": 121.523859,
+        "lat": 31.313201,
+        "m": 8.5
+       },
+       {
+        "lng": 121.522906,
+        "lat": 31.313336,
+        "m": 2.1
+       }
+      ]
+     },
+     {
+      "osmId": 302226354,
+      "name": null,
+      "kind": "polygon",
+      "samples": 9,
+      "noWaterWithin200px": 0,
+      "medianPx": 137.6,
+      "medianM": 467.5,
+      "p10M": 460.9,
+      "p90M": 473.7,
+      "maxM": 473.7,
+      "within3pxShare": 0,
+      "profile": [
+       {
+        "lng": 121.503703,
+        "lat": 31.306546,
+        "m": 473.7
+       }
+      ]
+     },
+     {
+      "osmId": 407413898,
+      "name": null,
+      "kind": "polygon",
+      "samples": 84,
+      "noWaterWithin200px": 0,
+      "medianPx": 1,
+      "medianM": 3.4,
+      "p10M": 0,
+      "p90M": 10.6,
+      "maxM": 17,
+      "within3pxShare": 0.9,
+      "profile": [
+       {
+        "lng": 121.509188,
+        "lat": 31.309981,
+        "m": 3.4
+       },
+       {
+        "lng": 121.508294,
+        "lat": 31.310126,
+        "m": 13.8
+       },
+       {
+        "lng": 121.508547,
+        "lat": 31.310397,
+        "m": 3.4
+       },
+       {
+        "lng": 121.509489,
+        "lat": 31.31017,
+        "m": 1.1
+       }
+      ]
+     },
+     {
+      "osmId": 407413899,
+      "name": null,
+      "kind": "polygon",
+      "samples": 34,
+      "noWaterWithin200px": 0,
+      "medianPx": 1,
+      "medianM": 3.4,
+      "p10M": 1.1,
+      "p90M": 9.6,
+      "maxM": 12.2,
+      "within3pxShare": 0.9,
+      "profile": [
+       {
+        "lng": 121.508261,
+        "lat": 31.310067,
+        "m": 12.2
+       },
+       {
+        "lng": 121.508422,
+        "lat": 31.309789,
+        "m": 3.4
+       }
+      ]
+     },
+     {
+      "osmId": 407413900,
+      "name": null,
+      "kind": "polygon",
+      "samples": 41,
+      "noWaterWithin200px": 0,
+      "medianPx": 0.5,
+      "medianM": 1.7,
+      "p10M": 0,
+      "p90M": 6.3,
+      "maxM": 10.2,
+      "within3pxShare": 1,
+      "profile": [
+       {
+        "lng": 121.508973,
+        "lat": 31.309724,
+        "m": 0
+       },
+       {
+        "lng": 121.509078,
+        "lat": 31.309271,
+        "m": 6.3
+       }
+      ]
+     },
+     {
+      "osmId": 407413902,
+      "name": null,
+      "kind": "polygon",
+      "samples": 22,
+      "noWaterWithin200px": 0,
+      "medianPx": 1,
+      "medianM": 3.4,
+      "p10M": 0,
+      "p90M": 9.6,
+      "maxM": 9.6,
+      "within3pxShare": 1,
+      "profile": [
+       {
+        "lng": 121.509132,
+        "lat": 31.309848,
+        "m": 7.6
+       }
+      ]
+     },
+     {
+      "osmId": 407413904,
+      "name": null,
+      "kind": "polygon",
+      "samples": 28,
+      "noWaterWithin200px": 0,
+      "medianPx": 1.4,
+      "medianM": 4.8,
+      "p10M": 0,
+      "p90M": 13.8,
+      "maxM": 19.2,
+      "within3pxShare": 0.9,
+      "profile": [
+       {
+        "lng": 121.509561,
+        "lat": 31.309558,
+        "m": 7.6
+       },
+       {
+        "lng": 121.509477,
+        "lat": 31.309676,
+        "m": 6.1
+       }
+      ]
+     },
+     {
+      "osmId": 407413905,
+      "name": null,
+      "kind": "polygon",
+      "samples": 36,
+      "noWaterWithin200px": 0,
+      "medianPx": 3.2,
+      "medianM": 10.7,
+      "p10M": 1.1,
+      "p90M": 25.1,
+      "maxM": 31.5,
+      "within3pxShare": 0.5,
+      "profile": [
+       {
+        "lng": 121.50978,
+        "lat": 31.310039,
+        "m": 21.7
+       },
+       {
+        "lng": 121.509585,
+        "lat": 31.31003,
+        "m": 11.4
+       }
+      ]
+     }
+    ]
+   },
+   "z17": {
+    "mpp": 1.698,
+    "waterPixels": 4485,
+    "features": [
+     {
+      "osmId": 39408800,
+      "name": "虬江",
+      "kind": "line",
+      "samples": 368,
+      "noWaterWithin200px": 0,
+      "medianPx": 80.2,
+      "medianM": 136.2,
+      "p10M": 49.9,
+      "p90M": 181.2,
+      "maxM": 195.9,
+      "within3pxShare": 0,
+      "profile": [
+       {
+        "lng": 121.512983,
+        "lat": 31.307204,
+        "m": 68.5
+       },
+       {
+        "lng": 121.513821,
+        "lat": 31.307469,
+        "m": 24.7
+       },
+       {
+        "lng": 121.51466,
+        "lat": 31.307735,
+        "m": 54.2
+       },
+       {
+        "lng": 121.515498,
+        "lat": 31.308001,
+        "m": 83.8
+       },
+       {
+        "lng": 121.516336,
+        "lat": 31.308266,
+        "m": 106.7
+       },
+       {
+        "lng": 121.517145,
+        "lat": 31.308557,
+        "m": 126.5
+       },
+       {
+        "lng": 121.517715,
+        "lat": 31.309104,
+        "m": 116.7
+       },
+       {
+        "lng": 121.518481,
+        "lat": 31.309386,
+        "m": 157.7
+       },
+       {
+        "lng": 121.519307,
+        "lat": 31.30937,
+        "m": 177.6
+       },
+       {
+        "lng": 121.520051,
+        "lat": 31.309726,
+        "m": 172.3
+       },
+       {
+        "lng": 121.520736,
+        "lat": 31.31017,
+        "m": 166.9
+       },
+       {
+        "lng": 121.521575,
+        "lat": 31.310401,
+        "m": 195.9
+       },
+       {
+        "lng": 121.522441,
+        "lat": 31.310462,
+        "m": 181.3
+       },
+       {
+        "lng": 121.523226,
+        "lat": 31.31068,
+        "m": 162.4
+       },
+       {
+        "lng": 121.523866,
+        "lat": 31.311183,
+        "m": 134.2
+       }
+      ]
+     },
+     {
+      "osmId": 166720423,
+      "name": null,
+      "kind": "polygon",
+      "samples": 91,
+      "noWaterWithin200px": 0,
+      "medianPx": 2.8,
+      "medianM": 4.8,
+      "p10M": 1.7,
+      "p90M": 9.1,
+      "maxM": 10.9,
+      "within3pxShare": 0.6,
+      "profile": [
+       {
+        "lng": 121.523132,
+        "lat": 31.313546,
+        "m": 1.7
+       },
+       {
+        "lng": 121.523666,
+        "lat": 31.31332,
+        "m": 1.2
+       },
+       {
+        "lng": 121.523568,
+        "lat": 31.31303,
+        "m": 8.1
+       },
+       {
+        "lng": 121.522925,
+        "lat": 31.313273,
+        "m": 4
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "screenshots": [
+   "e82-osm-water-vs-basemap-z16.png",
+   "e82-osm-water-vs-basemap-z17.png",
+   "e82-osm-water-vs-basemap-z17-plain.png"
+  ]
+ },
+ "comparableScale": {
+  "legend": "设施密度 0–4 个/公顷（竖线：单个设施中心 0.66） · 核半径 120 米 · 不代表服务覆盖率",
+  "singleFacilityPeak": 0.6631,
+  "scaleMax": 4,
+  "peakRgba": [
+   55,
+   149,
+   138,
+   116
+  ]
+ },
+ "synthetic": {
+  "label": "验收用合成设施（非百度数据）",
+  "task": "f6128318-828e-48c0-bdc5-f164c6ece0db",
+  "anchors": [
+   {
+    "lng": 121.51338,
+    "lat": 31.314816
+   },
+   {
+    "lng": 121.51447,
+    "lat": 31.311342
+   },
+   {
+    "lng": 121.516467,
+    "lat": 31.313661
+   }
+  ],
+  "syntheticRecords": 14,
+  "drawnPoints": 17,
+  "densities": {
+   "A-centre": 5.104,
+   "A+80m-north": 1.779,
+   "A+150m-east": 0.004,
+   "B-middle": 1.409,
+   "B-west-end": 1.036,
+   "B+100m-south": 0.066,
+   "C-merged": 0.663,
+   "C+50m-west": 0.453
+  },
+  "views": {
+   "z16": [
+    {
+     "name": "A-centre",
+     "point": {
+      "lng": 121.51338,
+      "lat": 31.314816
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       227,
+       26,
+       28,
+       158
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      228,
+      26,
+      27,
+      158
+     ],
+     "ok": true
+    },
+    {
+     "name": "A+80m-north",
+     "point": {
+      "lng": 121.51338,
+      "lat": 31.315536
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       131,
+       173,
+       87,
+       134
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      156,
+      175,
+      84,
+      137
+     ],
+     "ok": true,
+     "shifted": {
+      "metersPerPixel": 3.397,
+      "densityRange": [
+       1.519,
+       2.063
+      ]
+     }
+    },
+    {
+     "name": "A+150m-east",
+     "point": {
+      "lng": 121.514959,
+      "lat": 31.314816
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       44,
+       127,
+       184,
+       13
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      42,
+      128,
+      181,
+      24
+     ],
+     "ok": true
+    },
+    {
+     "name": "B-middle",
+     "point": {
+      "lng": 121.51447,
+      "lat": 31.311342
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       78,
+       171,
+       92,
+       129
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      79,
+      172,
+      93,
+      129
+     ],
+     "ok": true
+    },
+    {
+     "name": "B-west-end",
+     "point": {
+      "lng": 121.513838,
+      "lat": 31.311342
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       60,
+       162,
+       113,
+       123
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      60,
+      162,
+      112,
+      123
+     ],
+     "ok": true
+    },
+    {
+     "name": "B+100m-south",
+     "point": {
+      "lng": 121.51447,
+      "lat": 31.310442
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       45,
+       129,
+       179,
+       96
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      45,
+      128,
+      178,
+      96
+     ],
+     "ok": true
+    },
+    {
+     "name": "C-merged",
+     "point": {
+      "lng": 121.516467,
+      "lat": 31.313661
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "C+50m-west",
+     "point": {
+      "lng": 121.515941,
+      "lat": 31.313661
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       51,
+       142,
+       153,
+       111
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      52,
+      143,
+      150,
+      112
+     ],
+     "ok": true
+    }
+   ],
+   "z17": [
+    {
+     "name": "A-centre",
+     "point": {
+      "lng": 121.51338,
+      "lat": 31.314816
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       227,
+       26,
+       28,
+       158
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      228,
+      26,
+      27,
+      158
+     ],
+     "ok": true
+    },
+    {
+     "name": "A+80m-north",
+     "point": {
+      "lng": 121.51338,
+      "lat": 31.315536
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       131,
+       173,
+       87,
+       134
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      138,
+      174,
+      87,
+      135
+     ],
+     "ok": true
+    },
+    {
+     "name": "A+150m-east",
+     "point": {
+      "lng": 121.514959,
+      "lat": 31.314816
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       44,
+       127,
+       184,
+       13
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      32,
+      128,
+      175,
+      16
+     ],
+     "ok": true
+    },
+    {
+     "name": "B-middle",
+     "point": {
+      "lng": 121.51447,
+      "lat": 31.311342
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       78,
+       171,
+       92,
+       129
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      79,
+      172,
+      93,
+      129
+     ],
+     "ok": true
+    },
+    {
+     "name": "B-west-end",
+     "point": {
+      "lng": 121.513838,
+      "lat": 31.311342
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       60,
+       162,
+       113,
+       123
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      60,
+      162,
+      112,
+      123
+     ],
+     "ok": true
+    },
+    {
+     "name": "B+100m-south",
+     "point": {
+      "lng": 121.51447,
+      "lat": 31.310442
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       45,
+       129,
+       179,
+       96
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      46,
+      129,
+      180,
+      95
+     ],
+     "ok": true
+    },
+    {
+     "name": "C-merged",
+     "point": {
+      "lng": 121.516467,
+      "lat": 31.313661
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       55,
+       149,
+       138,
+       116
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      55,
+      149,
+      138,
+      116
+     ],
+     "ok": true
+    },
+    {
+     "name": "C+50m-west",
+     "point": {
+      "lng": 121.515941,
+      "lat": 31.313661
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       51,
+       142,
+       153,
+       111
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      51,
+      142,
+      152,
+      111
+     ],
+     "ok": true
+    }
+   ],
+   "z18A": [
+    {
+     "name": "A-centre",
+     "point": {
+      "lng": 121.51338,
+      "lat": 31.314816
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       227,
+       26,
+       28,
+       158
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      228,
+      26,
+      27,
+      158
+     ],
+     "ok": true
+    },
+    {
+     "name": "A+80m-north",
+     "point": {
+      "lng": 121.51338,
+      "lat": 31.315536
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       131,
+       173,
+       87,
+       134
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      138,
+      174,
+      87,
+      135
+     ],
+     "ok": true
+    },
+    {
+     "name": "A+150m-east",
+     "point": {
+      "lng": 121.514959,
+      "lat": 31.314816
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       44,
+       127,
+       184,
+       13
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      32,
+      128,
+      191,
+      8
+     ],
+     "ok": true
+    }
+   ],
+   "shopping": [
+    {
+     "name": "A-centre",
+     "point": {
+      "lng": 121.51338,
+      "lat": 31.314816
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       227,
+       26,
+       28,
+       158
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 12
+     },
+     "actual": [
+      228,
+      26,
+      27,
+      158
+     ],
+     "ok": true
+    },
+    {
+     "name": "B-middle(filtered)",
+     "point": {
+      "lng": 121.51447,
+      "lat": 31.311342
+     },
+     "expected": {
+      "kind": "clear"
+     },
+     "actual": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "e82-density-synthetic-dense-z16.png",
+   "e82-density-synthetic-cluster-z18.png"
+  ]
+ },
+ "lifecycle": {
+  "discriminatingPoints": 4,
+  "steps": {
+   "initial": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-1",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       152,
+       208,
+       99,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      152,
+      208,
+      99,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-2",
+     "point": {
+      "lng": 121.514978,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-3",
+     "point": {
+      "lng": 121.512872,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       87,
+       180,
+       88,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      88,
+      181,
+      88,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-4",
+     "point": {
+      "lng": 121.511188,
+      "lat": 31.312719
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       103,
+       188,
+       90,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      105,
+      188,
+      90,
+      168
+     ],
+     "ok": true
+    }
+   ],
+   "afterToggles": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-1",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       152,
+       208,
+       99,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      152,
+      208,
+      99,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-2",
+     "point": {
+      "lng": 121.514978,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-3",
+     "point": {
+      "lng": 121.512872,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       87,
+       180,
+       88,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      88,
+      181,
+      88,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-4",
+     "point": {
+      "lng": 121.511188,
+      "lat": 31.312719
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       103,
+       188,
+       90,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      105,
+      188,
+      90,
+      168
+     ],
+     "ok": true
+    }
+   ],
+   "afterModeSwitch": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-1",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       152,
+       208,
+       99,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      152,
+      208,
+      99,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-2",
+     "point": {
+      "lng": 121.514978,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-3",
+     "point": {
+      "lng": 121.512872,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       87,
+       180,
+       88,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      88,
+      181,
+      88,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-4",
+     "point": {
+      "lng": 121.511188,
+      "lat": 31.312719
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       103,
+       188,
+       90,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      105,
+      188,
+      90,
+      168
+     ],
+     "ok": true
+    }
+   ],
+   "hybrid": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.519552,
+      "lat": 31.313309
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.516813,
+      "lat": 31.313143
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.515736,
+      "lat": 31.31538
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       208,
+       217,
+       121,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      208,
+      217,
+      121,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.513829,
+      "lat": 31.31185
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       195,
+       215,
+       116,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      194,
+      216,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-1",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       196,
+       215,
+       116,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      196,
+      216,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-2",
+     "point": {
+      "lng": 121.514978,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       225,
+       219,
+       128,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      225,
+      219,
+      128,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-3",
+     "point": {
+      "lng": 121.512872,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       193,
+       214,
+       115,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      193,
+      216,
+      115,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-4",
+     "point": {
+      "lng": 121.511188,
+      "lat": 31.312719
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       146,
+       207,
+       97,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      147,
+      206,
+      97,
+      168
+     ],
+     "ok": true
+    }
+   ],
+   "backToE82": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-1",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       152,
+       208,
+       99,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      152,
+      208,
+      99,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-2",
+     "point": {
+      "lng": 121.514978,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-3",
+     "point": {
+      "lng": 121.512872,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       87,
+       180,
+       88,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      88,
+      181,
+      88,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-4",
+     "point": {
+      "lng": 121.511188,
+      "lat": 31.312719
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       103,
+       188,
+       90,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      105,
+      188,
+      90,
+      168
+     ],
+     "ok": true
+    }
+   ],
+   "afterReload": [
+    {
+     "name": "gap-1",
+     "point": {
+      "lng": 121.51905,
+      "lat": 31.311945
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "gap-2",
+     "point": {
+      "lng": 121.520067,
+      "lat": 31.313771
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       107,
+       114,
+       128,
+       133
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      107,
+      113,
+      128,
+      133
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-1",
+     "point": {
+      "lng": 121.514212,
+      "lat": 31.312421
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "unknown-2",
+     "point": {
+      "lng": 121.516047,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-1",
+     "point": {
+      "lng": 121.513809,
+      "lat": 31.313204
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       197,
+       215,
+       117,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      197,
+      216,
+      117,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "covered-2",
+     "point": {
+      "lng": 121.515383,
+      "lat": 31.312779
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       254,
+       216,
+       134,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      253,
+      216,
+      134,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-1",
+     "point": {
+      "lng": 121.513293,
+      "lat": 31.313079
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       152,
+       208,
+       99,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      152,
+      208,
+      99,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-2",
+     "point": {
+      "lng": 121.514978,
+      "lat": 31.312
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       167,
+       139,
+       250,
+       102
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      168,
+      140,
+      250,
+      102
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-3",
+     "point": {
+      "lng": 121.512872,
+      "lat": 31.31128
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       87,
+       180,
+       88,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      88,
+      181,
+      88,
+      168
+     ],
+     "ok": true
+    },
+    {
+     "name": "discriminating-4",
+     "point": {
+      "lng": 121.511188,
+      "lat": 31.312719
+     },
+     "expected": {
+      "kind": "colour",
+      "rgba": [
+       103,
+       188,
+       90,
+       168
+      ],
+      "tolRgb": 10,
+      "tolAlpha": 10
+     },
+     "actual": [
+      105,
+      188,
+      90,
+      168
+     ],
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "switch-hybrid-service-medical-z16.png",
+   "switch-back-e82-after-reload-z16.png"
+  ]
+ }
+}

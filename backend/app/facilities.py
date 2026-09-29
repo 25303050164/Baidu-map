@@ -8,6 +8,7 @@ from life_circle.models import RouteObservation
 from life_circle.providers import BaiduProvider
 from life_circle.field import business_geometry
 
+from .catalog import majors, minors_of
 from .contracts import AssessmentPoint, CategoryResult, CoverageEvidence, FacilityAnalysis
 from .places import PlacesClient
 from .place_protocol import STOP_ERRORS
@@ -15,7 +16,9 @@ from .request_control import RequestStopped, request_slot
 from .rules import DistanceRule, distance_within
 from .poi_evidence import poi_evidence, route_evidence
 
-GROUPS = {"shopping": ("market", "supermarket"), "medical": ("pharmacy", "hospital_pharmacy"), "education": ("school",)}
+# Major-to-minor grouping comes from the one dictionary, like every other
+# category list in the application.
+GROUPS = {major: minors_of(major) for major in majors()}
 RULE = DistanceRule(metric="walking_route", threshold_m=1000, inclusive=True, tolerance_m=100,
                     assessment_scope="isochrone", category_policy="major_minor")
 

@@ -45,7 +45,10 @@ def classify(name, tags):
     disputed = [w for w in RULES['review'] if w in full]
     if disputed:
         return None, 'needs_review', ['policy_unconfirmed:' + w for w in disputed]
-    names = {c for c, words in RULES['queries'].items() if any(w in name for w in words)}
+    # Names classify on the name vocabulary, not on the request types: the two
+    # agree on the keywords actually sent but not on the words that identify a
+    # category, and §4.3 wants one table per question.
+    names = {c for c, words in RULES['nameHints'].items() if any(w in name for w in words)}
     tagged = {c for c, words in RULES['supportedTags'].items() if tag_parts.intersection(words)}
     evidence.extend('name:' + c for c in sorted(names))
     evidence.extend('tag:' + c for c in sorted(tagged))
@@ -66,6 +69,11 @@ def normalize(row, provenance, source):
     details = row.get('detail_info') or {}
     tags = [text(details.get('classified_poi_tag'))] if text(details.get('classified_poi_tag')) else []
     category, status, evidence = classify(name, tags)
+    # §4.3/§5.3: the raw point and the provider's navigation point are entrance
+    # *candidates*. ``navi_location`` is guidance and may be a pickup point, so it
+    # is never recorded as a walking entrance. No place query establishes an
+    # entrance, so ``confirmedEntrances`` stays null — an empty list would claim
+    # the opposite, that there is confirmed to be none.
     navigation, warnings = None, []
     if details.get('navi_location') is not None:
         try:
@@ -74,7 +82,8 @@ def normalize(row, provenance, source):
             warnings.append('invalid_navigation_location')
     return {'id': f'{source}:{uid}', 'source': source, 'sourceUid': uid, 'name': name,
         'category': category, 'coordinateSystem': 'bd09ll', 'location': point,
-        'navigationLocation': navigation, 'parentUid': text(details.get('parent_id')) or None,
+        'navigationLocation': navigation, 'confirmedEntrances': None,
+        'parentUid': text(details.get('parent_id')) or None,
         'address': text(row.get('address')), 'sourceTags': tags, 'operatingStatus': 'unknown',
         'classificationStatus': status, 'classificationRuleVersion': RULES['version'],
         'classificationEvidence': evidence, 'possibleDuplicateGroup': None,
@@ -88,11 +97,23 @@ def inside(point, bounds, projection):
     return bounds[0]-epsilon <= x <= bounds[2]+epsilon and bounds[1]-epsilon <= y <= bounds[3]+epsilon
 
 
-def merge_entities(records, request, plan):
+def merge_entities(records, request, plan=None, *, within=None):
+    """Merge the records of one run into entities, each with its own verdict.
+
+    ``plan`` names the rectangular search window a POI runtime ran, and every
+    entity outside it is reported rather than merged. A caller whose counting
+    region is not a rectangle — the checkup counts inside the computed boundary —
+    passes ``within`` instead: one test from a geographic point to whether this
+    run counts there. Exactly one of the two is required.
+    """
+    if within is None and plan is None:
+        raise ValueError('a merge needs a counting region: plan or within')
     by_uid = defaultdict(list)
     for record in records:
         by_uid[record['id']].append(record)
     projection = LocalProjection((request.center.lng, request.center.lat))
+    counted = (within if within is not None else
+               (lambda point: inside(point, plan['searchExtent']['localMeters'], projection)))
     accepted, review, excluded, outside = [], [], [], []
     for uid, values in sorted(by_uid.items()):
         observations = sorted({digest({k: v for k, v in r.items() if k != 'provenance'}): r for r in values}.values(),
@@ -102,10 +123,16 @@ def merge_entities(records, request, plan):
                                     key=lambda p: (p['tileId'], p['query'], p['pageNum']))
         item['sourceTags'] = sorted({t for r in values for t in r['sourceTags']})
         item['warnings'] = sorted({w for r in values for w in r['warnings']})
-        item['observations'] = [{k: r[k] for k in ('name', 'address', 'location', 'navigationLocation', 'parentUid', 'sourceTags')}
+        item['observations'] = [{k: r[k] for k in ('name', 'address', 'location', 'navigationLocation',
+                                                   'confirmedEntrances', 'parentUid', 'sourceTags')}
                                 for r in observations]
-        if not any(inside(r['location'], plan['searchExtent']['localMeters'], projection) for r in values):
-            outside.append({'sourceUid': item['sourceUid'], 'reason': 'outside_search_window', 'provenance': item['provenance']})
+        if not any(counted(r['location']) for r in values):
+            # The record keeps where it is and what it was: a nearby facility
+            # outside the counting region is evidence for the region, not noise.
+            outside.append({'sourceUid': item['sourceUid'], 'category': item['category'],
+                            'location': item['location'],
+                            'reason': 'outside_counting_region' if within is not None else 'outside_search_window',
+                            'provenance': item['provenance']})
             continue
         names = ' / '.join(sorted({r['name'] for r in values}))
         category, status, evidence = classify(names, item['sourceTags'])

@@ -1,0 +1,16 @@
+{
+  "taskId": "f6128318-828e-48c0-bdc5-f164c6ece0db",
+  "clientRequestId": "d33ffe23-a880-43f6-b6fa-725a95d49274",
+  "engine": "baidu_e82",
+  "status": "completed",
+  "businessStatus": "partial",
+  "stage": "ready",
+  "revision": 5,
+  "budget": 400,
+  "requests": 428,
+  "networkRequests": 428,
+  "elapsedSeconds": 812.3138554096222,
+  "createdAt": 1790494218.6687574,
+  "cancelRequested": false,
+  "error": null
+}

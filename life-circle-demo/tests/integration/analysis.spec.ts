@@ -1,4 +1,9 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
+
+/** 主入口默认是体检 v2；旧版两条分析在这两个地址。 */
+const E82 = '/#/legacy/e82';
+const HYBRID = '/#/legacy/hybrid';
+const API = 'http://127.0.0.1:8018';
 
 type LocationFixture = {
   geolocation?: 'ok' | 'denied' | 'timeout';
@@ -17,6 +22,8 @@ async function mockMap(page: Page, location: LocationFixture = {}) {
     class Point { constructor(public lng: number, public lat: number) {} }
     class Size { constructor(public width: number, public height: number) {} }
     class Icon { constructor(public url: string, public size: Size, public options: { anchor?: Size }) {} }
+    // __polygons 只记"此刻在地图上"的面：ApiMap 按组 removeOverlay，不再整张 clearOverlays。
+    const shown = new globalThis.Map<Polygon, SVGPathElement>();
     class Map {
       private center = new Point(116.404, 39.915);
       private svg: SVGSVGElement;
@@ -25,13 +32,23 @@ async function mockMap(page: Page, location: LocationFixture = {}) {
         this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         this.svg.setAttribute('viewBox', '0 0 1000 900');
         this.svg.setAttribute('width', '100%'); this.svg.setAttribute('height', '100%');
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('x', '24'); label.setAttribute('y', '36'); label.textContent = '离线 SDK 替身 · 不含真实底图';
+        this.svg.append(label);
         container.append(this.svg);
       }
       centerAndZoom(center: Point) { this.center = center; }
       panTo(center: Point) { this.center = center; }
       enableScrollWheelZoom() {}
+      removeOverlay(overlay: Polygon) {
+        const path = shown.get(overlay);
+        if (!path) return;
+        path.remove(); shown.delete(overlay);
+        storage.__polygons = storage.__polygons.filter(item => item !== overlay.record);
+      }
       addOverlay(overlay: Polygon) {
         if (!overlay.points) return;
+        storage.__polygons.push(overlay.record);
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', overlay.points.map(ring => ring.split(';').map((point, index) => {
           const [lng, lat] = point.split(',').map(Number);
@@ -42,18 +59,19 @@ async function mockMap(page: Page, location: LocationFixture = {}) {
         path.setAttribute('fill-opacity', String(overlay.options.fillOpacity ?? .2));
         path.setAttribute('stroke', overlay.options.strokeColor || '#64748b');
         this.svg.append(path);
+        shown.set(overlay, path);
       }
-      clearOverlays() {
-        storage.__polygons = []; this.svg.replaceChildren();
-        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        label.setAttribute('x', '24'); label.setAttribute('y', '36'); label.textContent = '离线 SDK 替身 · 不含真实底图';
-        this.svg.append(label);
+      destroy() {
+        for (const [overlay, path] of shown) if (path.ownerSVGElement === this.svg) this.removeOverlay(overlay);
+        this.svg.remove();
       }
-      destroy() { this.svg.remove(); }
       addEventListener() {}
     }
     class Polygon extends Overlay {
-      constructor(public points: string[], public options: { fillColor?: string; fillOpacity?: number; strokeColor?: string }) { super(); storage.__polygons.push({ points, options }); }
+      record: { points: string[]; options: { fillColor?: string; fillOpacity?: number; strokeColor?: string } };
+      constructor(public points: string[], public options: { fillColor?: string; fillOpacity?: number; strokeColor?: string }) {
+        super(); this.record = { points, options };
+      }
     }
     class Geolocation {
       private status = 0;
@@ -97,12 +115,14 @@ async function mockMap(page: Page, location: LocationFixture = {}) {
   }, location);
 }
 
-test.beforeEach(async ({ page }) => {
+async function guard(page: Page) {
   await page.route('**/*', route => {
     const host = new URL(route.request().url()).hostname;
     return host === '127.0.0.1' || host === 'localhost' ? route.continue() : route.abort();
   });
-});
+}
+
+test.beforeEach(async ({ page }) => { await guard(page); });
 
 async function analyze(page: Page, lng = '116.404') {
   await page.getByRole('spinbutton', { name: '经度', exact: true }).fill(lng);
@@ -120,7 +140,7 @@ async function analyze(page: Page, lng = '116.404') {
 
 test('real HTTP algorithm chain, direct BD09 polygons and responsive layout', async ({ page }, info) => {
   await mockMap(page);
-  await page.goto('/');
+  await page.goto(E82);
   await expect(page.getByText('设施统计尚未接入', { exact: true })).toBeVisible();
   const result = await analyze(page);
   expect(result.isochrone.algorithm).toBe('local-multicross-e82');
@@ -142,9 +162,9 @@ test('switches independent algorithms and renders Hybrid as exterior lines only'
   // and its own generous timeout.
   test.setTimeout(300_000);
   await mockMap(page);
-  await page.goto('/');
+  await page.goto(E82);
   const baidu = await analyze(page);
-  await page.getByText('OSM＋百度', { exact: true }).click();
+  await page.getByTestId('algorithm-hybrid').click();
   await page.getByRole('combobox', { name: '百度验证预算' }).click();
   await page.getByTitle('200 次', { exact: true }).click();
   const response = page.waitForResponse(r => /\/api\/v1\/analysis\/hybrid\/[^/]+\/result$/.test(r.url()) && r.status() === 200);
@@ -159,9 +179,17 @@ test('switches independent algorithms and renders Hybrid as exterior lines only'
   expect(polygons.map((p: any) => p.points)).toEqual(result.isochrone.displayGeometry.coordinates.map(
     (p: number[][][]) => [p[0].map(x => x.join(',')).join(';')]));
   await page.screenshot({ path: info.outputPath('hybrid-outline.png'), fullPage: true });
-  await page.getByText('百度边界搜索（E8.2）', { exact: true }).click();
+  // 切回 E8.2：地图与结果回到 E8.2 自己那一次任务，Hybrid 的外轮廓一条都不残留。
+  const hybridRings = result.isochrone.displayGeometry.coordinates.map(
+    (p: number[][][]) => p[0].map(x => x.join(',')).join(';'));
+  await page.getByTestId('algorithm-e82').click();
   await expect(page.getByText('结果质量：部分结果', { exact: true })).toHaveCount(0);
-  expect(await page.evaluate(() => (window as any).__polygons)).toEqual([]);
+  await expect(page.getByTestId('legacy-map-section')).toHaveAttribute('data-task-id', baidu.taskId);
+  await expect.poll(() => page.evaluate(() => (window as any).__polygons
+    .filter((p: any) => p.options.fillColor === '#2da990').map((p: any) => p.points)))
+    .toEqual(baidu.isochrone.geometry.coordinates.map((p: number[][][]) => p.map(r => r.map(x => x.join(',')).join(';'))));
+  expect(await page.evaluate(rings => (window as any).__polygons
+    .filter((p: any) => p.points.some((ring: string) => rings.includes(ring))).length, hybridRings)).toBe(0);
 });
 
 test('geometry contract preserves supplied holes and components independently of the search strategy', async ({ page }) => {
@@ -179,7 +207,7 @@ test('geometry contract preserves supplied holes and components independently of
     data.algorithm = data.isochrone;
     await route.fulfill({ json: data });
   });
-  await page.goto('/');
+  await page.goto(E82);
   const hole = await analyze(page, '116.405');
   expect(hole.isochrone.geometry.coordinates.some((polygon: unknown[]) => polygon.length > 1)).toBe(true);
   const overlays = await page.evaluate(() => (window as any).__polygons.filter((p: any) => p.options.fillColor === '#2da990'));
@@ -190,7 +218,7 @@ test('geometry contract preserves supplied holes and components independently of
 
 test('missing endpoint evidence never becomes a claimed empty reachable region', async ({ page }) => {
   await mockMap(page);
-  await page.goto('/');
+  await page.goto(E82);
   const unknown = await analyze(page, '116.407');
   expect(unknown.isochrone.geometry).toBeNull();
   await expect(page.getByText('证据不足，无法确定可达区域', { exact: true })).toBeVisible();
@@ -201,7 +229,7 @@ test('missing endpoint evidence never becomes a claimed empty reachable region',
 
 test('local unknown remains a separate layer', async ({ page }) => {
   await mockMap(page);
-  await page.goto('/');
+  await page.goto(E82);
   // 116.410 is only an unsupported neighbourhood for the offline harness; the
   // partial scene below is the one that carries local unlocalised faces.
   const result = await analyze(page, '116.405');
@@ -215,50 +243,64 @@ test('local unknown remains a separate layer', async ({ page }) => {
   expect(await page.evaluate(() => (window as any).__polygons.filter((p: any) => p.options.fillColor === '#64748b').length)).toBe(0);
 });
 
-test('cancels the server task and clears old state when center changes', async ({ page, request }) => {
+test('moving the center never cancels a running task; only the explicit cancel stops it', async ({ page, request }) => {
   await mockMap(page);
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('spinbutton', { name: '经度', exact: true }).fill('116.409');
   const created = page.waitForResponse(r => r.url().endsWith('/api/analyses') && r.status() === 202);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   const id = (await (await created).json()).taskId;
+  // 改选点只改左栏草稿：任务照跑，页面说明它仍按提交时的中心计算，也不许并行再开一个。
+  await page.getByRole('spinbutton', { name: '经度', exact: true }).fill('116.404');
+  await expect(page.getByText('进行中的任务仍按它提交时的中心计算', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: '开始分析', exact: true })).toBeDisabled();
+  expect((await (await request.get(`${API}/api/analyses/${id}`)).json()).status).toBe('running');
   await page.getByRole('button', { name: '取消任务', exact: true }).click();
   await expect(page.getByText('任务已取消', { exact: true })).toBeVisible();
-  const status = await (await request.get(`http://127.0.0.1:8018/api/analyses/${id}`)).json();
+  const status = await (await request.get(`${API}/api/analyses/${id}`)).json();
   expect(status.status).toBe('cancelled');
   expect(status.requests).toBeLessThan(status.budget);
   // Browser scheduling changes the count before the click; cancellation must stop growth.
   await page.waitForTimeout(500);
-  const settled = await (await request.get(`http://127.0.0.1:8018/api/analyses/${id}`)).json();
+  const settled = await (await request.get(`${API}/api/analyses/${id}`)).json();
   expect(settled.status).toBe('cancelled');
   expect(settled.requests).toBe(status.requests);
-  expect((await request.get(`http://127.0.0.1:8018/api/analyses/${id}/result`)).status()).toBe(409);
-  await page.getByRole('spinbutton', { name: '纬度', exact: true }).fill('39.916');
-  await expect(page.getByText('任务已取消', { exact: true })).not.toBeVisible();
+  expect((await request.get(`${API}/api/analyses/${id}/result`)).status()).toBe(409);
+  await expect(page.getByRole('button', { name: '开始分析', exact: true })).toBeEnabled();
 });
 
 test('SDK failure keeps coordinate analysis and summary usable without demo fallback', async ({ page }) => {
-  await page.goto('/');
+  await page.goto(E82);
   await expect(page.getByText('地图不可用', { exact: true })).toBeVisible();
   await analyze(page);
   await expect(page.getByRole('region', { name: '分析结果', exact: true }).getByText(/已重建 \d+ 个可达分量/)).toBeVisible();
   await expect(page.getByText('演示数据', { exact: true })).not.toBeVisible();
 });
 
-test('network failure is explicit and can resume the same analysis request', async ({ page }) => {
+test('a create that never reached the server is reported and resubmitted only on request, with the same key', async ({ page }) => {
   await mockMap(page);
+  const keys: string[] = [];
+  page.on('request', r => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/analyses') keys.push(r.postDataJSON().clientRequestId);
+  });
   await page.route('**/api/analyses', route => route.abort(), { times: 1 });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
-  await expect(page.getByText('无法连接分析服务或请求超时，请检查网络和服务地址后重试', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '重试', exact: true }).click();
+  // 按请求标识查过、服务端确实没有：说清楚，不自动重提。
+  const error = page.getByTestId('legacy-error');
+  await expect(error).toContainText('创建请求没有送达服务端');
+  await expect(error.getByRole('button', { name: '重试' })).toHaveText('重新提交');
+  expect(keys).toHaveLength(1);
+  await error.getByRole('button', { name: '重试' }).click();
   await expect(page.getByText('分析完成', { exact: true })).toBeVisible();
   await expect(page.getByTestId('analysis-report')).toBeVisible();
+  expect(keys).toHaveLength(2);
+  expect(keys[1]).toBe(keys[0]);
 });
 
 test('reports retain their original conditions after edits, unavailable results and failed retries', async ({ page }) => {
   await mockMap(page);
-  await page.goto('/');
+  await page.goto(E82);
   await analyze(page);
   await page.getByRole('button', { name: '查看分析报告', exact: true }).click();
   const report = page.getByTestId('analysis-report');
@@ -290,22 +332,26 @@ test('reports retain their original conditions after edits, unavailable results 
   await expect(report).not.toContainText('最近一次分析未成功');
 });
 
-test('lost create response can be cancelled by request key after editing center', async ({ page, request }) => {
+test('a lost create response is recovered by its request key without a second POST', async ({ page, request }) => {
   await mockMap(page);
   let taskId = '';
+  let creates = 0;
+  page.on('request', r => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/analyses') creates++; });
   await page.route('**/api/analyses', async route => {
     const accepted = await route.fetch();
     taskId = (await accepted.json()).taskId;
     await route.abort(); // Server accepted the slow job, but the browser never received its ID.
   }, { times: 1 });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('spinbutton', { name: '经度', exact: true }).fill('116.409');
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
-  await expect(page.getByText('无法连接分析服务或请求超时，请检查网络和服务地址后重试', { exact: true })).toBeVisible();
-  const cancelled = page.waitForResponse(r => r.url().includes('/by-request/') && r.status() === 202);
-  await page.getByRole('spinbutton', { name: '经度', exact: true }).fill('116.404');
-  await cancelled;
-  await expect.poll(async () => (await (await request.get(`http://127.0.0.1:8018/api/analyses/${taskId}`)).json()).status).toBe('cancelled');
+  await expect.poll(() => taskId).not.toBe('');
+  await expect(page.getByTestId('legacy-task-id')).toHaveText(taskId);
+  expect(creates).toBe(1);
+  await page.getByRole('button', { name: '取消任务', exact: true }).click();
+  await expect(page.getByText('任务已取消', { exact: true })).toBeVisible();
+  expect((await (await request.get(`${API}/api/analyses/${taskId}`)).json()).status).toBe('cancelled');
+  expect(creates).toBe(1);
   await analyze(page);
 });
 
@@ -314,7 +360,7 @@ test('malformed successful result shows a format error instead of crashing the p
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/analyses/*/result', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '开始分析', exact: true }).click();
   await expect(page.getByText('后端返回格式异常，请检查服务版本', { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
@@ -322,7 +368,7 @@ test('malformed successful result shows a format error instead of crashing the p
 
 test('device location fills the center and reports accuracy and address', async ({ page }) => {
   await mockMap(page, { geolocation: 'ok' });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '获取当前位置', exact: true }).click();
   await expect(page.getByText(/已定位：北京市东城区测试街1号 · 定位精度约 30 米/)).toBeVisible();
   await expect(page.getByRole('spinbutton', { name: '经度', exact: true })).toHaveValue(/116\.418/);
@@ -331,14 +377,14 @@ test('device location fills the center and reports accuracy and address', async 
 
 test('coarse device location warns for map verification', async ({ page }) => {
   await mockMap(page, { geolocation: 'ok', accuracy: 800 });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '获取当前位置', exact: true }).click();
   await expect(page.getByText(/定位可能偏差较大，请在地图上核对/)).toBeVisible();
 });
 
 test('denied device location keeps manual coordinates and explains how to retry', async ({ page }) => {
   await mockMap(page, { geolocation: 'denied' });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('button', { name: '获取当前位置', exact: true }).click();
   await expect(page.getByText('定位权限被拒绝，请在浏览器设置中允许定位后重试', { exact: true })).toBeVisible();
   await expect(page.getByRole('spinbutton', { name: '经度', exact: true })).toHaveValue(/116\.404/);
@@ -346,7 +392,7 @@ test('denied device location keeps manual coordinates and explains how to retry'
 
 test('POI search selection becomes the analysis center', async ({ page }) => {
   await mockMap(page, { places: [{ title: '测试公园', address: '测试路1号', uid: 'poi-1', lng: 116.5, lat: 39.95 }] });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('textbox', { name: '搜索地点' }).fill('公园');
   await page.getByRole('button', { name: '搜索', exact: true }).click();
   await page.getByRole('button', { name: /测试公园/ }).click();
@@ -360,7 +406,7 @@ test('POI search selection becomes the analysis center', async ({ page }) => {
 
 test('empty POI search result shows a retry hint', async ({ page }) => {
   await mockMap(page, { places: [] });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('textbox', { name: '搜索地点' }).fill('不存在的地方');
   await page.getByRole('button', { name: '搜索', exact: true }).click();
   await expect(page.getByText('未找到相关地点，请尝试其他关键词', { exact: true })).toBeVisible();
@@ -374,7 +420,7 @@ test('POI search falls back to far options when nothing is nearby', async ({ pag
       { title: '远郊花园', address: '远郊路10号', uid: 'poi-loose', lng: 117.3, lat: 40.3 },
     ],
   });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('textbox', { name: '搜索地点' }).fill('公园');
   await page.getByRole('button', { name: '搜索', exact: true }).click();
   await expect(page.getByText('较远结果（超过 5 公里）', { exact: true })).toBeVisible();
@@ -388,7 +434,7 @@ test('POI search lists nearby results first and keeps far options', async ({ pag
     places: [{ title: '近处公园', address: '近处路1号', uid: 'poi-near', lng: 116.41, lat: 39.92 }],
     farPlaces: [{ title: '远郊公园', address: '远郊路9号', uid: 'poi-far', lng: 117.2, lat: 40.3 }],
   });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('textbox', { name: '搜索地点' }).fill('公园');
   await page.getByRole('button', { name: '搜索', exact: true }).click();
   await expect(page.getByText('附近结果（5 公里内）', { exact: true })).toBeVisible();
@@ -401,7 +447,7 @@ test('POI search lists nearby results first and keeps far options', async ({ pag
 
 test('POI search resolves a nationwide administrative name through address fallback', async ({ page }) => {
   await mockMap(page, { geocode: { lng: 120.43, lat: 27.52 } });
-  await page.goto('/');
+  await page.goto(E82);
   await page.getByRole('textbox', { name: '搜索地点' }).fill('苍南县');
   await page.getByRole('button', { name: '搜索', exact: true }).click();
   await expect(page.getByText('较远结果（超过 5 公里）', { exact: true })).toBeVisible();
@@ -445,7 +491,7 @@ test('facility report, category filtering, route and time layers share one analy
     await route.fulfill({ response, json: data });
   });
   await page.route('**/api/analyses/*/routes/*', route => route.fulfill({ json: savedRoute }));
-  await page.goto('/');
+  await page.goto(E82);
   await analyze(page);
   await expect(page.getByText('设施与基础报告', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /离线测试药房/ }).click();
@@ -466,4 +512,288 @@ test('facility report, category filtering, route and time layers share one analy
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: info.outputPath('facilities-mobile.png'), fullPage: true });
   expect(errors).toEqual([]);
+});
+
+// ── 任务生命周期：两种算法 × 创建中、运行中、完成后、取消中、失败、断网、忙碌 ─────────────────
+// 任务属于后端，句柄存在 localStorage：换页面、换算法、刷新都只是换了个观察者。每条都数创建
+// 请求（POST）的次数，证明找回靠的是任务 ID 或请求标识，而不是悄悄重新提交一个花额度的任务。
+
+const BASE = 'http://127.0.0.1:5178';
+type Speed = 'slow' | 'fast' | 'failing';
+type Engine = {
+  name: string; route: string; tab: string; other: string; api: string; createPath: string;
+  storage: string; busy: string; report: boolean;
+  fill(page: Page, speed: Speed): Promise<void>;
+};
+
+const LIFECYCLE_ENGINES: Engine[] = [
+  { name: 'E8.2', route: E82, tab: 'algorithm-e82', other: 'algorithm-hybrid', api: `${API}/api/analyses`,
+    createPath: '/api/analyses', storage: 'life-circle:legacy:v1:e82', busy: '分析服务忙：另一项分析正在进行', report: true,
+    // 离线路网替身：116.409 约 22 秒，116.404 不到 1 秒，116.412 跑约 2 秒后整体失败。
+    async fill(page, speed) {
+      await page.getByRole('spinbutton', { name: '经度', exact: true })
+        .fill({ slow: '116.409', fast: '116.404', failing: '116.412' }[speed]);
+    } },
+  { name: 'OSM＋百度', route: HYBRID, tab: 'algorithm-hybrid', other: 'algorithm-e82', api: `${API}/api/v1/analysis/hybrid`,
+    createPath: '/api/v1/analysis/hybrid', storage: 'life-circle:legacy:v1:hybrid', busy: '另一项 OSM＋百度分析正在进行', report: false,
+    // 同一中心：预算 400 约 30 秒，200 约 9 秒；116.412 跑约 2 秒后整体失败。
+    async fill(page, speed) {
+      await page.getByRole('spinbutton', { name: '经度', exact: true }).fill(speed === 'failing' ? '116.412' : '116.404');
+      await page.getByRole('spinbutton', { name: '纬度', exact: true }).fill('39.915');
+      if (speed === 'fast') {
+        await page.getByRole('combobox', { name: '百度验证预算' }).click();
+        await page.getByTitle('200 次', { exact: true }).click();
+      }
+    } },
+];
+
+/** 本页发出的创建请求的请求标识，按顺序。 */
+function countCreates(page: Page, engine: Engine) {
+  const keys: string[] = [];
+  page.on('request', r => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === engine.createPath) {
+      const body = r.postDataJSON();
+      keys.push(body.clientRequestId ?? body.client_request_id); // E8.2 驼峰，Hybrid 蛇形
+    }
+  });
+  return keys;
+}
+
+const started: { api: string; id: string }[] = [];
+/** 等页面显示出一个（与 previous 不同的）任务 ID，并登记下来供用例结束后收尾。 */
+async function shownTask(page: Page, engine: Engine, previous?: string) {
+  const node = page.getByTestId('legacy-task-id');
+  let value = '';
+  await expect.poll(async () => {
+    value = (await node.textContent({ timeout: 500 }).catch(() => null))?.trim() ?? '';
+    return value !== '' && value !== previous;
+  }, { timeout: 30_000 }).toBe(true);
+  if (!started.some(item => item.id === value)) started.push({ api: engine.api, id: value });
+  return value;
+}
+
+async function serverStatus(request: APIRequestContext, engine: Engine, id: string): Promise<string> {
+  return (await (await request.get(`${engine.api}/${id}`)).json()).status;
+}
+
+const storedHandle = (page: Page, engine: Engine) =>
+  page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? 'null')?.handle, engine.storage);
+
+const drawn = (page: Page) => page.evaluate(() => (window as any).__polygons
+  .map((p: any) => ({ points: p.points, fill: p.options.fillColor ?? null, opacity: p.options.fillOpacity ?? null })));
+
+async function start(page: Page) {
+  await page.getByRole('button', { name: '开始分析', exact: true }).click();
+}
+
+for (const e of LIFECYCLE_ENGINES) test.describe(`task lifecycle · ${e.name}`, () => {
+  test.afterEach(async ({ request }) => {
+    // 后端每种算法只有一个名额：把本条开过的任务停干净，下一条才不会撞上"忙"。
+    for (const { api, id } of started.splice(0)) {
+      await request.post(`${api}/${id}/cancel`, { data: {} }).catch(() => undefined);
+      await expect.poll(async () => (await (await request.get(`${api}/${id}`)).json()).status, { timeout: 45_000 })
+        .toMatch(/^(completed|cancelled|failed)$/);
+    }
+  });
+
+  test('running: switching algorithm, switching page and reloading all keep the same task', async ({ page, request }) => {
+    test.setTimeout(120_000);
+    await mockMap(page);
+    const creates = countCreates(page, e);
+    await page.goto(e.route);
+    await e.fill(page, 'slow');
+    await start(page);
+    const id = await shownTask(page, e);
+    await expect(page.getByTestId('legacy-phase')).toHaveAttribute('data-phase', 'running');
+    await page.getByTestId(e.other).click();
+    await expect(page.getByTestId(e.tab)).toHaveAttribute('data-activity', '运行中');
+    await page.getByTitle('体检 v2（热力与报告）', { exact: true }).click();
+    await expect(page).toHaveURL(/#\/checkup\//);
+    await page.getByTitle('旧版成圈分析', { exact: true }).click();
+    await expect(page.getByTestId(e.tab)).toHaveAttribute('data-activity', '运行中');
+    await page.getByTestId(e.tab).click();
+    await expect(page.getByTestId('legacy-task-id')).toHaveText(id);
+    expect(await serverStatus(request, e, id)).toBe('running');
+    await page.reload();
+    await expect(page.getByTestId('legacy-task-id')).toHaveText(id);
+    expect(await serverStatus(request, e, id)).toBe('running');
+    await expect(page.getByTestId('legacy-map-section')).toHaveAttribute('data-task-id', id, { timeout: 60_000 });
+    await expect(page.getByTestId('legacy-phase')).toHaveAttribute('data-phase', 'completed');
+    expect(creates).toHaveLength(1);
+  });
+
+  test('creating: a reload while the create request is in flight finds the task by its request key', async ({ page, request }) => {
+    test.setTimeout(90_000);
+    await mockMap(page);
+    const creates = countCreates(page, e);
+    let reached = '';
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route(`**${e.createPath}`, async route => {
+      // 服务端收下了、建了任务，但回答一直没回到页面。
+      reached = (await (await route.fetch()).json()).taskId;
+      await held;
+      await route.abort().catch(() => undefined);
+    }, { times: 1 });
+    await page.goto(e.route);
+    await e.fill(page, 'slow');
+    await start(page);
+    await expect(page.getByTestId('legacy-phase')).toHaveAttribute('data-phase', 'submitting');
+    await expect.poll(() => reached).not.toBe('');
+    started.push({ api: e.api, id: reached });
+    const handle = await storedHandle(page, e);
+    expect(handle.taskId).toBeUndefined();
+    expect(handle.input.clientRequestId).toBe(creates[0]);
+    await page.reload();
+    release();
+    await expect(page.getByTestId('legacy-task-id')).toHaveText(reached);
+    await expect(page.getByTestId('legacy-phase')).toHaveAttribute('data-phase', 'running');
+    expect((await (await request.get(`${e.api}/by-request/${creates[0]}`)).json()).taskId).toBe(reached);
+    expect((await storedHandle(page, e)).taskId).toBe(reached);
+    expect(creates).toHaveLength(1);
+  });
+
+  test('completed: the same result and the same map come back after switching away and after a reload', async ({ page }) => {
+    test.setTimeout(90_000);
+    await mockMap(page);
+    const creates = countCreates(page, e);
+    await page.goto(e.route);
+    await e.fill(page, 'fast');
+    await start(page);
+    const id = await shownTask(page, e);
+    await expect(page.getByTestId('legacy-map-section')).toHaveAttribute('data-task-id', id, { timeout: 60_000 });
+    if (e.report) {
+      await expect(page.getByTestId('analysis-report')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('analysis-report')).not.toBeVisible();
+    }
+    const before = await drawn(page);
+    expect(before.length).toBeGreaterThan(0);
+    await page.getByTestId(e.other).click();
+    await expect(page.getByTestId('legacy-map-section')).not.toHaveAttribute('data-task-id', id);
+    await page.getByTestId(e.tab).click();
+    await expect(page.getByTestId('legacy-map-section')).toHaveAttribute('data-task-id', id);
+    await expect.poll(() => drawn(page)).toEqual(before);
+    await page.reload();
+    await expect(page.getByTestId('legacy-phase')).toHaveAttribute('data-phase', 'completed');
+    await expect(page.getByTestId('legacy-map-section')).toHaveAttribute('data-task-id', id);
+    await expect.poll(() => drawn(page)).toEqual(before);
+    // 刷新后取回的旧结果不自动弹报告；也没有再提交。
+    await expect(page.getByTestId('analysis-report')).toHaveCount(0);
+    expect(creates).toHaveLength(1);
+  });
+
+  test('cancelling: a cancel the server has not confirmed is re-sent after a reload', async ({ page, request }) => {
+    test.setTimeout(90_000);
+    await mockMap(page);
+    const creates = countCreates(page, e);
+    let pending: Route | undefined;
+    // 第一次取消请求挂住不放：页面只知道"已请求取消"，服务端还在跑。
+    await page.route(`**${e.createPath}/*/cancel`, route => { pending = route; }, { times: 1 });
+    await page.goto(e.route);
+    await e.fill(page, 'slow');
+    await start(page);
+    const id = await shownTask(page, e);
+    await expect(page.getByTestId('legacy-phase')).toHaveAttribute('data-phase', 'running');
+    await page.getByRole('button', { name: '取消任务', exact: true }).click();
+    await expect(page.getByTestId('legacy-phase')).toHaveAttribute('data-phase', 'cancelling');
+    await expect.poll(() => pending !== undefined).toBe(true);
+    expect(await storedHandle(page, e)).toMatchObject({ taskId: id, cancelRequested: true });
+    expect(await serverStatus(request, e, id)).toBe('running');
+    await page.reload();
+    await pending!.abort().catch(() => undefined);
+    await expect(page.getByText('任务已取消', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('legacy-task-id')).toHaveText(id);
+    await expect.poll(() => serverStatus(request, e, id)).toBe('cancelled');
+    await expect(page.getByRole('button', { name: '开始分析', exact: true })).toBeEnabled();
+    expect(creates).toHaveLength(1);
+  });
+
+  test('failed: the failure stays attached to its task across switches and a reload and reruns only on request', async ({ page }) => {
+    test.setTimeout(90_000);
+    await mockMap(page);
+    const creates = countCreates(page, e);
+    await page.goto(e.route);
+    await e.fill(page, 'failing');
+    await start(page);
+    const id = await shownTask(page, e);
+    const error = page.getByTestId('legacy-error');
+    await expect(error).toContainText('分析执行失败');
+    await page.getByTestId(e.other).click();
+    await page.getByTestId(e.tab).click();
+    await expect(error).toContainText('分析执行失败');
+    await expect(page.getByTestId('legacy-task-id')).toHaveText(id);
+    await page.reload();
+    await expect(error).toContainText('分析执行失败');
+    await expect(page.getByTestId('legacy-task-id')).toHaveText(id);
+    await expect(error.getByRole('button', { name: '重试' })).toHaveText('重新分析');
+    expect(creates).toHaveLength(1);
+    await error.getByRole('button', { name: '重试' }).click();
+    const rerun = await shownTask(page, e, id);
+    expect(rerun).not.toBe(id);
+    await expect(error).toContainText('分析执行失败');
+    // 失败的任务不能沿用同一请求标识，否则后端会把它认成同一次请求。
+    expect(creates).toHaveLength(2);
+    expect(creates[1]).not.toBe(creates[0]);
+  });
+
+  test('offline: losing the network neither fails nor resubmits; the same task finishes after reconnecting', async ({ page, request }) => {
+    test.setTimeout(120_000);
+    await mockMap(page);
+    const creates = countCreates(page, e);
+    await page.goto(e.route);
+    await e.fill(page, 'slow');
+    await start(page);
+    const id = await shownTask(page, e);
+    await expect(page.getByTestId('legacy-phase')).toHaveAttribute('data-phase', 'running');
+    await page.context().setOffline(true);
+    await expect(page.getByTestId('legacy-connection')).toBeVisible();
+    await page.waitForTimeout(3000);
+    expect(await serverStatus(request, e, id)).toBe('running');
+    await expect(page.getByTestId('legacy-error')).toHaveCount(0);
+    await page.context().setOffline(false);
+    await expect(page.getByTestId('legacy-connection')).toHaveCount(0);
+    await expect(page.getByTestId('legacy-map-section')).toHaveAttribute('data-task-id', id, { timeout: 60_000 });
+    expect(creates).toHaveLength(1);
+  });
+
+  test("busy: another tab adopts this browser's own task; another browser is told who holds the slot", async ({ page, browser }) => {
+    test.setTimeout(120_000);
+    await mockMap(page);
+    const creates = countCreates(page, e);
+    await page.goto(e.route);
+    // 同一浏览器的第二个页签在任务开始前就开着，模块里没有这个任务。
+    const tab = await page.context().newPage();
+    await guard(tab); await mockMap(tab);
+    const tabCreates = countCreates(tab, e);
+    await tab.goto(e.route);
+    await e.fill(page, 'slow');
+    await start(page);
+    const id = await shownTask(page, e);
+    await e.fill(tab, 'slow');
+    await start(tab);
+    await expect(tab.getByTestId('legacy-notice')).toContainText('占用名额的正是本浏览器此前提交');
+    await expect(tab.getByTestId('legacy-task-id')).toHaveText(id);
+    expect(tabCreates).toHaveLength(1);
+    expect((await storedHandle(tab, e)).taskId).toBe(id);
+    // 另一台浏览器（存储不共享）：只说明占用情况，不给它别人的任务，也不锁住它的按钮。
+    const stranger = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const other = await stranger.newPage();
+    await guard(other); await mockMap(other);
+    await other.goto(BASE + e.route);
+    await e.fill(other, 'slow');
+    await start(other);
+    const refused = other.getByTestId('legacy-error');
+    await expect(refused).toContainText(e.busy);
+    await expect(refused).toContainText('已运行');
+    await expect(other.getByTestId('legacy-task-id')).toHaveCount(0);
+    await expect(other.getByRole('button', { name: '开始分析', exact: true })).toBeEnabled();
+    await stranger.close();
+    // 从第二个页签取消：两个页签看到的是同一个任务的同一个结局。
+    await tab.getByRole('button', { name: '取消任务', exact: true }).click();
+    await expect(tab.getByText('任务已取消', { exact: true })).toBeVisible();
+    await expect(page.getByText('任务已取消', { exact: true })).toBeVisible();
+    expect(creates).toHaveLength(1);
+    await tab.close();
+  });
 });

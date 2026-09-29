@@ -144,7 +144,12 @@ def test_cancel_by_request_during_preparation_sends_nothing(tmp_path, monkeypatc
     app = create_app(Settings(_env_file=None, hybrid_ledger_dir=tmp_path), hybrid_provider_factory=factory)
     with TestClient(app) as client:
         body = dict(origin=dict(zip(("lng", "lat"), ORIGIN)), coordinate_system="bd09ll", client_request_id="cancel")
-        client.post("/api/v1/analysis/hybrid", json=body)
+        task = client.post("/api/v1/analysis/hybrid", json=body).json()["taskId"]
+        busy = client.post("/api/v1/analysis/hybrid", json={**body, "client_request_id": "other"})
+        # A second caller learns what holds the slot, never the occupant's ID or key.
+        assert busy.status_code == 409 and busy.json()["code"] == "hybrid_busy"
+        assert busy.json()["message"].startswith("另一项 OSM＋百度分析正在进行（已运行 ")
+        assert task not in busy.text and '"cancel"' not in busy.text
         assert client.post("/api/v1/analysis/hybrid/by-request/cancel/cancel").json()["status"] == "cancelling"
         time.sleep(.3)
         assert client.get("/api/v1/analysis/hybrid/by-request/cancel").json()["status"] == "cancelled"
@@ -160,8 +165,14 @@ def test_failure_stage_is_recorded_without_exception_text(tmp_path, monkeypatch)
         r = client.post("/api/v1/analysis/hybrid", json=dict(origin=dict(zip(("lng", "lat"), ORIGIN)),
                  coordinate_system="bd09ll", client_request_id="fail"))
         task = r.json()["taskId"]
-        time.sleep(.1)
-        assert client.get(f"/api/v1/analysis/hybrid/{task}").json()["status"] == "failed"
+        # The first use of the offline graph starts with a full collection, which in
+        # a long test session's heap takes a noticeable moment.
+        for _ in range(400):
+            status = client.get(f"/api/v1/analysis/hybrid/{task}").json()["status"]
+            if status in ("completed", "failed"):
+                break
+            time.sleep(.01)
+        assert status == "failed"
         text = (tmp_path / task / "failure.json").read_text()
         assert "SECRET" not in text and json.loads(text)["stage"] == "preparing"
 

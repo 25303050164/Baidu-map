@@ -8,23 +8,25 @@ type ApiRoute = { taskId: string; points: [number, number][] };
 export type BaiduSession = {
   center: Center; lng: number | null; lat: number | null; budget: Budget;
   group: string; selected: string | null; showFacilities: boolean; showAssessments: boolean;
-  route: ApiRoute | null; lastResult?: AnalysisResult; dirty: boolean; reportOpen: boolean; layers: Layers;
+  route: ApiRoute | null; lastResult?: AnalysisResult; reportOpen: boolean; layers: Layers;
 };
 
 export type HybridSession = {
   center: Center; lng: number | null; lat: number | null; budget: number;
-  result?: HybridResultResponse; dirty: boolean; layers: Layers;
+  result?: HybridResultResponse; layers: Layers;
 };
 
 const baiduDefaults: BaiduSession = {
   center: { lng: 116.404, lat: 39.915 }, lng: 116.404, lat: 39.915, budget: 400,
   group: 'all', selected: null, showFacilities: true, showAssessments: true, route: null,
-  dirty: false, reportOpen: false,
-  layers: { reachable: true, unreachable: true, unknown: true, uncertain: true, extent: false, serviceBlind: true },
+  reportOpen: false,
+  layers: { reachable: true, unreachable: true, unknown: true, uncertain: true, extent: false, serviceBlind: true,
+    heatmap: true },
 };
 const hybridDefaults: HybridSession = {
-  center: { lng: 121.513925, lat: 31.313079 }, lng: 121.513925, lat: 31.313079, budget: 400, dirty: false,
-  layers: { reachable: true, unreachable: false, unknown: false, uncertain: false, extent: false, serviceBlind: false },
+  center: { lng: 121.513925, lat: 31.313079 }, lng: 121.513925, lat: 31.313079, budget: 400,
+  layers: { reachable: true, unreachable: false, unknown: false, uncertain: false, extent: false, serviceBlind: false,
+    heatmap: false },
 };
 
 let baiduSession: BaiduSession = baiduDefaults;

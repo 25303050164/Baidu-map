@@ -3,10 +3,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
+from app.catalog import POI_RUNTIME, poi_key
 from app.test_origin import TEST_ORIGIN
 
 Category = Literal['market', 'pharmacy', 'primary_school']
-CATEGORIES = ('market', 'pharmacy', 'primary_school')
+# Derived from the one dictionary under the names this runtime reports. The
+# literal above is what the wire contract can express; the two are kept equal by
+# a test rather than by a second hand-maintained list.
+CATEGORIES = tuple(poi_key(key) for key in POI_RUNTIME)
 
 
 class WireModel(BaseModel):

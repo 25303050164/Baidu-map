@@ -55,6 +55,55 @@ def test_uid_name_address_and_parent_conflicts_are_preserved():
     assert {'uid_name_conflict', 'uid_address_conflict', 'uid_parent_conflict'} <= set(review[0]['conflicts'])
 
 
+def test_raw_and_navigation_points_are_candidates_and_never_an_entrance():
+    row = {'uid': 'synthetic-entrance', 'name': '合成药店', 'address': '合成地址甲',
+           'location': {'lng': 121.514, 'lat': 31.313},
+           'detail_info': {'classified_poi_tag': '医疗;药店',
+                           'navi_location': {'lng': 121.5142, 'lat': 31.3132}}}
+    record = normalize(row, {'tileId': 'r0c0', 'query': '药店', 'pageNum': 0}, 'synthetic')
+    assert record['location'] == {'lng': 121.514, 'lat': 31.313}
+    # §4.3: the provider's navigation point is guidance and may be a pickup
+    # point, so it is a candidate. No place query establishes a walking entrance,
+    # and null says exactly that — an empty list would claim there is none.
+    assert record['navigationLocation'] == {'lng': 121.5142, 'lat': 31.3132}
+    assert record['confirmedEntrances'] is None
+    assert record['operatingStatus'] == 'unknown'
+
+
+def test_an_absent_or_invalid_navigation_point_stays_unknown():
+    provenance = {'tileId': 'r0c0', 'query': '药店', 'pageNum': 0}
+    row = {'uid': 'synthetic-no-entrance', 'name': '合成药店', 'address': '合成地址甲',
+           'location': {'lng': 121.514, 'lat': 31.313},
+           'detail_info': {'classified_poi_tag': '医疗;药店'}}
+    absent = normalize(row, provenance, 'synthetic')
+    assert absent['navigationLocation'] is None and absent['confirmedEntrances'] is None
+    assert absent['warnings'] == []
+    broken = {**row, 'detail_info': {**row['detail_info'],
+                                    'navi_location': {'lng': 200, 'lat': 31.313}}}
+    invalid = normalize(broken, provenance, 'synthetic')
+    # A guidance point outside the coordinate range is reported, not repaired and
+    # not silently turned into a confirmed candidate.
+    assert invalid['navigationLocation'] is None
+    assert invalid['warnings'] == ['invalid_navigation_location']
+
+
+def test_a_merged_entity_keeps_each_observations_candidates_separately():
+    request, _, plan, _ = setup_run()
+    base = {'uid': 'synthetic-candidates', 'name': '合成药店', 'address': '合成地址甲',
+            'location': {'lng': 121.514, 'lat': 31.313},
+            'detail_info': {'classified_poi_tag': '医疗;药店'}}
+    guilded = {**base, 'detail_info': {**base['detail_info'],
+                                      'navi_location': {'lng': 121.5142, 'lat': 31.3132}}}
+    records = [normalize(row, {'tileId': 'r0c0', 'query': '药店', 'pageNum': i}, 'synthetic')
+               for i, row in enumerate([base, guilded])]
+    accepted, _, _, _, _ = merge_entities(records, request, plan)
+    assert len(accepted) == 1
+    candidates = accepted[0]['observations']
+    assert len(candidates) == 2
+    assert sorted(c['navigationLocation'] is None for c in candidates) == [False, True]
+    assert all(c['confirmedEntrances'] is None for c in candidates)
+
+
 def test_subset_request_keeps_other_categories_out_of_production_list():
     request, _, plan, runtime = setup_run(categories=['primary_school'])
     row = {'uid': 'synthetic-pharmacy', 'name': '合成药店',

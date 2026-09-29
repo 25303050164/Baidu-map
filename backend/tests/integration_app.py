@@ -16,6 +16,25 @@ with patch("app.config.load_settings", return_value=settings):
     from app.main import create_app
 
 cases = scenarios()
+# Centre whose whole task fails after a short run, for the browser task-lifecycle
+# checks. Per-query exceptions are (correctly) absorbed as unknown evidence by both
+# engines, so the failure is raised where the provider is opened or closed.
+FAILING_LNG = 116.412
+
+
+async def fail_soon():
+    await asyncio.sleep(1.5)
+    raise RuntimeError("offline harness: scripted walking-service failure")
+
+
+class FailingProvider:
+    network = False
+
+    async def __aenter__(self):
+        await fail_soon()
+
+    async def __aexit__(self, *args):
+        pass
 
 
 class FastGate:
@@ -38,14 +57,19 @@ class HybridProvider:
 
     def __init__(self, projection):
         self.projection = projection
+        self.failing = False
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *args):
-        pass
+        if self.failing:
+            await fail_soon()
 
     async def query_walking_time(self, origin, destination, deadline):
+        if FAILING_LNG in (origin[0], destination[0]):
+            self.failing = True
+            raise RuntimeError("offline harness: scripted walking-service failure")
         await asyncio.sleep(.005)
         a, b = self.projection.origin(origin), self.projection.origin(destination)
         duration = math.dist(a, b) / 1.2
@@ -61,6 +85,8 @@ def provider(origin):
         # Unknown neighborhood isolates the known zero-time origin from support;
         # all remaining supported triangles have evidence above the threshold.
         function = lambda x, y: None if math.hypot(x, y) <= 401 else 2000
+    if origin[0] == FAILING_LNG:
+        return FailingProvider()
     result = AnalyticProvider(origin, function)
     if origin[0] == 116.409:
         query = result.query_walking_time

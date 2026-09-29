@@ -62,19 +62,34 @@ export function validHybridResult(v: unknown): v is HybridResultResponse {
     && JSON.stringify(v.algorithm) === JSON.stringify(r);
 }
 
+/**
+ * `status` 为 0（`hybrid_network`）表示没连上或超时：任务可能还在跑，控制器会退避后再问。
+ * `detail` 只在忙碌时带上后端写明的占用情况（已运行多久、已用多少调用，不含对方标识）。
+ */
 export class HybridApiError extends Error {
-  constructor(public readonly code: string, public readonly status: number) { super(code); }
+  constructor(public readonly code: string, public readonly status: number, public readonly detail?: string) { super(code); }
 }
 
 // The production analysis uses the dedicated Hybrid contract.
 export function createHybridClient(base = import.meta.env.VITE_API_BASE_URL?.trim() || '', fetcher: typeof fetch = fetch) {
   const prefix = `${base.replace(/\/$/, '')}/api/v1/analysis/hybrid`;
   async function request<T>(path: string, validate: (v: unknown) => v is T, body?: unknown, signal?: AbortSignal): Promise<T> {
-    const response = await fetcher(`${prefix}${path}`, { method: body === undefined ? 'GET' : 'POST',
-      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
-    const value: unknown = await response.json();
-    if (!response.ok) throw new HybridApiError(object(value) && typeof value.code === 'string' ? value.code : 'hybrid_http_error', response.status);
+    let response: Response;
+    try {
+      response = await fetcher(`${prefix}${path}`, { method: body === undefined ? 'GET' : 'POST',
+        ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
+    } catch {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      throw new HybridApiError('hybrid_network', 0);
+    }
+    const value: unknown = await response.json().catch(() => undefined);
+    if (!response.ok) {
+      const code = object(value) && typeof value.code === 'string' ? value.code : 'hybrid_http_error';
+      const busy = code === 'hybrid_busy' && object(value) && typeof value.message === 'string'
+        && value.message.startsWith('另一项 OSM＋百度分析正在进行') && value.message.length < 200 ? value.message : undefined;
+      throw new HybridApiError(code, response.status, busy);
+    }
     if (!validate(value)) throw new HybridApiError('hybrid_invalid_response', response.status);
     return value;
   }

@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-27",
+  "suite": {
+    "passed": 3,
+    "failed": 0,
+    "runnerStatus": "passed",
+    "durationMinutes": 20.6
+  },
+  "mocked": false,
+  "engines": [
+    {
+      "engine": "baidu_e82",
+      "taskId": "f6128318-828e-48c0-bdc5-f164c6ece0db",
+      "revision": 5,
+      "resultHash": "5c083bb237e5be67519e9923afe0771953c0368b823c7131cc2a0ba0c66423bc",
+      "elapsedSeconds": 812.3138554096222,
+      "networkAttempts": 428,
+      "coverageLowerPct": 63.39943959390854,
+      "coverageUpperPct": 96.62183903031179,
+      "gapZones": 14,
+      "gapAreaM2": 86250,
+      "compositeAreaM2": 17500,
+      "returnedRoutes": 3,
+      "strictConfirmed": 0,
+      "pending": 4
+    },
+    {
+      "engine": "osm_hybrid",
+      "taskId": "5e710014-84f5-42e7-ae77-525bd429ae8a",
+      "revision": 5,
+      "resultHash": "2b11ca91acdae77afada0c890d156376c1538453dfef081cc3ea5d4e32caf94a",
+      "elapsedSeconds": 367.10637879371643,
+      "networkAttempts": 428,
+      "coverageLowerPct": 64.59278891871176,
+      "coverageUpperPct": 96.72278812360061,
+      "gapZones": 18,
+      "gapAreaM2": 92500,
+      "compositeAreaM2": 21250,
+      "returnedRoutes": 3,
+      "strictConfirmed": 0,
+      "pending": 4
+    }
+  ],
+  "placeLedgerBefore": 192,
+  "placeLedgerAfter": 240,
+  "standaloneRouteProbeAttempts": 1,
+  "limitations": [
+    "strict POI confirmation remains zero",
+    "catalog completeness unverified",
+    "long assessment runtime",
+    "heatmap is visually faint at fixed scale"
+  ]
+}

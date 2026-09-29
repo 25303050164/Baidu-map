@@ -1,0 +1,2359 @@
+{
+ "generatedAt": "2026-09-28T04:00:47.473Z",
+ "review": "guoding1-qiujiang@2026-09-28.1",
+ "osmDataVersion": "geofabrik-shanghai-20260912",
+ "tasks": {
+  "e82": {
+   "engine": "baidu_e82",
+   "label": "百度边界搜索（E8.2）",
+   "revision": 7,
+   "taskId": "f6128318-828e-48c0-bdc5-f164c6ece0db",
+   "clientRequestId": "d33ffe23-a880-43f6-b6fa-725a95d49274"
+  },
+  "hybrid": {
+   "engine": "osm_hybrid",
+   "label": "OSM＋百度",
+   "revision": 7,
+   "taskId": "5e710014-84f5-42e7-ae77-525bd429ae8a",
+   "clientRequestId": "4a1d467f-a3ba-4174-b232-9411dcaae066"
+  },
+  "old": {
+   "engine": "baidu_e82",
+   "label": "百度边界搜索（E8.2）早于复核",
+   "revision": 5,
+   "taskId": "090ecd78-d58c-45cc-aea6-d292ba789a41",
+   "clientRequestId": "63fc3173-163b-4360-a96f-5adcb1cef3e4"
+  }
+ },
+ "guard": {
+  "blockedRequests": [],
+  "taskIdsRequested": [
+   "f6128318-828e-48c0-bdc5-f164c6ece0db",
+   "5e710014-84f5-42e7-ae77-525bd429ae8a",
+   "090ecd78-d58c-45cc-aea6-d292ba789a41"
+  ],
+  "pageErrors": []
+ },
+ "e82.version": {
+  "revision": 7,
+  "recomputed": {
+   "fromRevision": 5,
+   "reason": "water_review guoding1-qiujiang@2026-09-28.1",
+   "networkRequests": 0,
+   "boundary": "unchanged",
+   "carriedOver": [
+    "facilities",
+    "verificationRoutes"
+   ],
+   "previousIsochroneHash": "740a798b9abd817e77aafbc82a9433b5b2763b5f3cb1d7265f98e53fb40a53ff",
+   "previousResultHash": "5c083bb237e5be67519e9923afe0771953c0368b823c7131cc2a0ba0c66423bc"
+  },
+  "dataVersions": {
+   "osm": "geofabrik-shanghai-20260912",
+   "engine": "local-multicross-e82",
+   "waterReviews": [
+    "guoding1-qiujiang@2026-09-28.1"
+   ]
+  },
+  "texts": {
+   "version": "结果版本：第 7 版 · 水系 guoding1-qiujiang@2026-09-28.1\n由第 5 版离线重算（water_review guoding1-qiujiang@2026-09-28.1）；边界沿用原版（该算法成圈不读水系数据）；设施检索与核验路线沿用原任务的结果，重算发出 0 次网络请求。",
+   "legend": "水系复核范围\n已核实河道（OSM，宽 18 m）\n补录水体（已核实）\n底图水面有误（已核实为陆地）\n数据冲突／未知\n已核实桥梁 9 座\n· 以复核后的水系计算，底图水面仅作参照",
+   "note": "计算用的水系：复核范围（虚线框）内的已核实河道按实测宽度成面，补录水体与桥梁已核对；底图水面画错处（灰斜线，实为陆地）与来源冲突未裁决处（橙斜线，数据冲突／未知）单独标出。底图水面只作参照，不代表计算结果。"
+  },
+  "reportSources": "水体障碍：OpenStreetMap geofabrik-shanghai-20260912，源文件 SHA-256 0490e886ef41…；百度底图上的水面只作显示，不参与计算。\n\n国定一社区 · 虬江水系复核\nguoding1-qiujiang@2026-09-28.1\n复核日期\n2026-09-28\n适用范围\n两份存档体检（E8.2 与 OSM＋百度）的评估域并集外扩 150 m；范围之外沿用 OSM 障碍层原样，未复核\n已核实河道\n虬江（国定路—国和路），按实测宽 18 m 成面，OSM 原标宽 10 m\n已核实桥梁\n9 座\n底图误绘\n11 处（已核实为陆地，按陆地计算）\n数据冲突／未知\nsufe-garden-pond，约 660 平方米，未裁决，财大校园小水池：百度与高德均绘为水面，OSM 未收录；影像为一处椭圆形浅池，能否通行、是否常年有水无法判定；sufe-channel，约 2940 平方米，未裁决，财大校园林下窄水道：高德绘为水面，百度与 OSM 均未收录；影像被树冠遮挡，只见暗色带与一处小桥\n只复核了上述范围；范围外的水系仍按 OSM 原样计算，没有做同样的核对\n河宽按每段一个代表值（高德量测中位数），局部 12–25 m 的变化没有逐点建模\n影像日期 2025-04-18，之后的河道整治或新建桥梁不在核对之内\nOSM 与百度都没有、高德也没有的水体无法由本次对照发现\n\n评估域内：复核范围 106.07 公顷，未复核 0 m²（按 OSM 原样），数据冲突／未知 661 m²（不计覆盖、不计灰区）。",
+  "screenshot": "e82-report-data-sources.png"
+ },
+ "e82.conflict": {
+  "conflictAreaM2InDomain": 660.8225149263639,
+  "conflictCells": [
+   {
+    "category": "education",
+    "lng": 121.50926034140888,
+    "lat": 31.311449644435786,
+    "sizeM": 25
+   },
+   {
+    "category": "education",
+    "lng": 121.50925696822686,
+    "lat": 31.311675268141578,
+    "sizeM": 25
+   },
+   {
+    "category": "education",
+    "lng": 121.50952183541273,
+    "lat": 31.311452659904283,
+    "sizeM": 25
+   },
+   {
+    "category": "education",
+    "lng": 121.50951846310673,
+    "lat": 31.31167828272513,
+    "sizeM": 25
+   },
+   {
+    "category": "medical",
+    "lng": 121.50926034140888,
+    "lat": 31.311449644435786,
+    "sizeM": 25
+   },
+   {
+    "category": "medical",
+    "lng": 121.50925696822686,
+    "lat": 31.311675268141578,
+    "sizeM": 25
+   },
+   {
+    "category": "medical",
+    "lng": 121.50952183541273,
+    "lat": 31.311452659904283,
+    "sizeM": 25
+   },
+   {
+    "category": "medical",
+    "lng": 121.50951846310673,
+    "lat": 31.31167828272513,
+    "sizeM": 25
+   },
+   {
+    "category": "shopping",
+    "lng": 121.50926034140888,
+    "lat": 31.311449644435786,
+    "sizeM": 25
+   },
+   {
+    "category": "shopping",
+    "lng": 121.50925696822686,
+    "lat": 31.311675268141578,
+    "sizeM": 25
+   },
+   {
+    "category": "shopping",
+    "lng": 121.50952183541273,
+    "lat": 31.311452659904283,
+    "sizeM": 25
+   },
+   {
+    "category": "shopping",
+    "lng": 121.50951846310673,
+    "lat": 31.31167828272513,
+    "sizeM": 25
+   }
+  ],
+  "views": {
+   "pondZ19": {
+    "metersPerPixel": 0.426,
+    "windows": [
+     {
+      "group": "conflict:sufe-garden-pond",
+      "point": {
+       "lng": 121.509255,
+       "lat": 31.311435
+      },
+      "expect": "conflict",
+      "hatch": true,
+      "counts": {
+       "conflict": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "conflict:sufe-garden-pond",
+      "point": {
+       "lng": 121.509329,
+       "lat": 31.311435
+      },
+      "expect": "conflict",
+      "hatch": true,
+      "counts": {
+       "conflict": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "conflict:sufe-garden-pond",
+      "point": {
+       "lng": 121.509403,
+       "lat": 31.311583
+      },
+      "expect": "conflict",
+      "hatch": true,
+      "counts": {
+       "conflict": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "conflict:sufe-garden-pond",
+      "point": {
+       "lng": 121.509329,
+       "lat": 31.311583
+      },
+      "expect": "conflict",
+      "hatch": true,
+      "counts": {
+       "conflict": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     }
+    ]
+   },
+   "pondHeat": {
+    "expected": [
+     167,
+     139,
+     250,
+     102
+    ],
+    "points": [
+     {
+      "lng": 121.509263,
+      "lat": 31.311561
+     },
+     {
+      "lng": 121.509274,
+      "lat": 31.311588
+     },
+     {
+      "lng": 121.509284,
+      "lat": 31.311516
+     }
+    ],
+    "pixels": [
+     [
+      168,
+      140,
+      250,
+      102
+     ],
+     [
+      168,
+      140,
+      250,
+      102
+     ],
+     [
+      168,
+      140,
+      250,
+      102
+     ]
+    ]
+   },
+   "pondLabelWhitePixelsZ19": 446,
+   "stacking": [
+    "heat",
+    "water"
+   ],
+   "pondZ17": [
+    {
+     "group": "conflict:sufe-garden-pond",
+     "point": {
+      "lng": 121.509303,
+      "lat": 31.311487
+     },
+     "expect": "conflict",
+     "hatch": null,
+     "counts": {
+      "conflict": 1
+     },
+     "total": 1,
+     "maxAlpha": 255,
+     "ok": true
+    }
+   ],
+   "pondLabelWhitePixelsZ17": 0,
+   "channelZ19": [
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.506981,
+      "lat": 31.31276
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.50703,
+      "lat": 31.312845
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.506944,
+      "lat": 31.312655
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.507006,
+      "lat": 31.312518
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    }
+   ],
+   "channelAfterToggle": [
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.506981,
+      "lat": 31.31276
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.50703,
+      "lat": 31.312845
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.506944,
+      "lat": 31.312655
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.507006,
+      "lat": 31.312518
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "e82-conflict-pond-z19.png",
+   "e82-conflict-channel-z19.png"
+  ]
+ },
+ "hybrid.version": {
+  "revision": 7,
+  "recomputed": {
+   "fromRevision": 5,
+   "reason": "water_review guoding1-qiujiang@2026-09-28.1",
+   "networkRequests": 0,
+   "boundary": "replayed_from_ledger",
+   "carriedOver": [
+    "facilities",
+    "verificationRoutes"
+   ],
+   "previousIsochroneHash": "614fcb6171c7ea962d5dc92c3ee90be0e01e70e97857570e67cf3e4d564b3de9",
+   "previousResultHash": "2b11ca91acdae77afada0c890d156376c1538453dfef081cc3ea5d4e32caf94a"
+  },
+  "dataVersions": {
+   "osm": "geofabrik-shanghai-20260912",
+   "engine": "hybrid-v1.5.0",
+   "waterReviews": [
+    "guoding1-qiujiang@2026-09-28.1"
+   ]
+  },
+  "texts": {
+   "version": "结果版本：第 7 版 · 水系 guoding1-qiujiang@2026-09-28.1\n由第 5 版离线重算（water_review guoding1-qiujiang@2026-09-28.1）；边界由存档的采样台账按修订后的水系回放重建；设施检索与核验路线沿用原任务的结果，重算发出 0 次网络请求。",
+   "legend": "水系复核范围\n已核实河道（OSM，宽 18 m）\n补录水体（已核实）\n底图水面有误（已核实为陆地）\n数据冲突／未知\n已核实桥梁 9 座\n· 以复核后的水系计算，底图水面仅作参照",
+   "note": "计算用的水系：复核范围（虚线框）内的已核实河道按实测宽度成面，补录水体与桥梁已核对；底图水面画错处（灰斜线，实为陆地）与来源冲突未裁决处（橙斜线，数据冲突／未知）单独标出。底图水面只作参照，不代表计算结果。"
+  },
+  "reportSources": "水体障碍：OpenStreetMap geofabrik-shanghai-20260912，源文件 SHA-256 0490e886ef41…；百度底图上的水面只作显示，不参与计算。\n\n国定一社区 · 虬江水系复核\nguoding1-qiujiang@2026-09-28.1\n复核日期\n2026-09-28\n适用范围\n两份存档体检（E8.2 与 OSM＋百度）的评估域并集外扩 150 m；范围之外沿用 OSM 障碍层原样，未复核\n已核实河道\n虬江（国定路—国和路），按实测宽 18 m 成面，OSM 原标宽 10 m\n已核实桥梁\n9 座\n底图误绘\n11 处（已核实为陆地，按陆地计算）\n数据冲突／未知\nsufe-garden-pond，约 660 平方米，未裁决，财大校园小水池：百度与高德均绘为水面，OSM 未收录；影像为一处椭圆形浅池，能否通行、是否常年有水无法判定；sufe-channel，约 2940 平方米，未裁决，财大校园林下窄水道：高德绘为水面，百度与 OSM 均未收录；影像被树冠遮挡，只见暗色带与一处小桥\n只复核了上述范围；范围外的水系仍按 OSM 原样计算，没有做同样的核对\n河宽按每段一个代表值（高德量测中位数），局部 12–25 m 的变化没有逐点建模\n影像日期 2025-04-18，之后的河道整治或新建桥梁不在核对之内\nOSM 与百度都没有、高德也没有的水体无法由本次对照发现\n\n评估域内：复核范围 117.98 公顷，未复核 0 m²（按 OSM 原样），数据冲突／未知 661 m²（不计覆盖、不计灰区）。",
+  "screenshot": "hybrid-report-data-sources.png"
+ },
+ "hybrid.conflict": {
+  "conflictAreaM2InDomain": 660.8225149263639,
+  "conflictCells": [
+   {
+    "category": "education",
+    "lng": 121.50926034140888,
+    "lat": 31.311449644435786,
+    "sizeM": 25
+   },
+   {
+    "category": "education",
+    "lng": 121.50925696822686,
+    "lat": 31.311675268141578,
+    "sizeM": 25
+   },
+   {
+    "category": "education",
+    "lng": 121.50952183541273,
+    "lat": 31.311452659904283,
+    "sizeM": 25
+   },
+   {
+    "category": "education",
+    "lng": 121.50951846310673,
+    "lat": 31.31167828272513,
+    "sizeM": 25
+   },
+   {
+    "category": "medical",
+    "lng": 121.50926034140888,
+    "lat": 31.311449644435786,
+    "sizeM": 25
+   },
+   {
+    "category": "medical",
+    "lng": 121.50925696822686,
+    "lat": 31.311675268141578,
+    "sizeM": 25
+   },
+   {
+    "category": "medical",
+    "lng": 121.50952183541273,
+    "lat": 31.311452659904283,
+    "sizeM": 25
+   },
+   {
+    "category": "medical",
+    "lng": 121.50951846310673,
+    "lat": 31.31167828272513,
+    "sizeM": 25
+   },
+   {
+    "category": "shopping",
+    "lng": 121.50926034140888,
+    "lat": 31.311449644435786,
+    "sizeM": 25
+   },
+   {
+    "category": "shopping",
+    "lng": 121.50925696822686,
+    "lat": 31.311675268141578,
+    "sizeM": 25
+   },
+   {
+    "category": "shopping",
+    "lng": 121.50952183541273,
+    "lat": 31.311452659904283,
+    "sizeM": 25
+   },
+   {
+    "category": "shopping",
+    "lng": 121.50951846310673,
+    "lat": 31.31167828272513,
+    "sizeM": 25
+   }
+  ],
+  "views": {
+   "pondZ19": {
+    "metersPerPixel": 0.426,
+    "windows": [
+     {
+      "group": "conflict:sufe-garden-pond",
+      "point": {
+       "lng": 121.509255,
+       "lat": 31.311435
+      },
+      "expect": "conflict",
+      "hatch": true,
+      "counts": {
+       "conflict": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "conflict:sufe-garden-pond",
+      "point": {
+       "lng": 121.509329,
+       "lat": 31.311435
+      },
+      "expect": "conflict",
+      "hatch": true,
+      "counts": {
+       "conflict": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "conflict:sufe-garden-pond",
+      "point": {
+       "lng": 121.509403,
+       "lat": 31.311583
+      },
+      "expect": "conflict",
+      "hatch": true,
+      "counts": {
+       "conflict": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "conflict:sufe-garden-pond",
+      "point": {
+       "lng": 121.509329,
+       "lat": 31.311583
+      },
+      "expect": "conflict",
+      "hatch": true,
+      "counts": {
+       "conflict": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     }
+    ]
+   },
+   "pondHeat": {
+    "expected": [
+     167,
+     139,
+     250,
+     102
+    ],
+    "points": [
+     {
+      "lng": 121.509263,
+      "lat": 31.311561
+     },
+     {
+      "lng": 121.509274,
+      "lat": 31.311588
+     },
+     {
+      "lng": 121.509284,
+      "lat": 31.311516
+     }
+    ],
+    "pixels": [
+     [
+      168,
+      140,
+      250,
+      102
+     ],
+     [
+      168,
+      140,
+      250,
+      102
+     ],
+     [
+      168,
+      140,
+      250,
+      102
+     ]
+    ]
+   },
+   "pondLabelWhitePixelsZ19": 446,
+   "stacking": [
+    "heat",
+    "water"
+   ],
+   "pondZ17": [
+    {
+     "group": "conflict:sufe-garden-pond",
+     "point": {
+      "lng": 121.509303,
+      "lat": 31.311487
+     },
+     "expect": "conflict",
+     "hatch": null,
+     "counts": {
+      "conflict": 1
+     },
+     "total": 1,
+     "maxAlpha": 255,
+     "ok": true
+    }
+   ],
+   "pondLabelWhitePixelsZ17": 0,
+   "channelZ19": [
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.506981,
+      "lat": 31.31276
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.50703,
+      "lat": 31.312845
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.506944,
+      "lat": 31.312655
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.507006,
+      "lat": 31.312518
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    }
+   ],
+   "channelAfterToggle": [
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.506981,
+      "lat": 31.31276
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.50703,
+      "lat": 31.312845
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.506944,
+      "lat": 31.312655
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    },
+    {
+     "group": "conflict:sufe-channel",
+     "point": {
+      "lng": 121.507006,
+      "lat": 31.312518
+     },
+     "expect": "conflict",
+     "hatch": true,
+     "counts": {
+      "conflict": 49
+     },
+     "total": 49,
+     "maxAlpha": 255,
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "hybrid-conflict-pond-z19.png",
+   "hybrid-conflict-channel-z19.png"
+  ]
+ },
+ "e82.misdrawn": {
+  "baiduToReachGapsM": [
+   {
+    "id": "baidu-misdrawn-01",
+    "anchorToReachM": 85,
+    "insideReach": false
+   },
+   {
+    "id": "baidu-misdrawn-02",
+    "anchorToReachM": 125.4,
+    "insideReach": false
+   },
+   {
+    "id": "baidu-misdrawn-03",
+    "anchorToReachM": 160.5,
+    "insideReach": false
+   },
+   {
+    "id": "baidu-misdrawn-04",
+    "anchorToReachM": 163.9,
+    "insideReach": false
+   }
+  ],
+  "gapSpreadM": 78.9,
+  "medicalCellsOnMisdrawn": {
+   "covered": 6,
+   "gap": 1,
+   "unknown": 3
+  },
+  "views": {
+   "reachStations": [
+    {
+     "station": {
+      "lng": 121.513637,
+      "lat": 31.30741
+     },
+     "metersPerPixel": 0.857,
+     "readings": [
+      {
+       "group": "reach@1",
+       "point": {
+        "lng": 121.513026,
+        "lat": 31.307217
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@1",
+       "point": {
+        "lng": 121.513574,
+        "lat": 31.307391
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@1",
+       "point": {
+        "lng": 121.513736,
+        "lat": 31.307443
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@1",
+       "point": {
+        "lng": 121.513188,
+        "lat": 31.307269
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      }
+     ]
+    },
+    {
+     "station": {
+      "lng": 121.516628,
+      "lat": 31.308359
+     },
+     "metersPerPixel": 0.857,
+     "readings": [
+      {
+       "group": "reach@2",
+       "point": {
+        "lng": 121.51695,
+        "lat": 31.308461
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@2",
+       "point": {
+        "lng": 121.51624,
+        "lat": 31.308236
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@2",
+       "point": {
+        "lng": 121.516402,
+        "lat": 31.308288
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@2",
+       "point": {
+        "lng": 121.516788,
+        "lat": 31.308409
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      }
+     ]
+    },
+    {
+     "station": {
+      "lng": 121.51937,
+      "lat": 31.309393
+     },
+     "metersPerPixel": 0.857,
+     "readings": [
+      {
+       "group": "reach@3",
+       "point": {
+        "lng": 121.519063,
+        "lat": 31.309374
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@3",
+       "point": {
+        "lng": 121.519368,
+        "lat": 31.309391
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@3",
+       "point": {
+        "lng": 121.519814,
+        "lat": 31.309582
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@3",
+       "point": {
+        "lng": 121.519692,
+        "lat": 31.309512
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      }
+     ]
+    },
+    {
+     "station": {
+      "lng": 121.522112,
+      "lat": 31.310441
+     },
+     "metersPerPixel": 0.857,
+     "readings": [
+      {
+       "group": "reach@4",
+       "point": {
+        "lng": 121.521622,
+        "lat": 31.310404
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@4",
+       "point": {
+        "lng": 121.522373,
+        "lat": 31.310456
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@4",
+       "point": {
+        "lng": 121.521886,
+        "lat": 31.310422
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@4",
+       "point": {
+        "lng": 121.522597,
+        "lat": 31.310474
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      }
+     ]
+    },
+    {
+     "station": {
+      "lng": 121.524605,
+      "lat": 31.31139
+     },
+     "metersPerPixel": 0.857,
+     "readings": [
+      {
+       "group": "reach@5",
+       "point": {
+        "lng": 121.524136,
+        "lat": 31.311301
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@5",
+       "point": {
+        "lng": 121.524785,
+        "lat": 31.311423
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@5",
+       "point": {
+        "lng": 121.524379,
+        "lat": 31.311353
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      },
+      {
+       "group": "reach@5",
+       "point": {
+        "lng": 121.524947,
+        "lat": 31.311457
+       },
+       "expect": "blue",
+       "hatch": null,
+       "counts": {
+        "blue": 25
+       },
+       "total": 25,
+       "maxAlpha": 71,
+       "ok": true
+      }
+     ]
+    }
+   ],
+   "baidu-misdrawn-01": {
+    "metersPerPixel": 0.857,
+    "areaM2": 3520,
+    "note": "百度虬江（国定路—淞沪路段）绘在 OSM 河道以北，影像为道路与建筑",
+    "readings": [
+     {
+      "group": "misdrawn:baidu-misdrawn-01",
+      "point": {
+       "lng": 121.513752,
+       "lat": 31.307803
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-01",
+      "point": {
+       "lng": 121.514297,
+       "lat": 31.308206
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-01",
+      "point": {
+       "lng": 121.514595,
+       "lat": 31.308417
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-01",
+      "point": {
+       "lng": 121.513603,
+       "lat": 31.307676
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     }
+    ]
+   },
+   "baidu-misdrawn-02": {
+    "metersPerPixel": 0.857,
+    "areaM2": 3008,
+    "note": "百度虬江绘在真实河道以北约 120–150 m，影像为小区与绿地",
+    "readings": [
+     {
+      "group": "misdrawn:baidu-misdrawn-02",
+      "point": {
+       "lng": 121.515851,
+       "lat": 31.309284
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-02",
+      "point": {
+       "lng": 121.515975,
+       "lat": 31.309369
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-02",
+      "point": {
+       "lng": 121.516496,
+       "lat": 31.309665
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-02",
+      "point": {
+       "lng": 121.516347,
+       "lat": 31.309665
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     }
+    ]
+   },
+   "baidu-misdrawn-03": {
+    "metersPerPixel": 0.857,
+    "areaM2": 2176,
+    "note": "百度虬江绘在真实河道以北约 170–180 m",
+    "readings": [
+     {
+      "group": "misdrawn:baidu-misdrawn-03",
+      "point": {
+       "lng": 121.518735,
+       "lat": 31.310991
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-03",
+      "point": {
+       "lng": 121.518884,
+       "lat": 31.311012
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-03",
+      "point": {
+       "lng": 121.518586,
+       "lat": 31.311012
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     }
+    ]
+   },
+   "baidu-misdrawn-04": {
+    "metersPerPixel": 0.857,
+    "areaM2": 1216,
+    "note": "百度虬江（淞沪路以东）绘在真实河道以北约 180 m",
+    "readings": [
+     {
+      "group": "misdrawn:baidu-misdrawn-04",
+      "point": {
+       "lng": 121.520143,
+       "lat": 31.311777
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-04",
+      "point": {
+       "lng": 121.519895,
+       "lat": 31.311607
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-04",
+      "point": {
+       "lng": 121.520019,
+       "lat": 31.311692
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     }
+    ]
+   },
+   "baidu-misdrawn-08": {
+    "metersPerPixel": 0.857,
+    "areaM2": 2416,
+    "note": "百度在体育场田径场位置绘出水面，影像为运动场",
+    "readings": [
+     {
+      "group": "misdrawn:baidu-misdrawn-08",
+      "point": {
+       "lng": 121.521267,
+       "lat": 31.312289
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-08",
+      "point": {
+       "lng": 121.520747,
+       "lat": 31.312099
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-08",
+      "point": {
+       "lng": 121.521019,
+       "lat": 31.312205
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-08",
+      "point": {
+       "lng": 121.520548,
+       "lat": 31.312014
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     }
+    ]
+   },
+   "baidu-misdrawn-11": {
+    "metersPerPixel": 0.857,
+    "areaM2": 2384,
+    "note": "财大校内蓝色球场被百度绘成水面；高德无水面，两套影像均为球场",
+    "readings": [
+     {
+      "group": "misdrawn:baidu-misdrawn-11",
+      "point": {
+       "lng": 121.506004,
+       "lat": 31.311991
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-11",
+      "point": {
+       "lng": 121.506227,
+       "lat": 31.311991
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "misdrawn:baidu-misdrawn-11",
+      "point": {
+       "lng": 121.506376,
+       "lat": 31.311991
+      },
+      "expect": "misdrawn",
+      "hatch": true,
+      "counts": {
+       "misdrawn": 49
+      },
+      "total": 49,
+      "maxAlpha": 255,
+      "ok": true
+     }
+    ]
+   },
+   "panoramaZ17": [
+    {
+     "group": "reach",
+     "point": {
+      "lng": 121.518945,
+      "lat": 31.309375
+     },
+     "expect": "blue",
+     "hatch": null,
+     "counts": {
+      "blue": 1
+     },
+     "total": 1,
+     "maxAlpha": 71,
+     "ok": true
+    },
+    {
+     "group": "reach",
+     "point": {
+      "lng": 121.522207,
+      "lat": 31.310444
+     },
+     "expect": "blue",
+     "hatch": null,
+     "counts": {
+      "blue": 1
+     },
+     "total": 1,
+     "maxAlpha": 71,
+     "ok": true
+    },
+    {
+     "group": "reach",
+     "point": {
+      "lng": 121.513269,
+      "lat": 31.307294
+     },
+     "expect": "blue",
+     "hatch": null,
+     "counts": {
+      "blue": 1
+     },
+     "total": 1,
+     "maxAlpha": 71,
+     "ok": true
+    },
+    {
+     "group": "reach",
+     "point": {
+      "lng": 121.521492,
+      "lat": 31.310387
+     },
+     "expect": "blue",
+     "hatch": null,
+     "counts": {
+      "blue": 1
+     },
+     "total": 1,
+     "maxAlpha": 71,
+     "ok": true
+    },
+    {
+     "group": "misdrawn:baidu-misdrawn-01",
+     "point": {
+      "lng": 121.513682,
+      "lat": 31.307727
+     },
+     "expect": "misdrawn",
+     "hatch": null,
+     "counts": {
+      "misdrawn": 1
+     },
+     "total": 1,
+     "maxAlpha": 174,
+     "ok": true
+    },
+    {
+     "group": "misdrawn:baidu-misdrawn-01",
+     "point": {
+      "lng": 121.514286,
+      "lat": 31.308204
+     },
+     "expect": "misdrawn",
+     "hatch": null,
+     "counts": {
+      "misdrawn": 1
+     },
+     "total": 1,
+     "maxAlpha": 77,
+     "ok": true
+    },
+    {
+     "group": "misdrawn:baidu-misdrawn-01",
+     "point": {
+      "lng": 121.514576,
+      "lat": 31.308433
+     },
+     "expect": "misdrawn",
+     "hatch": null,
+     "counts": {
+      "misdrawn": 1
+     },
+     "total": 1,
+     "maxAlpha": 77,
+     "ok": true
+    },
+    {
+     "group": "misdrawn:baidu-misdrawn-01",
+     "point": {
+      "lng": 121.514018,
+      "lat": 31.308032
+     },
+     "expect": "misdrawn",
+     "hatch": null,
+     "counts": {
+      "misdrawn": 1
+     },
+     "total": 1,
+     "maxAlpha": 77,
+     "ok": true
+    },
+    {
+     "group": "misdrawn:baidu-misdrawn-02",
+     "point": {
+      "lng": 121.51583,
+      "lat": 31.309261
+     },
+     "expect": "misdrawn",
+     "hatch": null,
+     "counts": {
+      "misdrawn": 1
+     },
+     "total": 1,
+     "maxAlpha": 77,
+     "ok": true
+    },
+    {
+     "group": "misdrawn:baidu-misdrawn-02",
+     "point": {
+      "lng": 121.516746,
+      "lat": 31.309891
+     },
+     "expect": "misdrawn",
+     "hatch": null,
+     "counts": {
+      "misdrawn": 1
+     },
+     "total": 1,
+     "maxAlpha": 77,
+     "ok": true
+    },
+    {
+     "group": "misdrawn:baidu-misdrawn-04",
+     "point": {
+      "lng": 121.520127,
+      "lat": 31.311775
+     },
+     "expect": "misdrawn",
+     "hatch": null,
+     "counts": {
+      "misdrawn": 1
+     },
+     "total": 1,
+     "maxAlpha": 77,
+     "ok": true
+    },
+    {
+     "group": "misdrawn:baidu-misdrawn-04",
+     "point": {
+      "lng": 121.519859,
+      "lat": 31.311565
+     },
+     "expect": "misdrawn",
+     "hatch": null,
+     "counts": {
+      "misdrawn": 1
+     },
+     "total": 1,
+     "maxAlpha": 77,
+     "ok": true
+    }
+   ]
+  },
+  "screenshots": [
+   "e82-baidu-misdrawn-01-z18.png",
+   "e82-baidu-misdrawn-08-z18.png",
+   "e82-baidu-misdrawn-11-z18.png",
+   "e82-river-z17.png"
+  ]
+ },
+ "e82.bridges": {
+  "crossings": [
+   {
+    "osmId": 1423491927,
+    "river": 39408800,
+    "highway": "tertiary",
+    "lengthM": 18.8,
+    "onReviewedReach": true
+   },
+   {
+    "osmId": 71461971,
+    "river": 39408800,
+    "highway": "tertiary",
+    "lengthM": 19.5,
+    "onReviewedReach": true
+   },
+   {
+    "osmId": 1076783991,
+    "river": 39408800,
+    "highway": "primary",
+    "lengthM": 47.3,
+    "onReviewedReach": true
+   },
+   {
+    "osmId": 47086053,
+    "river": 39408800,
+    "highway": "primary",
+    "lengthM": 45,
+    "onReviewedReach": true
+   },
+   {
+    "osmId": 47086051,
+    "river": 39408800,
+    "highway": "primary",
+    "lengthM": 43.1,
+    "onReviewedReach": true
+   },
+   {
+    "osmId": 414291232,
+    "river": 39408800,
+    "highway": "footway",
+    "lengthM": 39.1,
+    "onReviewedReach": true
+   },
+   {
+    "osmId": 39215744,
+    "river": 39408800,
+    "highway": "service",
+    "lengthM": 29.8,
+    "onReviewedReach": true
+   },
+   {
+    "osmId": 1005460065,
+    "river": 1005058311,
+    "highway": "tertiary",
+    "lengthM": 29.9,
+    "onReviewedReach": false
+   },
+   {
+    "osmId": 39409047,
+    "river": 1005058310,
+    "highway": "tertiary",
+    "lengthM": 21.1,
+    "onReviewedReach": false
+   }
+  ],
+  "markers": 9,
+  "markerDomNodesWithTitle": 9,
+  "markerDeviationM": {
+   "39215744": 0.014,
+   "39409047": 0.014,
+   "47086051": 0.014,
+   "47086053": 0.014,
+   "71461971": 0.014,
+   "414291232": 0.014,
+   "1005460065": 0.014,
+   "1076783991": 0.014,
+   "1423491927": 0.014
+  },
+  "views": {
+   "cluster1": {
+    "centre": {
+     "lng": 121.51324072265483,
+     "lat": 31.307285036080174
+    },
+    "readings": [
+     {
+      "group": "bridges@1",
+      "point": {
+       "lng": 121.51324072265483,
+       "lat": 31.307285036080174
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 9
+      },
+      "total": 9,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "bridges@1",
+      "point": {
+       "lng": 121.51330439660957,
+       "lat": 31.30730527260541
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 9
+      },
+      "total": 9,
+      "maxAlpha": 71,
+      "ok": true
+     }
+    ]
+   },
+   "cluster2": {
+    "centre": {
+     "lng": 121.51991775283564,
+     "lat": 31.309641808165093
+    },
+    "readings": [
+     {
+      "group": "bridges@2",
+      "point": {
+       "lng": 121.51991775283564,
+       "lat": 31.309641808165093
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 9
+      },
+      "total": 9,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "bridges@2",
+      "point": {
+       "lng": 121.51996147494536,
+       "lat": 31.309667230782395
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 9
+      },
+      "total": 9,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "bridges@2",
+      "point": {
+       "lng": 121.52014829775618,
+       "lat": 31.309794063471294
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 9
+      },
+      "total": 9,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "bridges@2",
+      "point": {
+       "lng": 121.52090242409156,
+       "lat": 31.310228690485786
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 9
+      },
+      "total": 9,
+      "maxAlpha": 71,
+      "ok": true
+     }
+    ]
+   }
+  },
+  "screenshots": [
+   "e82-bridges-1-z18.png",
+   "e82-bridges-2-z18.png"
+  ]
+ },
+ "e82.zoom": {
+  "levels": {
+   "z15": {
+    "metersPerPixel": 6.793,
+    "readings": [
+     {
+      "group": "reach@z15",
+      "point": {
+       "lng": 121.513189,
+       "lat": 31.307269
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 255,
+      "ok": true
+     },
+     {
+      "group": "reach@z15",
+      "point": {
+       "lng": 121.52473,
+       "lat": 31.311411
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 199,
+      "ok": true
+     },
+     {
+      "group": "reach@z15",
+      "point": {
+       "lng": 121.515849,
+       "lat": 31.308112
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 119,
+      "ok": true
+     },
+     {
+      "group": "reach@z15",
+      "point": {
+       "lng": 121.518681,
+       "lat": 31.309395
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 210,
+      "ok": true
+     },
+     {
+      "group": "reach@z15",
+      "point": {
+       "lng": 121.520826,
+       "lat": 31.310202
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 255,
+      "ok": true
+     }
+    ],
+    "histogram": {
+     "clear": 584102,
+     "extent": 1366,
+     "blue": 1040,
+     "other": 40,
+     "misdrawn": 661,
+     "conflict": 115
+    }
+   },
+   "z16": {
+    "metersPerPixel": 3.397,
+    "readings": [
+     {
+      "group": "reach@z16",
+      "point": {
+       "lng": 121.521877,
+       "lat": 31.310421
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z16",
+      "point": {
+       "lng": 121.513189,
+       "lat": 31.307269
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z16",
+      "point": {
+       "lng": 121.516428,
+       "lat": 31.308295
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z16",
+      "point": {
+       "lng": 121.515098,
+       "lat": 31.307874
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z16",
+      "point": {
+       "lng": 121.52473,
+       "lat": 31.311411
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z16",
+      "point": {
+       "lng": 121.518874,
+       "lat": 31.309377
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     }
+    ],
+    "histogram": {
+     "clear": 575547,
+     "extent": 2782,
+     "blue": 3134,
+     "other": 94,
+     "misdrawn": 5363,
+     "conflict": 404
+    }
+   },
+   "z17": {
+    "metersPerPixel": 1.698,
+    "readings": [
+     {
+      "group": "reach@z17",
+      "point": {
+       "lng": 121.518863,
+       "lat": 31.309377
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z17",
+      "point": {
+       "lng": 121.522521,
+       "lat": 31.310467
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z17",
+      "point": {
+       "lng": 121.521878,
+       "lat": 31.310422
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z17",
+      "point": {
+       "lng": 121.514144,
+       "lat": 31.307572
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z17",
+      "point": {
+       "lng": 121.513479,
+       "lat": 31.307361
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z17",
+      "point": {
+       "lng": 121.514809,
+       "lat": 31.307782
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     }
+    ],
+    "histogram": {
+     "clear": 563470,
+     "extent": 1751,
+     "misdrawn": 12019,
+     "other": 75,
+     "blue": 10009
+    }
+   },
+   "z18": {
+    "metersPerPixel": 0.857,
+    "readings": [
+     {
+      "group": "reach@z18",
+      "point": {
+       "lng": 121.518581,
+       "lat": 31.309403
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z18",
+      "point": {
+       "lng": 121.519011,
+       "lat": 31.309374
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z18",
+      "point": {
+       "lng": 121.521924,
+       "lat": 31.310425
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z18",
+      "point": {
+       "lng": 121.515996,
+       "lat": 31.308158
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     },
+     {
+      "group": "reach@z18",
+      "point": {
+       "lng": 121.516518,
+       "lat": 31.308324
+      },
+      "expect": "blue",
+      "hatch": null,
+      "counts": {
+       "blue": 1
+      },
+      "total": 1,
+      "maxAlpha": 71,
+      "ok": true
+     }
+    ],
+    "histogram": {
+     "clear": 549136,
+     "misdrawn": 17169,
+     "extent": 1961,
+     "blue": 18976,
+     "other": 82
+    }
+   },
+   "northPondZ19": [
+    {
+     "group": "supplement:north-pond",
+     "point": {
+      "lng": 121.508781,
+      "lat": 31.318937
+     },
+     "expect": "blue",
+     "hatch": false,
+     "counts": {
+      "blue": 49
+     },
+     "total": 49,
+     "maxAlpha": 71,
+     "ok": true
+    },
+    {
+     "group": "supplement:north-pond",
+     "point": {
+      "lng": 121.508719,
+      "lat": 31.318895
+     },
+     "expect": "blue",
+     "hatch": false,
+     "counts": {
+      "blue": 49
+     },
+     "total": 49,
+     "maxAlpha": 71,
+     "ok": true
+    },
+    {
+     "group": "supplement:north-pond",
+     "point": {
+      "lng": 121.508645,
+      "lat": 31.318884
+     },
+     "expect": "blue",
+     "hatch": false,
+     "counts": {
+      "blue": 49
+     },
+     "total": 49,
+     "maxAlpha": 71,
+     "ok": true
+    },
+    {
+     "group": "supplement:north-pond",
+     "point": {
+      "lng": 121.508855,
+      "lat": 31.318937
+     },
+     "expect": "blue",
+     "hatch": false,
+     "counts": {
+      "blue": 49
+     },
+     "total": 49,
+     "maxAlpha": 71,
+     "ok": true
+    }
+   ]
+  },
+  "northPond": {
+   "areaM2": 1520,
+   "note": "评估域北侧水塘：高德矢量与高德卫星、Esri 影像均为开阔水面，OSM 与百度均未收录；按已确认水体计入障碍"
+  },
+  "screenshots": [
+   "e82-zoom-15.png",
+   "e82-zoom-16.png",
+   "e82-zoom-17.png",
+   "e82-zoom-18.png",
+   "e82-north-pond-z19.png"
+  ]
+ },
+ "old": {
+  "task": {
+   "engine": "baidu_e82",
+   "label": "百度边界搜索（E8.2）早于复核",
+   "revision": 5,
+   "taskId": "090ecd78-d58c-45cc-aea6-d292ba789a41",
+   "clientRequestId": "63fc3173-163b-4360-a96f-5adcb1cef3e4"
+  },
+  "alert": "旧版本（第 5 版）：水系数据已修订\n这一版早于水系复核「国定一社区 · 虬江水系复核」（guoding1-qiujiang@2026-09-28.1）：热力与灰区里的水体按复核前的 OSM 原样计算，河道位置、河宽与桥梁未经核对，底图与障碍层不一致的地方可能被读错。请以重算后的版本或新的体检为准。",
+  "reportSources": "这一版早于水系证据：说不出计算用了哪一版水系。",
+  "screenshots": [
+   "old-e82-rev5-z16.png",
+   "switch-hybrid-rev7-z16.png",
+   "old-e82-after-reload-z16.png",
+   "old-report-outdated.png"
+  ]
+ }
+}

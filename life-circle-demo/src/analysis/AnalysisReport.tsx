@@ -13,7 +13,13 @@ export function AnalysisReport({ result, stale, lastAttemptFailed }: {
     <div className={styles.eyebrow}>COMMUNITY CHECKUP / ANALYSIS</div>
     <h1>15 分钟生活圈分析报告</h1>
     {reportWarnings({ stale, lastAttemptFailed }).map(w => <Alert key={w.kind} type="warning" title={w.message} showIcon />)}
-    <Alert type="warning" title={result.facilityAnalysis ? "部分体检结果：设施为有限检索，盲区面积尚未验证" : "部分体检结果：设施与服务盲区尚未接入"} showIcon />
+    {/* 旧接口不产出按面积计的服务盲区 —— 那是 v2 体检的事。所以这里说清"本页给什么、
+        哪里有余下的结论"，而不是笼统一句"盲区面积尚未验证"：后者读起来像"没人能验证"，
+        而实际上体检工作台已经在算灰区面积，只是不在这条链路上。 */}
+    <Alert type="warning" showIcon
+      title={result.facilityAnalysis ? '部分体检结果：设施为有限检索，本页不给出盲区面积'
+        : '部分体检结果：设施与服务盲区尚未接入'}
+      description="按面积计的服务盲区与灰区由体检工作台（v2）计算并给出区间；本页只展示等时圈与设施证据。" />
     <dl>
       <div><dt>分析中心点</dt><dd>{view.center.lng.toFixed(6)}, {view.center.lat.toFixed(6)}</dd></div>
       <div><dt>分析时间</dt><dd>{new Date(view.generatedAt).toLocaleString('zh-CN', { hour12: false })}</dd></div>
