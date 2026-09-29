@@ -66,18 +66,25 @@ export default function AlgorithmApp() {
     setAlgorithm(next);
   }
 
-  return <>
-    <nav className="algorithm-switch" aria-label="算法">
-      <Segmented<Algorithm>
-        aria-label="算法选择"
-        value={algorithm}
-        onChange={selectAlgorithm}
-        options={[
-          { label: <AlgorithmLabel algorithm="baidu" text="百度边界搜索（E8.2）" />, value: 'baidu' },
-          { label: <AlgorithmLabel algorithm="hybrid" text="OSM＋百度" />, value: 'hybrid' },
-        ]}
-      />
-    </nav>
+  return <div className="wb">
+    <header className="wb-top">
+      <div className="wb-brand">
+        <span className="wb-seal" aria-hidden="true"><i>邻</i><i>里</i></span>
+        <h1>15 分钟生活圈体检</h1>
+      </div>
+      <nav className="algorithm-switch" aria-label="算法">
+        <span className="wb-top-label">成圈算法</span>
+        <Segmented<Algorithm>
+          aria-label="算法选择"
+          value={algorithm}
+          onChange={selectAlgorithm}
+          options={[
+            { label: <AlgorithmLabel algorithm="baidu" text="百度边界搜索（E8.2）" />, value: 'baidu' },
+            { label: <AlgorithmLabel algorithm="hybrid" text="OSM＋百度" />, value: 'hybrid' },
+          ]}
+        />
+      </nav>
+    </header>
     <CheckupApp key={algorithm} engine={ENGINES[algorithm]} />
-  </>;
+  </div>;
 }

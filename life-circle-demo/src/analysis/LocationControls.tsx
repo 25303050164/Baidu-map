@@ -82,23 +82,25 @@ export function LocationControls({ center, onPick }: Props) {
   if (mode !== 'real' || !api) return <p className="api-muted">{locationNotice(mode)}</p>;
   const coarse = located !== null && (located.accuracy === null || located.accuracy > COARSE_ACCURACY_M);
   return <div className="api-location">
-    <Button aria-label="获取当前位置" icon={<AimOutlined />} onClick={() => void doLocate()} loading={locating}>获取当前位置</Button>
-    {located && <p className={`api-location-status${coarse ? ' warn' : ''}`}>
-      已定位：{located.address || '地址未知'} · 定位精度约 {located.accuracy === null ? '未知' : `${located.accuracy} 米`}
-      {coarse ? '，定位可能偏差较大，请在地图上核对' : ''}
-    </p>}
-    {locateError && <Alert type="error" title={locateError} showIcon />}
     <div className="api-location-row">
       <Input
         aria-label="搜索地点"
-        placeholder="搜索地点，如：人民公园、中关村"
+        placeholder="搜索地点或地址"
+        prefix={<SearchOutlined className="api-location-icon" />}
         value={keyword}
         allowClear
         onChange={event => setKeyword(event.target.value)}
         onPressEnter={() => void doSearch()}
       />
-      <Button aria-label="搜索" icon={<SearchOutlined />} onClick={() => void doSearch()} loading={searching}>搜索</Button>
+      <Button aria-label="搜索" onClick={() => void doSearch()} loading={searching}>搜索</Button>
     </div>
+    <Button className="api-locate" type="link" size="small" aria-label="获取当前位置" icon={<AimOutlined />}
+      onClick={() => void doLocate()} loading={locating}>获取当前位置</Button>
+    {located && <p className={`api-location-status${coarse ? ' warn' : ''}`}>
+      已定位：{located.address || '地址未知'} · 定位精度约 {located.accuracy === null ? '未知' : `${located.accuracy} 米`}
+      {coarse ? '，定位可能偏差较大，请在地图上核对' : ''}
+    </p>}
+    {locateError && <Alert type="error" title={locateError} showIcon />}
     {searchError && <Alert type="error" title={searchError} showIcon />}
     {results && <div className="api-search-groups" aria-label="搜索结果">
       {results.nearby.length > 0 && <>

@@ -1,13 +1,15 @@
-.api-location{display:flex;flex-direction:column;gap:10px;margin:12px 0}
-.api-location-row{display:flex;gap:8px}
-.api-location-row .ant-input{flex:1}
-.api-location-status{margin:0;padding:8px 10px;border-radius:8px;background:#eef5f4;color:#3d5a63;font-size:12px;line-height:1.7}
-.api-location-status.warn{background:#fdf6e3;color:#7a5a12}
-.api-search-results{list-style:none;margin:0;padding:0;max-height:180px;overflow:auto;border:1px solid #dfe7e7;border-radius:8px}
-.api-result-group{margin:6px 0 2px;font-size:12px;font-weight:600;color:#4b6570}
-.api-search-results li+li{border-top:1px solid #eef2f2}
+.api-location{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:0 0 12px}
+.api-location-row{display:flex;gap:6px}
+.api-location-row .ant-input-affix-wrapper,.api-location-row .ant-input{flex:1;min-width:0}
+.api-location-icon{color:var(--ink-3, #7d858a)}
+.api-locate.ant-btn{align-self:flex-start;height:auto;padding:0;font-size:12px}
+.api-location-status{margin:0;padding:8px 10px;border-radius:3px;background:#eef3ef;color:#3f4a4f;font-size:12px;line-height:1.7}
+.api-location-status.warn{background:#fbf1e2;color:#7a5a12}
+.api-search-results{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto;border:1px solid var(--rule-strong, #d3cec1);border-radius:3px;background:#fff}
+.api-result-group{margin:6px 0 2px;font-size:11px;letter-spacing:.06em;color:var(--ink-3, #7d858a)}
+.api-search-results li+li{border-top:1px solid var(--rule, #e6e2d8)}
 .api-search-results button{display:flex;flex-direction:column;gap:2px;width:100%;padding:8px 10px;border:0;background:none;text-align:left;cursor:pointer;font:inherit;color:inherit}
-.api-search-results button:hover{background:#f2f8f7}
+.api-search-results button:hover{background:#f4f2ea}
 .api-poi-title{font-size:13px;font-weight:600}
-.api-poi-source{margin-left:6px;font-size:11px;font-weight:400;color:#147d70;background:#e6f4f1;border-radius:4px;padding:1px 4px}
-.api-poi-address{font-size:12px;color:#687b85}
+.api-poi-source{margin-left:6px;font-size:11px;font-weight:400;color:#147d70;background:#e6f1ed;border-radius:3px;padding:1px 4px}
+.api-poi-address{font-size:12px;color:#7d858a}
