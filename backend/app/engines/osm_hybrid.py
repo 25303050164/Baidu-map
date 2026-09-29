@@ -20,7 +20,7 @@ from ..algorithms.osm_offline.lazy import resolve
 from ..geo.projection import MetricProjection
 from life_circle.models import ProgressSnapshot
 
-from .protocol import EngineCapabilities, EngineContext, IsochroneAsk, IsochroneSnapshot
+from .protocol import EngineCancelled, EngineCapabilities, EngineContext, IsochroneAsk, IsochroneSnapshot
 
 # The Hybrid core caps generation at 400 attempts; the checkup offers no more.
 BUDGET_TIERS = (200, 400)
@@ -104,7 +104,7 @@ class OsmHybridEngine:
         projection, guidance, obstacles, ready, readiness_warnings = await self._prepare(
             ask.origin, config, context.step)
         if context.token.cancelled:
-            raise asyncio.CancelledError()
+            raise EngineCancelled()
         # A replay writes no ledger: the stored one stays the audit record of what was paid.
         ledger_path = (context.artifact_dir / self.ledger_name
                        if context.artifact_dir is not None and replay is None else None)

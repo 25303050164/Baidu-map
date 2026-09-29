@@ -14,12 +14,24 @@ export type DotIconSpec = {
   filled?: boolean;
 };
 
-const DIAMETER = { marker: 36, sample: 26, center: 58 };
+/** 图标外框边长（含阴影留白）：带字的合并点、选中的单点、普通单点、分析中心。 */
+const DIAMETER = { marker: 30, selected: 26, sample: 18, center: 28 };
+const FONT = 'Bahnschrift, "Segoe UI", "Microsoft YaHei", sans-serif';
+
+/** 白边实心圆，带一圈很淡的投影，让点在浅色底图和热力上都立得住。 */
+function disc(ctx: CanvasRenderingContext2D, c: number, r: number, color: string, ring = 2) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(20, 28, 32, 0.35)'; ctx.shadowBlur = 2.5; ctx.shadowOffsetY = 0.5;
+  ctx.beginPath(); ctx.arc(c, c, r, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(c, c, r - ring, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+}
 
 /** 绘制并返回 BMapGL 图标；canvas 或 Icon/Size 构造器不可用（旧版脚本、测试替身）时返回 undefined，Marker 回退为默认图标。 */
 export function createDotIcon(api: BaiduMapApi, spec: DotIconSpec): BMapIcon | undefined {
   if (typeof api.Icon !== 'function' || typeof api.Size !== 'function') return undefined;
-  const size = spec.layered ? DIAMETER.center : spec.text ? DIAMETER.marker : DIAMETER.sample;
+  const size = spec.layered ? DIAMETER.center : spec.text ? DIAMETER.marker
+    : spec.filled ? DIAMETER.selected : DIAMETER.sample;
   const canvas = document.createElement('canvas');
   canvas.width = size * 2;
   canvas.height = size * 2;
@@ -28,31 +40,26 @@ export function createDotIcon(api: BaiduMapApi, spec: DotIconSpec): BMapIcon | u
   ctx.scale(2, 2);
   const c = size / 2;
   if (spec.layered) {
-    ctx.beginPath(); ctx.arc(c, c, c - 2, 0, Math.PI * 2); ctx.globalAlpha = 0.14; ctx.fillStyle = spec.color; ctx.fill();
+    // 中心点：淡色光晕 + 白边实心圆 + 白色圆心，像一枚图钉的俯视。
+    ctx.beginPath(); ctx.arc(c, c, c - 1, 0, Math.PI * 2); ctx.globalAlpha = 0.16; ctx.fillStyle = spec.color; ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.beginPath(); ctx.arc(c, c, c - 9, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
-    ctx.beginPath(); ctx.arc(c, c, c - 15, 0, Math.PI * 2); ctx.fillStyle = spec.color; ctx.fill();
-    ctx.beginPath(); ctx.arc(c, c, 5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    disc(ctx, c, 8, spec.color, 2.5);
+    ctx.beginPath(); ctx.arc(c, c, 2, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+  } else if (spec.text) {
+    // 合并点与带符号的标记：实心、白字；未选中的只是描边更细，不再画成空心圈。
+    disc(ctx, c, c - 2.5, spec.color, spec.filled ? 2 : 1.5);
+    ctx.fillStyle = spec.filled ? '#fff' : spec.textColor ?? '#fff';
+    ctx.font = `600 ${Math.round(size * 0.44)}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(spec.text, c, c + 0.5);
   } else if (spec.filled) {
-    ctx.beginPath(); ctx.arc(c, c, c - 1.5, 0, Math.PI * 2);
-    ctx.fillStyle = spec.color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.fill(); ctx.stroke();
-    if (spec.text) {
-      ctx.fillStyle = '#fff';
-      ctx.font = `700 ${Math.round(size * 0.42)}px Inter, "Microsoft YaHei", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(spec.text, c, c + 0.5);
-    }
+    // 选中的单点：外加一圈同色光晕。
+    ctx.beginPath(); ctx.arc(c, c, c - 1, 0, Math.PI * 2);
+    ctx.globalAlpha = 0.22; ctx.fillStyle = spec.color; ctx.fill(); ctx.globalAlpha = 1;
+    disc(ctx, c, 7.5, spec.color);
   } else {
-    ctx.beginPath(); ctx.arc(c, c, c - 1.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff'; ctx.strokeStyle = spec.color; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
-    if (spec.text) {
-      ctx.fillStyle = spec.textColor ?? spec.color;
-      ctx.font = `700 ${Math.round(size * 0.42)}px Inter, "Microsoft YaHei", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(spec.text, c, c + 0.5);
-    }
+    disc(ctx, c, c - 3, spec.color);
   }
   return new api.Icon(canvas.toDataURL('image/png'), new api.Size(size, size), { anchor: new api.Size(c, c) });
 }

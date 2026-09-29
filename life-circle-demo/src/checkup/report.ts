@@ -32,6 +32,9 @@ const REASON_LABELS: Record<string, string> = {
   graph_disconnected: '路网不连通',
   distance_in_tolerance_band: '距离落在容差带内',
   query_status: '设施检索未完成',
+  query_incomplete_nearby: '附近设施检索未查完',
+  verification_conflict: '实测路线与模型不一致（局部未决）',
+  verified_route: '实测路线确认可达',
   no_legal_attachment: '无法接入路网',
 };
 

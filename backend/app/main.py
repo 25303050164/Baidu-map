@@ -28,11 +28,13 @@ class HealthResponse(BaseModel):
 def create_app(settings: Settings | None = None, *, provider_factory=None,
                hybrid_provider_factory=None, place_factory=None, route_factory=None) -> FastAPI:
     config = settings if settings is not None else load_settings()
-    # One allocation entry for the whole application. The legacy stages keep
-    # their own conservative shared gate for now (§9.1), so they do not draw
-    # from it yet; every checkup attempt does.
+    # One allocation entry for the whole application: every walking-route request
+    # (both engines, the legacy endpoints, verification, click-detail routes) paces
+    # on the one direction gate and every place search on the one place gate, both
+    # at the active tier, so no two limiters can add up on the same key.
     quota = Quota(config)
-    manager = AnalysisManager(config, provider_factory)
+    manager = AnalysisManager(config, provider_factory, gate=quota.direction.gate,
+                              place_gate=quota.place.gate)
     hybrid = HybridManager(config, manager.gate, hybrid_provider_factory)
     # The offline graph loads lazily, so the checkup registry can be built
     # before it; both adapters resolve it on first use.

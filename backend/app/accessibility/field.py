@@ -18,12 +18,13 @@
 from dataclasses import dataclass, field as dataclass_field
 from typing import Callable, Iterable, Sequence
 
+from shapely import prepare
 from shapely.geometry import Point, box as shapely_box
 from shapely.strtree import STRtree
 
 from ..rules import category_service, distance_within
 from .grid import COVERED, GAP, REFINE, UNKNOWN
-from .service_graph import (ALLOWED, POSSIBLE, Entrance, ServiceViews,
+from .service_graph import (ALLOWED, ENTRANCE_LIMIT_M, POSSIBLE, SEARCH_CUTOFF_M, Entrance, ServiceViews,
                             PointAttachments, entrance_seeds_with_owner, reverse_field_owners,
                             sample_distance, sample_nearest_facility)
 
@@ -32,6 +33,19 @@ MEASURED_METRIC = "walking_route"
 
 #: ``blind`` 是 :func:`category_service` 的返回值，网格用的是 ``gap``；只在这一处翻译。
 _SERVICE_TO_VERDICT = {"covered": COVERED, "blind": GAP, "unknown": UNKNOWN}
+
+
+@dataclass(frozen=True)
+class VerifiedPoint:
+    """覆盖抽检的一条实测结论（米制点）：它只替自己所在的那个 25 米格说话。
+
+    ``verdict`` 是这一点上的实测结论（``covered`` 或 ``unknown``——单条路线走不通
+    不能证明没有别的设施可用，所以不会是 ``gap``）；``contradicted`` 是它推翻的模型
+    结论，同一 50 米父格里模型给出同样结论的兄弟格因此降为未知。
+    """
+    point: Point
+    verdict: str
+    contradicted: str | None = None
 
 
 @dataclass
@@ -70,8 +84,15 @@ class ServiceField:
                  boundary=None, obstacle_intersects: Callable[[object], bool] | None = None,
                  data_conflict: Callable[[object], bool] | None = None,
                  verification_conflict: Callable[[object], bool] | None = None,
-                 attachments: PointAttachments | None = None):
+                 attachments: PointAttachments | None = None,
+                 verified: Sequence[VerifiedPoint] = (),
+                 query_incomplete=None):
         self.category = category
+        self.verified = tuple(verified)
+        # 检索没有查完的区域（米制）；给了就按格判断，代替整个任务一个开关。
+        self.query_incomplete = query_incomplete
+        if query_incomplete is not None:
+            prepare(query_incomplete)
         self.rule = rule
         self.store = store
         self.attachments = attachments if attachments is not None else PointAttachments(store)
@@ -99,7 +120,7 @@ class ServiceField:
         self._unresolved_index = (STRtree(self._unresolved_points)
                                   if self._unresolved_points else None)
         self.counts = {"samples": 0, "graph_disconnected": 0, "views_conflict": 0,
-                       "entrance_unresolved_nearby": 0}
+                       "entrance_unresolved_nearby": 0, "query_incomplete_nearby": 0}
 
     # ---------------------------------------------------------------- 单点判定
 
@@ -176,6 +197,11 @@ class ServiceField:
             assessment.reason = (assessed[0].reason if assessed else None) or "no_legal_attachment"
             return assessment
         verdict = category_service(values, self.query_complete, self.rule)
+        if verdict == "blind" and self._query_incomplete_near(cell):
+            # 周边必要的检索分块没有查完：没查到不等于没有（§4.4），这一格不判缺口。
+            assessment.reason = "query_incomplete_nearby"
+            self.counts["query_incomplete_nearby"] += 1
+            return assessment
         if verdict == "blind" and self._unresolved_nearby(cell):
             # 附近有入口未解决的同类设施：它可能就服务这一格（§5.3 的影响范围）。
             assessment.reason = "entrance_unresolved_nearby"
@@ -192,6 +218,17 @@ class ServiceField:
             if any(sample.reason == reason for sample in assessed):
                 return reason
         return "no_conclusive_evidence"
+
+    def _query_incomplete_near(self, cell) -> bool:
+        """这一格的服务搜索范围内，有没有检索没有查完的分块。
+
+        范围取搜索截止加入口接入上限：再远的设施怎么都服务不到这一格，它那里查没查完
+        与这一格无关。
+        """
+        if self.query_incomplete is None:
+            return False
+        reach = SEARCH_CUTOFF_M + ENTRANCE_LIMIT_M
+        return self.query_incomplete.intersects(cell.geometry().buffer(reach))
 
     def _unresolved_nearby(self, cell) -> bool:
         """这一格附近有没有未解决的同类入口：有就不许判灰区（§5.3 的影响范围）。
@@ -242,6 +279,21 @@ class ServiceField:
         因此几何触发条件先于结论判断，而"没有入口证据 / 没有合法接入"的格直接是
         未知：细化它不会带来任何新证据。
         """
+        # 覆盖抽检的实测点先于模型：50 米格里有实测点就细化，实测点所在的 25 米格用实测
+        # 证据定论（§6.3 的局部重算）。一条路线只替它自己的那一格说话。
+        verified = self._verified_in(cell)
+        if verified is not None:
+            if cell.level == 0:
+                return REFINE, "verification_evidence"
+            return verified.verdict, ("verified_route" if verified.verdict == COVERED
+                                      else "verification_conflict")
+        verdict, reason = self._model_verdict(cell, samples, assessment)
+        # 同一父格里被实测推翻的那个模型结论，在兄弟格上也站不住：降为未知。
+        if cell.level == 1 and verdict in (COVERED, GAP) and self._contradicted_near(cell, verdict):
+            return UNKNOWN, "verification_conflict"
+        return verdict, reason
+
+    def _model_verdict(self, cell, samples, assessment) -> tuple[str, str | None]:
         if not self.seeds or not assessment.has_legal_attachment:
             return UNKNOWN, assessment.reason
         reason = self.refine_reason(cell, samples, assessment)
@@ -250,6 +302,14 @@ class ServiceField:
         if assessment.status in (COVERED, GAP):
             return assessment.status, None
         return UNKNOWN, assessment.reason
+
+    def _verified_in(self, cell) -> VerifiedPoint | None:
+        return next((item for item in self.verified if cell.contains(item.point)), None)
+
+    def _contradicted_near(self, cell, verdict: str) -> bool:
+        parent = cell.parent()
+        return any(item.contradicted == verdict and parent.contains(item.point)
+                   for item in self.verified)
 
     def summary(self) -> dict:
         """写进任务证据的类别级统计：入口、查询完成度与各条款触发次数。"""

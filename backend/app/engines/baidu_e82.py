@@ -11,14 +11,29 @@ import httpx
 from life_circle.models import IsochroneRequest
 from life_circle.providers import BaiduProvider
 
-from ..algorithms.baidu_e82 import ALGORITHM, EndpointAnalyticProvider, compute_e82
-from ..analyses import LimitedProvider
+from ..algorithms.baidu_e82 import (ALGORITHM, DEFAULT_REFINEMENT, REFINEMENT_VERSIONS,
+                                    EndpointAnalyticProvider, compute_e82)
+from ..analyses import LimitedProvider, effective_qps
 from ..baidu import silence_transport_logs
 from .protocol import EngineCapabilities, EngineContext, IsochroneAsk, IsochroneSnapshot
 
 # The boundary core is tuned for this request shape; a checkup never overrides it.
 MAX_EXTENT_M = 1600
 BUDGET_TIERS = (200, 400, 800)
+
+
+def e82_request(origin, budget: int, *, qps: float | None = None,
+                refinement: str = DEFAULT_REFINEMENT) -> IsochroneRequest:
+    """The one request shape production uses; offline benchmarks build it here too.
+
+    ``config_version`` names the refinement, so a result says which one drew it and
+    enters the result hash with it. The 800 tier gets a longer deadline: at a
+    conservative 2 QPS its attempts alone take about seven minutes.
+    """
+    return IsochroneRequest(
+        origin, "bd09ll", budget=budget, max_extent=MAX_EXTENT_M, expand=False,
+        time_bands=(15,), config_version=REFINEMENT_VERSIONS[refinement], qps=qps,
+        deadline_seconds=600 if budget <= 400 else 1200)
 
 
 class BaiduE82Engine:
@@ -34,6 +49,12 @@ class BaiduE82Engine:
             notes=["端点证据来自百度实际返回，不来自合成端点",
                    "半径与网格策略由服务端控制，请求不能覆盖",
                    "内部未独立核验，质量不会高于 partial"])
+
+    def unavailable_reason(self) -> str | None:
+        """Why a task could not run at all, known before it is admitted."""
+        if self.provider_factory is not None or self.settings.analysis_provider == "synthetic":
+            return None
+        return None if self.settings.ak_configured else "walking_ak_not_configured"
 
     async def _provider(self, stack, origin):
         if self.provider_factory:
@@ -57,10 +78,8 @@ class BaiduE82Engine:
     async def compute(self, ask: IsochroneAsk, context: EngineContext) -> IsochroneSnapshot:
         async with AsyncExitStack() as stack:
             provider = await self._provider(stack, ask.origin)
-            request = IsochroneRequest(
-                ask.origin, "bd09ll", budget=ask.budget, max_extent=MAX_EXTENT_M, expand=False,
-                time_bands=(15,), config_version=ALGORITHM,
-                qps=self.settings.analysis_qps if provider.network else None)
+            request = e82_request(ask.origin, ask.budget,
+                                 qps=effective_qps(self.settings, self.gate) if provider.network else None)
             result = await compute_e82(request, provider, context.token,
                                        on_progress=context.progress)
         payload = result.to_dict()

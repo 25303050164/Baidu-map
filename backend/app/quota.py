@@ -21,12 +21,14 @@ The pools are the outer scheduler: a transport wrapper asks its pool for the
 attempt and must not also pace on the service's gate, which would pace twice and
 deadlock on the shared in-flight lock.
 
-What is *not* yet scheduled here: the legacy ``/api/analyses`` and
-``/api/v1/analysis/hybrid`` stages still pace on their one conservative shared
-gate, so their attempts are absent from this ledger. §9.1 keeps that gate at 3
-until the per-service refactor lands, and moving it is a real traffic change
-that needs its own timing acceptance. The balance below therefore describes the
-stages that are metered, and says so.
+Every walking-route request of the application -- both boundary engines, the
+legacy ``/api/analyses`` and ``/api/v1/analysis/hybrid`` endpoints, verification
+and click-detail routes -- paces on the one direction gate, and every place
+search on the one place gate. Each gate reads the active tier when it waits, so a
+tier switch lowers every caller at once and two limiters can never add up on one
+key. The engines and legacy endpoints pace on the gate directly (their own
+budgets bound them), so only the stages that reserve through a pool appear in
+the daily ledger; the balance below says so.
 """
 import asyncio
 import sqlite3
@@ -103,6 +105,52 @@ class DeadlineReached(QuotaError):
 
     def __init__(self):
         super().__init__("deadline reached before the request was sent")
+
+
+class AttemptCancelled(QuotaError):
+    """The task was cancelled before this attempt was sent; nothing was reserved."""
+
+    code = "cancelled"
+
+    def __init__(self):
+        super().__init__("task cancelled before the request was sent")
+
+
+def attach_token(session, token):
+    """Give a transport session the task's cancel token, checked before every attempt.
+
+    Set as an attribute so injected transports keep their plain signature.
+    """
+    if token is not None:
+        try:
+            session.token = token
+        except AttributeError:
+            pass
+    return session
+
+
+class TieredGate(RateGate):
+    """A response-paced gate whose ceiling is the active tier, read at every wait.
+
+    ``cap`` is an optional deployment limit (``ANALYSIS_QPS``); it can only lower
+    the tier's ceiling, never raise it.
+    """
+
+    def __init__(self, ceiling, *, cap: float | None = None):
+        self.ceiling, self.cap = ceiling, cap
+        super().__init__(self.current_qps())
+
+    def current_qps(self) -> float:
+        qps = self.ceiling()
+        return min(qps, self.cap) if self.cap else qps
+
+    def refresh(self) -> None:
+        self.qps = self.current_qps()
+        self.interval = 1 / self.qps
+
+    async def wait(self, deadline, *, cost=1):
+        self.refresh()
+        return await super().wait(deadline, cost=cost)
 
 
 @dataclass(frozen=True)
@@ -258,12 +306,18 @@ class ServicePool:
 
     @asynccontextmanager
     async def attempt(self, deadline: float, *, budget: TaskBudget | None = None,
-                      pool: str | None = None, cost: int = 1):
-        """Wait under the service lock; reserve only immediately before dispatch."""
+                      pool: str | None = None, cost: int = 1, token=None):
+        """Wait under the service lock; reserve only immediately before dispatch.
+
+        A cancelled ``token`` stops the attempt at every point before the
+        reservation: before queuing, after the slot and after the pacing wait.
+        """
         if type(cost) is not int or cost <= 0:
             raise ValueError("attempt cost must be a positive integer")
 
         def check_allowances():
+            if token is not None and token.cancelled:
+                raise AttemptCancelled()
             if budget is not None and pool is not None and budget.remaining(pool) < cost:
                 raise BudgetExhausted(pool, budget.pools()[pool])
             daily = self._daily_budget()
@@ -280,7 +334,8 @@ class ServicePool:
             raise DeadlineReached() from None
         try:
             check_allowances()
-            self.gate.qps = self.ceiling()
+            cap = getattr(self.gate, "cap", None)
+            self.gate.qps = min(self.ceiling(), cap) if cap else self.ceiling()
             self.gate.interval = 1 / self.gate.qps
             # Waiting before acquiring this lock lets queued callers bypass the
             # previous response's cooldown and can dispatch after their deadline.
@@ -315,10 +370,13 @@ class Quota:
         self.ledger = DailyLedger(ledger_path or settings.quota_ledger_path, clock=clock)
         self.ledger.initialize()
         self.matrix_enabled = settings.baidu_matrix_enabled
-        self.direction = ServicePool(DIRECTION, RateGate(current.direction_qps), self.ledger,
-                                     self.tiers, max_inflight=settings.baidu_direction_max_inflight)
-        self.place = ServicePool(PLACE, RateGate(current.place_qps), self.ledger, self.tiers,
-                                 max_inflight=settings.baidu_place_max_inflight)
+        cap = settings.analysis_qps
+        self.direction = ServicePool(
+            DIRECTION, TieredGate(lambda: self.tiers.active().direction_qps, cap=cap), self.ledger,
+            self.tiers, max_inflight=settings.baidu_direction_max_inflight)
+        self.place = ServicePool(
+            PLACE, TieredGate(lambda: self.tiers.active().place_qps, cap=cap), self.ledger,
+            self.tiers, max_inflight=settings.baidu_place_max_inflight)
 
     def pool(self, name: str) -> ServicePool:
         if name == DIRECTION:

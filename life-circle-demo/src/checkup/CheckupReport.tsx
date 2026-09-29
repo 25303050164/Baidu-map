@@ -10,114 +10,56 @@
  * - 没做过覆盖评估时显示"未评估"，不显示"0 处灰区"；
  * - 核验未接入时显示"模型推定"，不显示"未发现问题"。
  */
-import { useEffect, useMemo, useRef } from 'react';
+import type { CSSProperties } from 'react';
+import { useMemo } from 'react';
 import { Alert, Tag } from 'antd';
-import * as echarts from 'echarts/core';
-import { BarChart, RadarChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components';
-import { SVGRenderer } from 'echarts/renderers';
 import type { CheckupSnapshot } from './contract';
 import {
-  area, coverageBars, coverageItems, dataSourcesView, evidenceNotes, gapSummary, overallView, percent,
-  radarView, verificationView, type CoverageBar, type CoverageItem, type DataSourcesView, type GapSummary,
-  type RadarView,
+  area, coverageItems, dataSourcesView, evidenceNotes, gapSummary, overallView, percent,
+  verificationView, type CoverageItem, type DataSourcesView, type GapSummary,
 } from './report';
 import { outdatedText, recomputedText, versionView, type WaterReviewRef } from './water';
 import './checkup.css';
 
-echarts.use([BarChart, RadarChart, GridComponent, LegendComponent, TooltipComponent, SVGRenderer]);
-
-function useChart(option: unknown, height: number, label: string) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!ref.current) return;
-    const chart = echarts.init(ref.current, undefined, { renderer: 'svg' });
-    chart.setOption(option as never);
-    const observer = new ResizeObserver(() => chart.resize());
-    observer.observe(ref.current);
-    return () => { observer.disconnect(); chart.dispose(); };
-  }, [option]);
-  return <div ref={ref} style={{ height, width: '100%' }} role="img" aria-label={label} />;
+/**
+ * 区间条：实色是下界 C / A，斜线是未知 U / A（可能覆盖），空白是其余。
+ * 只画后端给的两个百分比；不支持的类别画成虚线空条，不画成 0。
+ */
+function Meter({ lower, upper, color }: { lower: number | null; upper: number | null; color?: string }) {
+  if (lower === null || upper === null) return <span className="wb-meter wb-meter-empty" aria-hidden="true" />;
+  return <span className="wb-meter" aria-hidden="true"
+    style={color ? { '--meter': color } as CSSProperties : undefined}>
+    <i className="wb-meter-known" style={{ width: `${lower}%` }} />
+    <i className="wb-meter-unknown" style={{ left: `${lower}%`, width: `${Math.max(0, upper - lower)}%` }} />
+  </span>;
 }
 
-/** 覆盖率区间：一根柱从下界画到上界。柱长为零的类别不是 0%，是"无法确定"。 */
-function CoverageBarChart({ bars }: { bars: CoverageBar[] }) {
-  // 图表配置按数据记忆：每次渲染都新建一个 option 会让 effect 重跑、把整张图重建一遍，
-  // 用户看到的是一次无故的重绘（选中态、缩放都会被重置）。
-  const option = useMemo(() => ({
-    animation: false,
-    grid: { left: 64, right: 40, top: 8, bottom: 24 },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
-      formatter: (params: Array<{ dataIndex: number }>) => {
-        const bar = bars[params[0]?.dataIndex ?? 0];
-        if (!bar) return '';
-        return bar.available
-          ? `${bar.label}：${bar.lower.toFixed(1)}% ～ ${(bar.lower + bar.span).toFixed(1)}%`
-          : `${bar.label}：无法确定覆盖率`;
-      } },
-    xAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%', color: '#8b979f',
-      fontSize: 10 }, splitLine: { lineStyle: { color: '#eef1f3' } } },
-    yAxis: { type: 'category', inverse: true, data: bars.map(bar => bar.label),
-      axisTick: { show: false }, axisLine: { show: false },
-      axisLabel: { color: '#667680', fontSize: 11 } },
-    series: [
-      { type: 'bar', stack: 'interval', silent: true, barWidth: 12,
-        itemStyle: { color: 'transparent' }, data: bars.map(bar => bar.lower) },
-      { type: 'bar', stack: 'interval', barWidth: 12,
-        data: bars.map(bar => ({ value: bar.span, itemStyle: { color: bar.color, borderRadius: 3 } })) },
-    ],
-  }), [bars]);
-  return useChart(option, 148, `覆盖率区间柱状图：${bars.map(bar => bar.available
-    ? `${bar.label}${bar.lower.toFixed(1)}%到${(bar.lower + bar.span).toFixed(1)}%`
-    : `${bar.label}无法确定`).join('，')}`);
-}
+const SECTION_NUMBERS = ['一', '二', '三', '四', '五', '六'];
+const Section = ({ index, title }: { index: number; title: string }) =>
+  <h2><span className="rp-no">{SECTION_NUMBERS[index]}、</span>{title}</h2>;
 
-/** 雷达图：两条线分别是区间的下界与上界，中间那片就是"还不能确定"的范围。 */
-function CoverageRadar({ view }: { view: RadarView }) {
-  const option = useMemo(() => ({
-    animation: false,
-    legend: { bottom: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: '#667680' } },
-    tooltip: {},
-    radar: { indicator: view.indicators, radius: '62%', center: ['50%', '46%'],
-      axisName: { color: '#667680', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#e3ebeb' } }, splitArea: { show: false } },
-    series: [{ type: 'radar', symbolSize: 4, data: view.series.map((series, index) => ({
-      name: series.name, value: series.values,
-      lineStyle: { color: index === 0 ? '#147d70' : '#c78b36' },
-      itemStyle: { color: index === 0 ? '#147d70' : '#c78b36' },
-      areaStyle: { opacity: index === 0 ? 0.18 : 0.08,
-        color: index === 0 ? '#147d70' : '#c78b36' },
-    })) }],
-  }), [view]);
-  return useChart(option, 260, `覆盖率雷达图：${view.series.map(series =>
-    `${series.name}${view.indicators.map((indicator, index) =>
-      `${indicator.name}${series.values[index]}%`).join('、')}`).join('；')}`);
-}
-
-function IntervalCard({ item, domainAreaM2 }: { item: CoverageItem; domainAreaM2: number | null }) {
-  return <article className="checkup-card" data-testid={`coverage-${item.category}`}>
-    <header>
-      <i className="checkup-dot" style={{ background: item.color }} />
-      <strong>{item.label}</strong>
-      {item.evidenceGrade && <Tag>{item.evidenceGrade === 'verified' ? '已核验' : '模型推定'}</Tag>}
-    </header>
-    {!item.supported ? <p className="checkup-muted">无法给出覆盖率：{item.unavailableReason
-      ? `${item.unavailableReason}` : '缺少空间支持'}。未知不等于"没有设施"。</p>
-    : <>
-      <p className="checkup-interval"><b>{percent(item.lowerPct)}</b> ～ <b>{percent(item.upperPct)}</b></p>
-      <dl className="checkup-facts">
-        <dt>最低覆盖率</dt><dd>C / A = {percent(item.lowerPct)}</dd>
-        <dt>最高覆盖率</dt><dd>(C + U) / A = {percent(item.upperPct)}</dd>
-        <dt>可评估比例</dt><dd>{percent(item.assessablePct)}</dd>
-        <dt>未知比例</dt><dd>{percent(item.unknownPct)}</dd>
-        <dt>已覆盖 / 缺口 / 未知</dt>
-        <dd>{area(item.coveredM2)} / {area(item.gapM2)} / {area(item.unknownM2)}</dd>
-        <dt>评估域</dt><dd>{area(domainAreaM2)}</dd>
-      </dl>
-      {item.degenerate && <p className="checkup-muted">区间退化为一个点：本类别的每一格都已判定，
-        没有未知面积 —— 这不是精度更高，只是恰好没有留下没查到的部分。</p>}
-    </>}
-  </article>;
+/** 分类覆盖一行：区间、两个比例与三类面积；不支持的类别整行只说"无法给出"，不写 0%。 */
+function CoverageRow({ item }: { item: CoverageItem }) {
+  const name = <th scope="row">
+    <span className="rp-cat"><i style={{ background: item.color }} />{item.label}</span>
+    {item.evidenceGrade && <small>{item.evidenceGrade === 'verified' ? '已核验' : '模型推定'}</small>}
+  </th>;
+  if (!item.supported) return <tr data-testid={`coverage-${item.category}`}>{name}
+    <td colSpan={4} className="rp-unsupported">无法给出覆盖率：{item.unavailableReason
+      ? `${item.unavailableReason}` : '缺少空间支持'}。未知不等于"没有设施"。</td></tr>;
+  return <tr data-testid={`coverage-${item.category}`}>{name}
+    <td className="rp-interval">
+      <span className="rp-num">{percent(item.lowerPct)} ～ {percent(item.upperPct)}</span>
+      <Meter lower={item.lowerPct} upper={item.upperPct} color={item.color} />
+    </td>
+    <td className="rp-num" data-label="可评估">{percent(item.assessablePct)}</td>
+    <td className="rp-num" data-label="未知">{percent(item.unknownPct)}</td>
+    <td className="rp-areas">
+      <span><em>已覆盖</em>{area(item.coveredM2)}</span>
+      <span><em>缺口</em>{area(item.gapM2)}</span>
+      <span><em>未知</em>{area(item.unknownM2)}</span>
+    </td>
+  </tr>;
 }
 
 function ZoneList({ gaps }: { gaps: GapSummary }) {
@@ -132,7 +74,7 @@ function ZoneList({ gaps }: { gaps: GapSummary }) {
         ? `（${area(gaps.minLabelAreaM2)}）` : ''}，地图上不标注，但仍在灰区面积内。`}</p>
     {gaps.zones.length === 0 ? <p className="checkup-muted">本次评估没有产生灰区。</p>
       : <ol className="checkup-zones">{gaps.zones.map(zone => <li key={zone.id}
-        data-testid={`zone-${zone.id}`}>
+        data-testid={`zone-${zone.id}`} data-status={zone.queryStatus}>
         <header><b>{zone.title}</b><Tag>{zone.kindLabel}</Tag>
           <span className="checkup-zone-area">{zone.areaText}</span>
           {!zone.labelled && <Tag>地图不标注</Tag>}
@@ -184,8 +126,6 @@ export function CheckupReport({ snapshot, stale, waterReviews = NO_REVIEWS }: {
   // 按修订记忆：`snapshot` 的身份只在取到新的一版时变化，所以这一组派生值在一次体检
   // 里是稳定的，图表也就不会因为父组件重渲染而重建。
   const items = useMemo(() => coverageItems(snapshot), [snapshot]);
-  const bars = useMemo(() => coverageBars(items), [items]);
-  const radar = useMemo(() => radarView(items), [items]);
   const overall = useMemo(() => overallView(snapshot), [snapshot]);
   const gaps = useMemo(() => gapSummary(snapshot), [snapshot]);
   const verification = useMemo(() => verificationView(snapshot), [snapshot]);
@@ -196,7 +136,7 @@ export function CheckupReport({ snapshot, stale, waterReviews = NO_REVIEWS }: {
 
   return <article className="checkup-report" data-testid="checkup-report"
     data-task-id={snapshot.taskId} data-revision={snapshot.revision}>
-    <div className="checkup-eyebrow">COMMUNITY CHECKUP / 服务覆盖体检</div>
+    <p className="rp-kicker">社区服务覆盖体检 · 第 {snapshot.revision} 版 · {snapshot.engine.label}</p>
     <h1>15 分钟生活圈体检报告</h1>
     {stale && <Alert type="warning" showIcon title="条件已修改，本报告仍属于原中心点的那一次体检。" />}
     {version.outdatedBy.length > 0 && <Alert type="warning" showIcon data-testid="report-outdated"
@@ -220,42 +160,45 @@ export function CheckupReport({ snapshot, stale, waterReviews = NO_REVIEWS }: {
         <dd data-testid="report-recomputed">{recomputedText(version.recomputed)}</dd></>}
     </dl>
 
-    <h2>01 / 总体覆盖率区间</h2>
-    {overall.available ? <>
+    <Section index={0} title="总体覆盖率区间" />
+    {overall.available ? <div className="rp-overall">
       <p className="checkup-interval checkup-overall">
-        <b>{percent(overall.lowerPct)}</b> ～ <b>{percent(overall.upperPct)}</b></p>
+        <b>{percent(overall.lowerPct)}</b><span>～</span><b>{percent(overall.upperPct)}</b></p>
+      <Meter lower={overall.lowerPct} upper={overall.upperPct} />
+      <p className="wb-meter-key"><i className="k-known" />已知覆盖（下界）<i className="k-unknown" />未知面积
+        <span>可评估 {percent(overall.assessablePct)} · 未知 {percent(overall.unknownPct)}</span></p>
       <p className="checkup-muted">下界是"已知覆盖"，上界是"已知覆盖 + 未知面积"，两者之间
-        就是本次路面证据说不到的地方。可评估比例 {percent(overall.assessablePct)}，未知比例
-        {percent(overall.unknownPct)}。</p>
-    </> : <Alert type="info" showIcon title="本次不给总体覆盖率"
+        就是本次路面证据说不到的地方。</p>
+    </div> : <Alert type="info" showIcon title="本次不给总体覆盖率"
       description={`${overall.reason === 'categories_not_analysed'
         ? '只评估了部分大类：重新加权成"三类总分"会让人以为三类都评估过了。'
         : overall.reason === 'category_without_spatial_support'
           ? '有大类缺少空间支持：缺图的大类不是低覆盖率，是不能加权。'
           : '评分阶段未产出总体分。'}${overall.missingCategories.length > 0
         ? `涉及：${overall.missingCategories.join('、')}。` : ''}`} />}
-    {overall.available && <div className="checkup-charts">
-      <CoverageBarChart bars={bars} />
-      {radar.available ? <CoverageRadar view={radar} />
-        : <p className="checkup-muted">无法绘制雷达图：{radar.missing.join('、')}
-          缺少区间上下界。补 0 会画成一个凹角，那比不画更容易被误读。</p>}
-    </div>}
+    <Section index={1} title="分类覆盖区间" />
+    <div className="rp-table-wrap"><table className="rp-table">
+      <thead><tr><th scope="col">类别</th><th scope="col">覆盖率区间</th><th scope="col">可评估</th>
+        <th scope="col">未知</th><th scope="col">面积</th></tr></thead>
+      <tbody>{items.map(item => <CoverageRow key={item.category} item={item} />)}</tbody>
+    </table></div>
+    <p className="checkup-muted">最低覆盖率 = C / A，最高覆盖率 = (C + U) / A。C 已覆盖、U 未知，
+      A 为评估域面积 {area(domainAreaM2)}。</p>
+    {items.filter(item => item.degenerate).map(item => <p key={item.category} className="checkup-muted">
+      {item.label}：区间退化为一个点。本类别的每一格都已判定，没有未知面积 —— 这不是精度更高，
+      只是恰好没有留下没查到的部分。</p>)}
 
-    <h2>02 / 分类覆盖区间</h2>
-    <div className="checkup-cards">{items.map(item =>
-      <IntervalCard key={item.category} item={item} domainAreaM2={domainAreaM2} />)}</div>
-
-    <h2>03 / 服务盲区与灰区</h2>
+    <Section index={2} title="服务盲区与灰区" />
     <ZoneList gaps={gaps} />
 
-    <h2>04 / 现实核验</h2>
+    <Section index={3} title="现实核验" />
     <p className="checkup-muted" data-testid="verification-summary">{verification.summary}
       {verification.provider && `（${verification.provider}）`}</p>
     {verification.reason && <p className="checkup-muted">{verification.reason}</p>}
     {!verification.available && <p className="checkup-muted">没有核验不是"核验过、没问题"：
       设施的可达性判断来自路网模型，实地情况仍可能不同。</p>}
 
-    <h2>05 / 证据说明</h2>
+    <Section index={4} title="证据说明" />
     <ul className="checkup-notes">{notes.map(note => <li key={note.key}
       className={note.level === 'warning' ? 'checkup-note-warning' : undefined}>{note.text}</li>)}</ul>
     {snapshot.warnings.length > 0 && <details><summary>算法质量标记（{snapshot.warnings.length} 条）</summary>
@@ -264,7 +207,7 @@ export function CheckupReport({ snapshot, stale, waterReviews = NO_REVIEWS }: {
       <ul className="checkup-notes">{snapshot.warnings.map((warning, index) => <li key={index}>
         [{warning.severity}] {warning.code}：{warning.message}（{warning.scope}）</li>)}</ul>
     </details>}
-    <h2>06 / 数据来源与版本</h2>
+    <Section index={5} title="数据来源与版本" />
     <DataSources view={sources} />
     <details><summary>查看机器可读修订</summary><pre>{JSON.stringify(snapshot, null, 2)}</pre></details>
   </article>;

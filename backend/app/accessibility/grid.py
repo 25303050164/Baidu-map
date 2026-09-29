@@ -165,6 +165,10 @@ class ExploreOutcome:
 Evaluator = Callable[[Cell, list[Point]], tuple[str, str | None]]
 
 
+class AssessmentCancelled(Exception):
+    """The task was cancelled mid-assessment; raised through ``explore`` unchanged."""
+
+
 def explore(domain, evaluate: Evaluator, *, max_leaves: int = MAX_LEAF_CELLS) -> ExploreOutcome:
     """按 §6.1 遍历网格：先 50 米，证据不足的格再细化到 25 米，直到叶格上限。
 
@@ -183,6 +187,9 @@ def explore(domain, evaluate: Evaluator, *, max_leaves: int = MAX_LEAF_CELLS) ->
         cell = queue.pop(0)
         try:
             verdict, reason = evaluate(cell, support_points(cell, domain))
+        except AssessmentCancelled:
+            # A cancellation is not a failed cell: it stops the whole assessment.
+            raise
         except Exception:
             verdict, reason = UNKNOWN, "assessment_failed"
         if verdict == REFINE:

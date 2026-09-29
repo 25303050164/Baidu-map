@@ -134,6 +134,14 @@ class IsochroneEngine(Protocol):
     async def compute(self, ask: IsochroneAsk, context: EngineContext) -> IsochroneSnapshot: ...
 
 
+class EngineCancelled(Exception):
+    """The task's cancel token stopped the engine: a business cancellation.
+
+    Distinct from ``asyncio.CancelledError``, which means the asyncio task itself
+    is being cancelled (shutdown) and must always propagate.
+    """
+
+
 class UnknownEngine(LookupError):
     """Raised for an engine id or budget tier the registry does not serve."""
 

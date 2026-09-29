@@ -8,7 +8,7 @@
  * - **同格合并，绝不截断**：几百处设施逐点铺满会互相遮盖，只画前 N 条却是说谎 ——
  *   被丢掉的设施在图上完全看不出来。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { Center } from '../types';
 import { useBaiduMap } from '../map/useBaiduMap';
 import type { BMapMap, BMapOverlay, BMapViewEventType } from '../map/baiduMapTypes';
@@ -25,10 +25,10 @@ import {
   serviceRampCss,
 } from '../map/layers/serviceField';
 import {
-  DENSITY_ALL, LAYER_STYLES, densityFacilities, type LayerDrawable, type LayerPoint, type ServiceSamples,
+  DENSITY_ALL, LAYER_STYLES, POINT_COLORS, densityFacilities, type LayerDrawable, type LayerPoint, type ServiceSamples,
 } from './layers';
 import { createWaterOverlay, type WaterAnnotation, type WaterOverlay } from '../map/layers/waterOverlay';
-import { CATEGORY_ORDER, categoryLabel } from './report';
+import { CATEGORY_COLORS, CATEGORY_ORDER, categoryLabel } from './report';
 import type { LayerId } from './validate';
 import { CROSSING_COLOR, WATER_KINDS, WATER_STYLES, type WaterKind, type WaterStyle, type WaterView } from './water';
 
@@ -63,6 +63,34 @@ function waterSwatch(style: WaterStyle) {
 }
 
 const rgbCss = ([r, g, b]: readonly number[]) => `rgb(${r}, ${g}, ${b})`;
+
+/** 有面积的图层画成方块（填色与描边同地图），点图层画成圆点。 */
+const AREA_LAYERS = new Set<LayerId>(['isochrone', 'accessibility', 'service_gaps']);
+
+function alpha(hex: string, opacity: number): string {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${opacity})`;
+}
+
+/**
+ * 图层色块：面板开关与地图图例共用。点图层按属性着色，所以色块画的是它实际会用到的
+ * 几种颜色，而不是样式表里那个兜底灰。
+ */
+export function layerSwatch(id: LayerId): CSSProperties {
+  const style = LAYER_STYLES[id];
+  if (AREA_LAYERS.has(id)) {
+    return { background: alpha(style.fillColor, Math.max(style.fillOpacity, 0)),
+      boxShadow: 'none', outline: `1.5px ${style.strokeStyle === 'dashed' ? 'dashed' : 'solid'} ${style.strokeColor}`,
+      outlineOffset: -1.5, borderRadius: 1 };
+  }
+  const colors = id === 'facilities' ? CATEGORY_ORDER.map(category => CATEGORY_COLORS[category])
+    : id === 'heatmap' ? [POINT_COLORS.covered, POINT_COLORS.gap, POINT_COLORS.unknown]
+      : id === 'verification' ? [POINT_COLORS.verified_reachable, POINT_COLORS.verified_unreachable]
+        : [style.fillColor];
+  const step = 100 / colors.length;
+  return { background: colors.length === 1 ? colors[0] : `conic-gradient(${colors
+    .map((color, index) => `${color} ${index * step}% ${(index + 1) * step}%`).join(', ')})` };
+}
 
 type Group = 'vector' | 'point' | 'label' | 'water';
 
@@ -310,13 +338,15 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
     try {
       replaceGroup(instance, 'label', () => {
         const created: BMapOverlay[] = [];
-        const marks: Array<[number, number, string]> = [];
-        if (resultCenter) marks.push([resultCenter.lng, resultCenter.lat, '本次体检中心（与报告一致）']);
+        // 结果中心用墨色，尚未体检的新选点用印章红：两者同时出现时一眼分得开。
+        const marks: Array<[number, number, string, string]> = [];
+        if (resultCenter) marks.push([resultCenter.lng, resultCenter.lat, '本次体检中心（与报告一致）', '#1d2327']);
         if (!resultCenter || center.lng !== resultCenter.lng || center.lat !== resultCenter.lat) {
-          marks.push([center.lng, center.lat, '待体检选点（BD09LL）']);
+          marks.push([center.lng, center.lat, '待体检选点（BD09LL）', '#b3372c']);
         }
-        for (const [lng, lat, title] of marks) {
-          const marker = new api.Marker(new api.Point(lng, lat), { title });
+        for (const [lng, lat, title, color] of marks) {
+          const icon = createDotIcon(api, { color, layered: true });
+          const marker = new api.Marker(new api.Point(lng, lat), { title, ...(icon ? { icon } : {}) });
           instance.addOverlay(marker); created.push(marker);
         }
         return created;
@@ -363,24 +393,28 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
         : '地图就绪后可点击选择体检中心。'}</p>
     </div>}
     <div className="api-map-left">
-      <div className="api-map-caption">百度坐标 BD09LL · 点击地图选点
-        {resultCenter && <><br />图层与报告中心：{resultCenter.lng.toFixed(6)}, {resultCenter.lat.toFixed(6)}</>}
+      <div className="api-map-caption">点击地图选点 · BD09LL
+        {resultCenter && <><br />图层与报告中心 <b>{resultCenter.lng.toFixed(6)}, {resultCenter.lat.toFixed(6)}</b></>}
       </div>
     </div>
-    {(legend.length > 0 || heatOn || waterOn) && <div className="api-map-legend" data-testid="checkup-legend" aria-label="体检图层图例">
-      {layers.service && <span className="api-legend-item" data-testid="service-legend"
-        style={{ whiteSpace: 'normal', flexWrap: 'wrap' }}>
+    {/* 还没有任何一层画上去时不出图例：空图上的一串色块只会让人以为已经有结论。 */}
+    {Object.values(drawables).some(Boolean) && (legend.length > 0 || heatOn || waterOn)
+      && <div className="api-map-legend" data-testid="checkup-legend" aria-label="体检图层图例">
+      {layers.service && <span className="api-legend-item api-legend-block" data-testid="service-legend">
         {api && !api.Overlay ? '当前地图不支持服务覆盖热力' : <>
-          <i style={{ display: 'inline-block', width: 80, height: 10, background: serviceRampCss(serviceMode) }} />
-          {serviceMode === SERVICE_COMPOSITE
-            ? `三类均已知处覆盖类别占比 0–${SERVICE_SCORE_MAX}%`
-            : `${categoryLabel(serviceMode)}：已覆盖处最近设施步行 0–${SERVICE_DISTANCE_MAX_M} 米`}
-          <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_GAP_RGB) }} />服务不足
-          <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_UNKNOWN_RGB) }} />数据未知
-          · 模型估计，不是实测
-          {coverage === null && ' · 等待模型网格'}
-          {coverage !== null && coverage.samples.length === 0 && ' · 本次没有可绘制的网格'}
-          {coverage !== null && coverage.dropped > 0 && ` · ${coverage.dropped} 个格数据不全未绘制`}
+          <span className="api-legend-line">
+            <i className="api-legend-ramp" style={{ background: serviceRampCss(serviceMode) }} />
+            {serviceMode === SERVICE_COMPOSITE
+              ? `三类均已知处覆盖类别占比 0–${SERVICE_SCORE_MAX}%`
+              : `${categoryLabel(serviceMode)}：已覆盖处最近设施步行 0–${SERVICE_DISTANCE_MAX_M} 米`}</span>
+          <span className="api-legend-line">
+            <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_GAP_RGB) }} />服务不足
+            <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_UNKNOWN_RGB) }} />数据未知
+            <span className="api-legend-note">· 模型估计，不是实测
+              {coverage === null && ' · 等待模型网格'}
+              {coverage !== null && coverage.samples.length === 0 && ' · 本次没有可绘制的网格'}
+              {coverage !== null && coverage.dropped > 0 && ` · ${coverage.dropped} 个格数据不全未绘制`}</span>
+          </span>
         </>}
       </span>}
       {layers.density && <span className="api-legend-item" data-testid="density-legend"
@@ -423,8 +457,14 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
       </span>}
       {Object.entries(LAYER_STYLES).filter(([id]) => layers[id as LayerId])
         .map(([id, style]) => <span key={id} className="api-legend-item">
-          <i className="api-legend-dot" style={{ background: style.fillColor }} />{style.label}</span>)}
-      {legend.length > 1 && <span className="api-legend-item">共 {legend.length} 个点，同格合并显示，数据不截断</span>}
+          <i className={AREA_LAYERS.has(id as LayerId) ? 'api-legend-area' : 'api-legend-dot'}
+            style={layerSwatch(id as LayerId)} />{style.label}</span>)}
+      {layers.facilities && (drawables.facilities?.points.length ?? 0) > 0
+        && <span className="api-legend-item api-legend-cats">设施类别
+          {CATEGORY_ORDER.map(category => <span key={category} className="api-legend-item">
+            <i className="api-legend-dot" style={{ background: CATEGORY_COLORS[category] }} />
+            {categoryLabel(category)}</span>)}</span>}
+      {legend.length > 1 && <span className="api-legend-item api-legend-count">共 {legend.length} 个点，同格合并显示，数据不截断</span>}
     </div>}
   </div>;
 }

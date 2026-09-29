@@ -12,7 +12,7 @@
  * - 长时间无进展：检索停住 90 秒以上 —— "疑似停滞"，说明停在哪一步、可以取消；放行后恢复。
  *   不报中间计数的步骤（载入路网）停住同样久仍是"正在计算或等待"，并说明为什么没有计数。
  * - 断网与服务端不可达：连接中断、失败次数与已用时照走；后端期间继续推进，恢复后马上跟上。
- * - 切页、切算法、刷新：接回同一个任务与进度，已用时不归零。
+ * - 切算法、刷新：接回同一个任务与进度，已用时不归零。
  * - 取消中恢复：取消后刷新仍是"正在取消"，放行后停在"已取消"。
  * - 两个引擎、两个中心：后一个排队；地图、修订与报告各归各的，来回切换、刷新都不串。
  *
@@ -304,7 +304,7 @@ test.afterAll(async ({ request }) => {
 
 // ---------------------------------------------------------------- 用例
 
-test('百度边界搜索（E8.2）一个任务走完全程：首次请求前刷新、同一阶段持续运行、阶段切换、疑似停滞、断网与服务端不可达、切页与刷新 —— 进度一路真实，只建一个任务', async ({ page, context, request }) => {
+test('百度边界搜索（E8.2）一个任务走完全程：首次请求前刷新、同一阶段持续运行、阶段切换、疑似停滞、断网与服务端不可达、切算法与刷新 —— 进度一路真实，只建一个任务', async ({ page, context, request }) => {
   const ledger: Ledger = { creates: 0, cancels: 0, problems: [] };
   const before = await backend(request);
   await open(page, 'e82', ledger);
@@ -427,23 +427,18 @@ test('百度边界搜索（E8.2）一个任务走完全程：首次请求前刷�
   await expect(liveKind(page)).not.toHaveAttribute('data-kind', 'lost', { timeout: 15000 });
   record('unreachable', { recoverSeconds: (Date.now() - reachable) / 1000 });
 
-  // 7. 切页与切算法：回来还是同一个任务，已用时接着走。
+  // 7. 切算法：回来还是同一个任务，已用时接着走。（旧版成圈页面已移除，只剩算法切换。）
   await heldAt(request, 'assessment', 400000);
   const leaving = await read(page);
-  await switchTo(page, '旧版成圈分析');
-  await expect(page.getByTestId('checkup-map-section')).toHaveCount(0);
-  await page.waitForTimeout(3000);
-  await switchTo(page, '体检 v2（热力与报告）');
-  await expect(page.getByTestId('checkup-task-id')).toHaveText(taskId);
   await switchTo(page, 'OSM＋百度');
   await expect(page.getByTestId('checkup-task-id')).toHaveCount(0);
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(5000);
   await switchTo(page, '百度边界搜索（E8.2）');
   await expect(page.getByTestId('checkup-task-id')).toHaveText(taskId);
   const returned = await read(page);
   expect(returned.elapsed! - leaving.elapsed!, '切出去的时间也算在已用时里').toBeGreaterThanOrEqual(4);
   expect(returned.stage).toBe('accessibility');
-  record('pageSwitch', { leaving, returned });
+  record('algorithmSwitch', { leaving, returned });
 
   // 8. 刷新：同一个任务，已用时不归零，评估计数接着显示。
   await page.reload();
@@ -475,7 +470,7 @@ test('百度边界搜索（E8.2）一个任务走完全程：首次请求前刷�
   record('e82Ledger', ledger);
 });
 
-test('创建的回答超时与取消中恢复：不重提；取消后刷新、切页仍是"正在取消"，放行后停在"已取消"', async ({ page, request }) => {
+test('创建的回答超时与取消中恢复：不重提；取消后刷新、切算法仍是"正在取消"，放行后停在"已取消"', async ({ page, request }) => {
   const ledger: Ledger = { creates: 0, cancels: 0, problems: [] };
   const before = await backend(request);
   await open(page, 'e82', ledger);
@@ -502,14 +497,14 @@ test('创建的回答超时与取消中恢复：不重提；取消后刷新、�
   await watch(page, 'cancelling', 3);
   record('cancelling', { screenshot: await shot(page, '09-cancelling.png') });
 
-  // 取消中刷新、切页：仍是同一个任务、仍在取消；不重提，也不把取消当成"没有任务"。
+  // 取消中刷新、切算法：仍是同一个任务、仍在取消；不重提，也不把取消当成"没有任务"。
   await page.reload();
   await expectRealBasemap(page);
   await expect(page.getByTestId('checkup-task-id')).toHaveText(taskId, { timeout: 30000 });
   await expect(liveKind(page)).toHaveAttribute('data-kind', 'cancelling');
-  await switchTo(page, '旧版成圈分析');
+  await switchTo(page, 'OSM＋百度');
   await page.waitForTimeout(2000);
-  await switchTo(page, '体检 v2（热力与报告）');
+  await switchTo(page, '百度边界搜索（E8.2）');
   await expect(page.getByTestId('checkup-task-id')).toHaveText(taskId);
   await expect(liveKind(page)).toHaveAttribute('data-kind', 'cancelling');
   await watch(page, 'cancelling-restored', 3);

@@ -31,7 +31,11 @@ class EvidenceSession:
         self.stop_reason = None
         self.outside_candidates_skipped = 0
         self.origin_xy = projection.origin(self.origin)
-        self.gate.interval = max(self.gate.interval, 1 / config.request_qps)
+        # The session's own ceiling. The shared gate belongs to every caller of the
+        # service, so this run paces itself here instead of lowering it for everyone.
+        # Replays and offline providers send nothing and are not paced.
+        self.min_interval = 1 / config.request_qps if getattr(provider, "network", False) else 0
+        self.last_sent = None
         if getattr(provider, "network", False) and path is None:
             raise ValueError("live_requests_require_durable_ledger")
         if seed_ledger is not None:
@@ -136,8 +140,13 @@ class EvidenceSession:
             if not self.available:
                 return None
             point_id = f"p{len(self.samples) + 1:04d}"
+            if self.last_sent is not None:
+                pause = self.last_sent + self.min_interval - time.monotonic()
+                if pause > 0:
+                    await asyncio.sleep(pause)
             try:
                 async with request_slot(self.gate, self.token, self.deadline) as outcome:
+                    self.last_sent = time.monotonic()
                     self.requests_used += 1
                     event = {"point_id": point_id, "source": source, "reason": reason,
                              "refinement_level": level, "request_coordinate": coordinate,

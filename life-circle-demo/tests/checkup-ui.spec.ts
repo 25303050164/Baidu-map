@@ -414,7 +414,9 @@ test('zoom and pan end re-project the points without moving the view or dropping
   await page.goto('/');
   await pickAndStart(page);
   await pathsAre(page, 3);
-  await markersAre(page, 4);
+  // 等到全部点都画上：40 处设施 + 2 处核验 + 1 枚中心标记。按点数等而不按标记枚数等 ——
+  // 这一簇合成几枚取决于格线落在哪，而格线随地图容器的宽度移动，与这里要测的事无关。
+  await pointsAre(page, 43);
   const before = await audit(page);
   // 真实 SDK 在缩放/平移结束时会发事件：点图层据此重新投影，面不动，视角也不该被拽走。
   await page.evaluate(() => {

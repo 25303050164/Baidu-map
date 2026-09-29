@@ -13,6 +13,7 @@ from pydantic.alias_generators import to_camel
 from ..accessibility.grid import GRID_STEP_M, MAX_LEAF_CELLS, REFINED_STEP_M
 from ..accessibility.service_graph import SEARCH_CUTOFF_M
 from ..accessibility.zones import COMPOSITE_MIN_CATEGORIES, MIN_LABEL_AREA_M2
+from .. import service_rules
 from ..contracts import Issue, MajorCategory, Origin
 from ..facilities import RULE as DISTANCE_RULE
 from ..rules import DistanceRule
@@ -34,7 +35,7 @@ DETAIL_ROUTE_REQUESTS = 20
 # The facility query domain is the computed boundary expanded by this margin in
 # the metric plane; it is an engineering allowance, not evidence of a complete
 # directory. Declared here so no request can widen it.
-QUERY_PADDING_M = 1300
+QUERY_PADDING_M = int(service_rules.QUERY_PADDING_M)
 
 TERMINAL: frozenset[str] = frozenset({"completed", "failed", "cancelled"})
 
@@ -134,10 +135,17 @@ class FacilityGroup(CheckupModel):
     data_obtained_at: float | None = None
     counts_by_category: dict[str, int] = Field(default_factory=dict)
     facilities: list[dict] = Field(default_factory=list)
+    #: Accepted facilities outside the boundary but inside the query range (§2.3):
+    #: service sources for the assessment, never counted, never drawn as findings.
+    nearby_facilities: list[dict] = Field(default_factory=list)
     review_candidates: list[dict] = Field(default_factory=list)
     excluded_candidates: list[dict] = Field(default_factory=list)
     quarantine: list[dict] = Field(default_factory=list)
     query_coverage: list[dict] = Field(default_factory=list)
+    #: Per queried category, the query blocks (bd09ll polygons) whose keyword evidence
+    #: did not finish. The assessment refuses a gap within service reach of them.
+    #: ``None`` means not recorded (an older revision): the task-wide status applies.
+    query_incomplete_regions: dict[str, list[dict]] | None = None
     statistics: dict = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     stop_reason: str | None = None
@@ -234,8 +242,9 @@ class HeatmapEvidence(CheckupModel):
     """设施密度热力的数据面：每格到最近设施模型距离（§5.4）。
 
     这是**模型估计**：它只回答"路网上走 1000 米能到哪里"，不是实测、不是设施数量、
-    也不是人口覆盖。没有模型路径的格不出现在热力里 —— 它们的结论由灰区层与未知面积
-    表达，不在这里被画成一个"距离为零"的热点。
+    也不是人口覆盖。缺口格（搜索截止内没有模型路径）照样出点，``distanceM`` 为空，
+    状态为 ``gap``：地图据此画出缺口，而不是把没有点的地方读成"未知"；也绝不把它画成
+    一个"距离为零"的热点。其余没有模型路径的格不出点，它们的结论由未知面积表达。
     """
     metric: Literal["walking_route"] = "walking_route"
     estimated: Literal[True] = True
@@ -355,8 +364,13 @@ class ReportVerification(CheckupModel):
     checked: int = 0
     failed: int = 0
     unresolved: int = 0
+    #: 第一层：中心可达性（体检中心 → 设施）。
     facilities: list[dict] = Field(default_factory=list)
     conflicts: list[dict] = Field(default_factory=list)
+    #: 第二层：覆盖抽检（格子 → 模型最近候选设施）及其汇总与局部重算点。
+    spot_checks: list[dict] = Field(default_factory=list)
+    spot_check_summary: dict = Field(default_factory=dict)
+    local_overrides: list[dict] = Field(default_factory=list)
     queries: dict = Field(default_factory=dict)
     reason: str | None = None
     notes: list[str] = Field(default_factory=list)
@@ -414,9 +428,14 @@ class VerificationEvidence(CheckupModel):
     failed: int = 0
     unresolved: int = 0
     facilities: list[dict] = Field(default_factory=list)
-    #: 模型结论与路线证据对不上的格子。带着这条标记的格是"待细化"，不是"已改判"：
-    #: 一条路线只说明这条路线的两端，改判整格需要重新评估（新修订）。
+    #: 覆盖抽检里与模型结论对不上的格子。它们交给局部重算：只在实测点所在的 25 米格
+    #: 定论，同一父格里被推翻的模型结论降为未知，不整片改面积。
     conflicts: list[dict] = Field(default_factory=list)
+    #: 覆盖抽检（格子 → 模型最近候选设施的路线）的逐点结果与汇总。
+    spot_checks: list[dict] = Field(default_factory=list)
+    spot_check_summary: dict = Field(default_factory=dict)
+    #: 交给局部重算的实测点（冲突与实测补定）；离线重算时照原样再用一次。
+    local_overrides: list[dict] = Field(default_factory=list)
     queries: dict = Field(default_factory=dict)
     reason: str | None = None
     notes: list[str] = Field(default_factory=list)
@@ -539,12 +558,16 @@ class FacilityRoute(CheckupModel):
     origin: Origin
     destination: Origin
     straight_line_m: float | None = None
-    #: 判定规则看的是返回的路线距离；落在误差带里或没有可用距离时为 None。
+    #: 判定看的是 ``access_distance_m``：严格层就是路线距离，端点容差层是"路线距离＋
+    #: 两端偏移"的估计。落在误差带里或没有可用证据层时为 None。
     within_rule: bool | None = None
     route_distance_m: float | None = None
+    access_distance_m: float | None = None
+    #: ``strict``（端点完全重合）、``endpoint_tolerance``（偏移都不超过 50 米）或 None。
+    verification_layer: Literal["strict", "endpoint_tolerance"] | None = None
     duration_s: float | None = None
     observed_duration_s: float | None = None
-    #: 严格 POI 证据这一层：端点不重合就是 pending，详情证据也不放宽它。
+    #: 严格 POI 证据这一层：端点不重合就是 pending；它是附加标志，不决定判定。
     poi_status: Literal["pending", "verified_reachable", "verified_unreachable"] = "pending"
     poi_reason: str | None = None
     evidence_grade: Literal["verified", "model"] = "model"

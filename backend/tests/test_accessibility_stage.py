@@ -335,7 +335,7 @@ def test_composite_zone_needs_two_of_the_three_majors():
     assert outcome.service_gaps.composite_area_m2 == pytest.approx(composite[0].area_m2)
 
 
-def test_heat_points_exist_only_where_a_distance_was_measured():
+def test_heat_points_carry_a_measured_distance_or_are_gaps_without_one():
     outcome = run()
     heat = outcome.heatmap
     assert heat.metric == "walking_route" and heat.estimated is True
@@ -344,7 +344,12 @@ def test_heat_points_exist_only_where_a_distance_was_measured():
     medical = heat.categories["medical"]
     assert medical, "覆盖格应当有热力点"
     for point in medical:
-        assert point["distanceM"] >= 0
+        # 有模型距离的格报出距离；缺口格（截止内没有路径）也出点，距离为空、状态为 gap，
+        # 地图才画得出缺口 —— 它绝不是一个"距离为零"的热点。
+        if point["distanceM"] is None:
+            assert point["status"] == "gap"
+        else:
+            assert point["distanceM"] >= 0
         assert point["cell"]
         assert point["status"] in ("covered", "gap", "unknown")
         assert -180 <= point["lng"] <= 180 and -90 <= point["lat"] <= 90

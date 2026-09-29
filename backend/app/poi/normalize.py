@@ -97,7 +97,7 @@ def inside(point, bounds, projection):
     return bounds[0]-epsilon <= x <= bounds[2]+epsilon and bounds[1]-epsilon <= y <= bounds[3]+epsilon
 
 
-def merge_entities(records, request, plan=None, *, within=None):
+def merge_entities(records, request, plan=None, *, within=None, nearby=None):
     """Merge the records of one run into entities, each with its own verdict.
 
     ``plan`` names the rectangular search window a POI runtime ran, and every
@@ -105,6 +105,11 @@ def merge_entities(records, request, plan=None, *, within=None):
     region is not a rectangle — the checkup counts inside the computed boundary —
     passes ``within`` instead: one test from a geographic point to whether this
     run counts there. Exactly one of the two is required.
+
+    ``nearby``, when given, is a list that receives the *accepted* entities outside
+    the counting region, classified exactly like the counted ones: they are never
+    counted, but a facility just across the boundary still serves the places inside
+    it. The outside report is unchanged.
     """
     if within is None and plan is None:
         raise ValueError('a merge needs a counting region: plan or within')
@@ -126,14 +131,16 @@ def merge_entities(records, request, plan=None, *, within=None):
         item['observations'] = [{k: r[k] for k in ('name', 'address', 'location', 'navigationLocation',
                                                    'confirmedEntrances', 'parentUid', 'sourceTags')}
                                 for r in observations]
-        if not any(counted(r['location']) for r in values):
+        is_outside = not any(counted(r['location']) for r in values)
+        if is_outside:
             # The record keeps where it is and what it was: a nearby facility
             # outside the counting region is evidence for the region, not noise.
             outside.append({'sourceUid': item['sourceUid'], 'category': item['category'],
                             'location': item['location'],
                             'reason': 'outside_counting_region' if within is not None else 'outside_search_window',
                             'provenance': item['provenance']})
-            continue
+            if nearby is None:
+                continue
         names = ' / '.join(sorted({r['name'] for r in values}))
         category, status, evidence = classify(names, item['sourceTags'])
         conflicts = []
@@ -152,6 +159,10 @@ def merge_entities(records, request, plan=None, *, within=None):
             category, status, evidence = None, 'excluded', ['category_not_requested']
         item.update(category=category, classificationStatus=status,
                     classificationEvidence=sorted(set(evidence + conflicts)), conflicts=conflicts)
+        if is_outside:
+            if status == 'accepted':
+                nearby.append({**item, 'countingRegion': 'outside'})
+            continue
         {'accepted': accepted, 'needs_review': review, 'excluded': excluded}[status].append(item)
     mark_duplicates(accepted + review, projection)
     return accepted, review, excluded, outside, len(records)-len(by_uid)

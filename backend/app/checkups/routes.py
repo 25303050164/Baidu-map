@@ -19,7 +19,7 @@ import httpx
 from life_circle.providers import BaiduProvider
 
 from ..baidu import silence_transport_logs
-from ..quota import BudgetExhausted, DeadlineReached
+from ..quota import AttemptCancelled, BudgetExhausted, DeadlineReached
 
 #: 任务自己的池名，与 ``quota.TaskBudget`` 的拼写一致。
 ROUTE_POOL = 'route'
@@ -53,6 +53,9 @@ async def open_online(settings, stack) -> "OnlineRouteTransport":
     """生产传输：一个阶段一个 HTTP 客户端，或者一个带名字的拒绝。"""
     if not settings.ak_configured:
         raise RoutesUnavailable('missing_ak')
+    if settings.analysis_provider == 'synthetic':
+        # 离线合成模式不接真实服务：即使配了 AK 也不发出去。
+        raise RoutesUnavailable('synthetic_mode_offline')
     silence_transport_logs()
     client = await stack.enter_async_context(
         httpx.AsyncClient(trust_env=False, follow_redirects=False))
@@ -87,8 +90,10 @@ class RouteSession:
     静默的空结果。
     """
 
-    def __init__(self, transport, pool, *, budget, deadline):
+    def __init__(self, transport, pool, *, budget, deadline, token=None):
         self.transport, self.pool, self.budget, self.deadline = transport, pool, budget, deadline
+        # The task's cancel token, checked by the pool before every attempt is sent.
+        self.token = token
         self.attempts = 0
         self.stop_reason: str | None = None
 
@@ -111,8 +116,11 @@ class RouteSession:
                 self.stop_reason = 'deadline'
                 return None
             try:
+                # The token is passed only when there is one, so an injected pool keeps
+                # its plain signature.
+                extra = {} if self.token is None else {'token': self.token}
                 async with self.pool.attempt(self.deadline, budget=self.budget,
-                                             pool=pool) as attempt:
+                                             pool=pool, **extra) as attempt:
                     timeout = self.deadline - time.monotonic()
                     if timeout <= 0:
                         attempt.outcome('deadline')
@@ -129,6 +137,10 @@ class RouteSession:
                 return None
             except DeadlineReached:
                 self.stop_reason = 'deadline'
+                return None
+            except AttemptCancelled:
+                # 取消之后不再发出新的请求；已发出的那一次收不回，但不会有下一次。
+                self.stop_reason = 'cancelled'
                 return None
             if value.reason in STOP_REASONS:
                 self.stop_reason = value.reason

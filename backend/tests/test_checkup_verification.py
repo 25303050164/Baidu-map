@@ -182,7 +182,8 @@ def test_route_to_facility_cannot_contradict_coverage_at_the_facility():
         assert record["modelCell"] is None and record["modelStatus"] is None
         assert record["modelComparison"] == "not_comparable_origin_and_destination"
         assert record["conflict"] is False
-    assert any("未进行网格冲突判定" in note for note in outcome.evidence.notes)
+    # 中心路线只说明中心这一点：报告必须写明它不核验任何一格的覆盖。
+    assert any("不核验任何一格的服务覆盖" in note for note in outcome.evidence.notes)
 
 
 def test_a_zero_distance_route_counts_only_when_it_is_the_point_that_was_asked():
@@ -245,8 +246,10 @@ def test_a_candidate_that_could_not_be_answered_is_unverified_not_unreachable():
     assert records["f-1"]["reason"] == "timeout" and records["f-1"]["conflict"] is False
     assert outcome.evidence.failed == 2 and outcome.evidence.checked == 3
     assert outcome.status == "partial"
+    # 三次都是中心可达性那一层的尝试；这个热力层没有位置，覆盖抽检一次也没问。
     assert outcome.evidence.queries == {"routeAttempts": 3, "candidates": 3, "checked": 3,
-                                        "unverified": 0, "stopReason": None}
+                                        "unverified": 0, "stopReason": None,
+                                        "centerAttempts": 3, "spotAttempts": 0}
 
 
 def test_a_pool_that_runs_out_leaves_the_rest_unverified_and_says_so():
