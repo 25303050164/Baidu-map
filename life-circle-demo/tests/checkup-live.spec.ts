@@ -101,6 +101,7 @@ test('浏览器 AK 能加载真实 BMapGL 底图，页面也能连上真后端',
   });
   expect(await page.evaluate(() => typeof (window as { BMapGL?: unknown }).BMapGL)).toBe('object');
   // 能力表来自真后端：预算档位能选，就说明这一页确实读到了它（档位只来自能力表）。
+  await page.getByTestId('checkup-tab-engine').click();
   await expect(page.getByRole('combobox', { name: '调用预算' }))
     .toBeEnabled({ timeout: 60000 }).catch(error => {
       throw new Error(`读不到 /api/v2/capabilities：${problems.join(' | ') || '没有错误记录'}\n${error}`);
@@ -131,11 +132,12 @@ for (const [engine, { label, version }] of Object.entries(ENGINES)) {
     mkdirSync(dir, { recursive: true });
     await page.goto('/');
 
-    // 引擎在页首的算法选择里切换，档位来自后端能力表：界面不自己编档位，这里也不替它编。
-    await page.locator('.ant-segmented-item', { hasText: label }).click();
-    await expect(page.getByRole('combobox', { name: '调用预算' })).toBeEnabled({ timeout: 60000 });
+    // 引擎在「引擎与预算」选项卡里切换，档位来自后端能力表：界面不自己编档位，这里也不替它编。
     await page.getByRole('spinbutton', { name: '经度', exact: true }).fill(String(CENTER.lng));
     await page.getByRole('spinbutton', { name: '纬度', exact: true }).fill(String(CENTER.lat));
+    await page.getByTestId('checkup-tab-engine').click();
+    await page.locator('.ant-segmented-item', { hasText: label }).click();
+    await expect(page.getByRole('combobox', { name: '调用预算' })).toBeEnabled({ timeout: 60000 });
     // 选中的证据用面板上的引擎版本，而不是控件内部的类名：换了引擎版本就该跟着变。
     await expect(page.getByTestId('checkup-engine')).toContainText(label);
     await expect(page.getByTestId('checkup-engine')).toContainText(version);
@@ -218,8 +220,9 @@ for (const [engine, { label, version }] of Object.entries(ENGINES)) {
     await expect(drawn).toBeHidden();
 
     // 真底图 + 真图层。要的就是"这不是示意地图"：默认的服务覆盖热力先截一张，
-    // 再换成设施密度截一张。
+    // 再换成设施密度截一张。图层开关在「地图图层」选项卡里。
     await expectRealBasemap(page);
+    await page.getByTestId('checkup-tab-layers').click();
     // 只数业务 Canvas 上画了多少像素，不能把百度底图或图表 Canvas 当作热力。
     const painted = (id: string) => page.getByTestId(id).evaluate(el => {
       const canvas = el as HTMLCanvasElement;

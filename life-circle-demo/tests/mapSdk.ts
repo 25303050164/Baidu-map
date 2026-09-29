@@ -26,6 +26,7 @@ export async function installMapSdk(page: Page): Promise<void> {
       panes: {} as Record<string, HTMLElement>,
       views: {} as Record<string, (() => void)[]>,
       pans: [] as { lng: number; lat: number }[],
+      zooms: [] as string[],
       project: undefined as undefined | ((lng: number, lat: number) => { x: number; y: number }) };
     let iconSeq = 0;
     let markerSeq = 0;
@@ -80,6 +81,8 @@ export async function installMapSdk(page: Page): Promise<void> {
       }
       centerAndZoom(point: Point) { this.centre = { lng: point.lng, lat: point.lat }; }
       panTo(point: Point) { this.centre = { lng: point.lng, lat: point.lat }; audit.pans.push({ lng: point.lng, lat: point.lat }); }
+      zoomIn() { audit.zooms.push('in'); }
+      zoomOut() { audit.zooms.push('out'); }
       enableScrollWheelZoom() {}
       // 视角事件由覆盖物与图层订阅（moveend/zoomend/resize），但不能顶掉地图自身的选点回调。
       addEventListener(type: string, handler: (e: unknown) => void) {

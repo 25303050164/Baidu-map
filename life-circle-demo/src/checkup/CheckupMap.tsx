@@ -354,27 +354,51 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
     } catch { setError(true); }
   }, [api, map, center, resultCenter]);
 
-  // 视角只在"新结果"或"显式选中某处设施"时移动。建图时已经放在初值上，初值不算一次移动。
-  const pannedTo = useRef<string | null>(`${initialCenter.current.lng},${initialCenter.current.lat}`);
+  // 视角只会因为三种事移动：选点（搜索、定位、输入坐标、点图）、新结果、显式选中某处设施。
+  // 勾选图层、刷新数据都不动视角 —— 那会把用户正在看的地方拽走。建图时已经放在初值上，
+  // 初值不算一次移动，所以用一个"上一次平移到的坐标"记账。
+  const lastPanned = useRef<string | null>(`${initialCenter.current.lng},${initialCenter.current.lat}`);
   const pannedSelection = useRef<string | null>(null);
+  /** 已经见过的结果中心：只有它变了才算"新结果"，勾选图层、数据重画都不该再动视角。 */
+  const seenResult = useRef<string | null>(null);
+
+  // 选点：center 一变就跟着走。手输坐标每敲一下都会到这里，视角实时追上。
   useEffect(() => {
     const instance = map;
     if (!instance || !api) return;
-    const target = resultCenter ?? center;
-    const key = `${target.lng},${target.lat}`;
+    const key = `${center.lng},${center.lat}`;
+    if (lastPanned.current === key) return;
+    lastPanned.current = key;
+    try { instance.panTo(new api.Point(center.lng, center.lat)); } catch { setError(true); }
+  }, [api, map, center]);
+
+  useEffect(() => {
+    const instance = map;
+    if (!instance || !api) return;
     const selectionKey = resultCenter ? selectedId ?? null : null;
     const movedToSelection = selectionKey !== null && selectionKey !== pannedSelection.current;
     pannedSelection.current = selectionKey;
-    if (pannedTo.current === key && !movedToSelection) return;
-    pannedTo.current = key;
     const focus = movedToSelection
       ? Object.values(drawables).flatMap(drawable => drawable?.points ?? [])
         .find(item => item.key === selectionKey) : undefined;
+    const resultKey = resultCenter ? `${resultCenter.lng},${resultCenter.lat}` : null;
+    const newResult = resultKey !== seenResult.current;
+    seenResult.current = resultKey;
+    // 结果中心与选点重合时不算一次移动：地图刚在选点上，再"移动"一次是原地抖动。
+    const target = focus ?? (newResult && resultKey !== null && resultKey !== lastPanned.current
+      ? resultCenter : null);
+    if (!target) return;
+    lastPanned.current = `${target.lng},${target.lat}`;
+    try { instance.panTo(new api.Point(target.lng, target.lat)); } catch { setError(true); }
+  }, [api, map, resultCenter, selectedId, drawables]);
+
+  // 缩放按钮：走 SDK 自己的 zoomIn/zoomOut，和滚轮缩放是同一条路径。
+  function zoom(direction: 'in' | 'out') {
+    if (!map) return;
     try {
-      instance.panTo(focus ? new api.Point(focus.lng, focus.lat)
-        : new api.Point(target.lng, target.lat));
+      if (direction === 'in') map.zoomIn(); else map.zoomOut();
     } catch { setError(true); }
-  }, [api, map, center, resultCenter, selectedId, drawables]);
+  }
 
   const legend = useMemo(() => POINT_LAYERS
     .flatMap(id => (drawables[id]?.points ?? []).map(point => ({ id, color: point.color,
@@ -385,6 +409,10 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
   const unavailable = error || mode === 'fallback';
   return <div className="api-map-shell">
     <div ref={container} className="api-map" data-testid="checkup-map" aria-label="体检图层地图" />
+    {map && !unavailable && <div className="api-map-zoom" role="group" aria-label="地图缩放">
+      <button type="button" aria-label="放大" title="放大" onClick={() => zoom('in')}>+</button>
+      <button type="button" aria-label="缩小" title="缩小" onClick={() => zoom('out')}>−</button>
+    </div>}
     {(unavailable || mode === 'loading') && <div className="api-map-notice" role="status">
       <strong>{unavailable ? '地图不可用' : '正在加载百度地图'}</strong>
       <p>{unavailable ? (failureReason === 'missing-key'

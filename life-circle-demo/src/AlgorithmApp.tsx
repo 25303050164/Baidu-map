@@ -66,25 +66,28 @@ export default function AlgorithmApp() {
     setAlgorithm(next);
   }
 
+  // 成圈算法切换原来固定在顶栏，现在并入工作台的「引擎与预算」选项卡：这里只把控件
+  // 作为节点传进去，选中状态与 URL 仍由本组件管理（切换会重建工作台，任务登记不受影响）。
+  const algorithmSwitch = <div className="algorithm-switch">
+    <Segmented<Algorithm>
+      aria-label="算法选择"
+      block
+      value={algorithm}
+      onChange={selectAlgorithm}
+      options={[
+        { label: <AlgorithmLabel algorithm="baidu" text="百度边界搜索（E8.2）" />, value: 'baidu' },
+        { label: <AlgorithmLabel algorithm="hybrid" text="OSM＋百度" />, value: 'hybrid' },
+      ]}
+    />
+  </div>;
+
   return <div className="wb">
     <header className="wb-top">
       <div className="wb-brand">
         <span className="wb-seal" aria-hidden="true"><i>邻</i><i>里</i></span>
         <h1>15 分钟生活圈体检</h1>
       </div>
-      <nav className="algorithm-switch" aria-label="算法">
-        <span className="wb-top-label">成圈算法</span>
-        <Segmented<Algorithm>
-          aria-label="算法选择"
-          value={algorithm}
-          onChange={selectAlgorithm}
-          options={[
-            { label: <AlgorithmLabel algorithm="baidu" text="百度边界搜索（E8.2）" />, value: 'baidu' },
-            { label: <AlgorithmLabel algorithm="hybrid" text="OSM＋百度" />, value: 'hybrid' },
-          ]}
-        />
-      </nav>
     </header>
-    <CheckupApp key={algorithm} engine={ENGINES[algorithm]} />
+    <CheckupApp key={algorithm} engine={ENGINES[algorithm]} algorithmSwitch={algorithmSwitch} />
   </div>;
 }
