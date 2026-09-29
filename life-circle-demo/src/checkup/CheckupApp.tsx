@@ -29,6 +29,8 @@ import { CheckupMap, DEFAULT_CHECKUP_LAYERS, layerSwatch, type CheckupLayerToggl
 import { CheckupReport } from './CheckupReport';
 import { Fold } from './Fold';
 import { CATEGORY_ORDER, categoryLabel, coverageItems, percent } from './report';
+import { nearestFacilities } from './nearest';
+import { WeatherCard } from './WeatherCard';
 import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
 import { outdatedText, recomputedText, versionView, waterView } from './water';
 import { duration, liveView, TICKING_PHASES, type LiveKind } from './live';
@@ -210,7 +212,7 @@ export default function CheckupApp({ engine }: { engine: string }) {
    */
   useEffect(() => {
     if (state.phase !== 'completed' || revision === undefined) return;
-    const pending = MAP_LAYERS.find(id => (toggles[id]
+    const pending = MAP_LAYERS.find(id => (toggles[id] || id === 'facilities'
       || (Object.keys(HEAT_DEPENDENCIES) as HeatLayer[])
         .some(heat => toggles[heat] && HEAT_DEPENDENCIES[heat].includes(id)))
       && state.layers?.[id]?.revision !== revision && failed[id] !== revision);
@@ -265,7 +267,13 @@ export default function CheckupApp({ engine }: { engine: string }) {
     setCenter(next); setLng(next.lng); setLat(next.lat);
   }
   function edit(axis: 'lng' | 'lat', value: number | null) {
+    const nextLng = axis === 'lng' ? value : lng;
+    const nextLat = axis === 'lat' ? value : lat;
     if (axis === 'lng') setLng(value); else setLat(value);
+    if (nextLng !== null && nextLat !== null && Number.isFinite(nextLng) && Number.isFinite(nextLat)
+      && nextLng >= -180 && nextLng <= 180 && nextLat > -85 && nextLat < 85) {
+      setCenter({ lng: +nextLng.toFixed(6), lat: +nextLat.toFixed(6) });
+    }
   }
   function start() {
     if (!canStart || !draft) return;
@@ -294,6 +302,9 @@ export default function CheckupApp({ engine }: { engine: string }) {
 
   const overall = snapshot?.report?.overall ?? snapshot?.scores?.overall ?? null;
   const items = useMemo(() => snapshot ? coverageItems(snapshot) : [], [snapshot]);
+  const nearestGroups = useMemo(() => nearestFacilities(drawables.facilities, taskCenter ?? null),
+    [drawables.facilities, taskCenter]);
+  const weatherCenter = draft ?? taskCenter ?? null;
   const idle = state.phase === 'idle';
 
   const facts = task && <Descriptions className="wb-facts" size="small" column={1} items={[
@@ -354,6 +365,7 @@ export default function CheckupApp({ engine }: { engine: string }) {
           </div>}
           {live && <p className="wb-hint" data-testid="checkup-live-note">任务进行中：切页、切换算法或刷新都不会取消它。</p>}
         </footer>
+        <WeatherCard center={weatherCenter} />
         <nav className="wb-dir" aria-label="目录">
           <Fold title="图层" defaultOpen className="wb-layers">
             <p className="wb-group">热力 · 二选一</p>
@@ -489,6 +501,32 @@ export default function CheckupApp({ engine }: { engine: string }) {
               ? `${fixed(item.lowerPct)}–${fixed(item.upperPct)}%` : '无法确定'}</span>
           </li>)}</ul>
           <Button block type="primary" ghost onClick={() => setReportOpen(true)}>查看体检报告</Button>
+        </section>}
+
+        {snapshot && <section className="wb-sec wb-nearest" data-testid="checkup-nearest">
+          <h2 className="wb-h">周边设施 · 每类最近 5 处</h2>
+          {!drawables.facilities ? <p className="wb-hint">{layerErrors.facilities
+            ?? '设施结果尚未加载。'}</p>
+            : drawables.facilities.state === 'empty' ? <p className="wb-hint">本次体检没有接收的设施。</p>
+            : <>
+              <p className="wb-hint">按直线距离排序（非步行距离），点击一处可查询路线。</p>
+              {nearestGroups.map(group => <div className="wb-near" key={group.category}>
+                <p className="wb-near-head"><i style={{ background: group.color }} />{group.label}
+                  <span>共 {group.total} 处</span></p>
+                {group.facilities.length === 0 ? <p className="wb-hint">本次没有{group.label}设施。</p>
+                  : <ol className="wb-near-list">{group.facilities.map(facility => <li key={facility.key}>
+                    <button type="button" data-testid={`nearest-${facility.key}`}
+                      data-selected={selected === facility.key ? 'yes' : 'no'}
+                      onClick={() => setSelected(facility.key)}>
+                      <span className="wb-near-name">{facility.name}</span>
+                      <span className="wb-near-distance">{facility.distanceM < 1000
+                        ? `${facility.distanceM.toFixed(0)} 米`
+                        : `${(facility.distanceM / 1000).toFixed(1)} 公里`}</span>
+                      {facility.address && <span className="wb-near-address">{facility.address}</span>}
+                    </button>
+                  </li>)}</ol>}
+              </div>)}
+            </>}
         </section>}
 
         {snapshot && (selectedPoint || state.route || state.routeError) && <section className="wb-sec wb-facility">

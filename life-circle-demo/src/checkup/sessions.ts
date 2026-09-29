@@ -24,6 +24,8 @@ export type CheckupPrefs = {
   serviceMode?: string;
   densityCategory?: string;
   reportOpen?: boolean;
+  /** 左栏当前选项卡（体检中心 / 引擎与预算 / 地图图层）。 */
+  tab?: string;
 };
 
 type Stored = { handle?: CheckupHandle; prefs?: CheckupPrefs };
@@ -72,6 +74,7 @@ export function readStored(engine: string, storage: Storage | undefined = safeSt
     if (text(prefs.serviceMode)) p.serviceMode = prefs.serviceMode;
     if (text(prefs.densityCategory)) p.densityCategory = prefs.densityCategory;
     if (typeof prefs.reportOpen === 'boolean') p.reportOpen = prefs.reportOpen;
+    if (text(prefs.tab)) p.tab = prefs.tab;
     out.prefs = p;
   }
   return out;
