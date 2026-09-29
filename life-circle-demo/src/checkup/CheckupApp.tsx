@@ -98,7 +98,7 @@ const PHASE_TONE: Partial<Record<CheckupState['phase'], string>> = {
 /** 一条设施路线的读法：判定与距离同进同出，没有距离就不说"在不在标准内"。 */
 function RouteDetail({ route, error }: { route: CheckupState['route']; error?: string }) {
   if (error) return <Alert type="warning" title={error} showIcon />;
-  if (!route) return <p className="api-muted">选择设施后可查询它的实际步行路线。点击详情与体检共用同一个路线闸门，额度用尽时这里会说明原因。</p>;
+  if (!route) return <p className="api-muted">选择设施后可查询实际步行路线；路线额度与体检共用。</p>;
   return <>
     <Descriptions className="wb-facts" size="small" column={1} items={[
       { key: 'facility', label: '设施', children: route.facilityId },
@@ -338,8 +338,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
       data-revision={task.revision}>{`第 ${task.revision} 版`}</span> },
     { key: 'status', label: '状态', children: task.status +
       (task.businessStatus ? `（${BUSINESS_LABELS[task.businessStatus] ?? task.businessStatus}）` : '') },
-    { key: 'spend', label: '本任务已用', children: <span data-testid="checkup-requests"
-      data-count={task.networkRequests}>{`${task.networkRequests} 次网络尝试（等时圈、设施与核验各池合计；只数真的发出的请求）`}</span> },
+    { key: 'spend', label: '网络请求', children: <span data-testid="checkup-requests"
+      data-count={task.networkRequests}>{`${task.networkRequests} 次`}</span> },
     { key: 'tier', label: '等时圈档位', children: `${task.budget} 次上限` },
     ...(liveNow && liveNow.stage ? [{ key: 'stage', label: '当前阶段', children:
       <span data-testid="checkup-stage-now" data-stage={liveNow.stage}>
@@ -382,7 +382,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
               <label className="wb-field"><span>纬度</span><InputNumber aria-label="纬度" value={lat}
                 onChange={value => edit('lat', value)} precision={6} controls={false} /></label>
             </div>
-            <p className="wb-hint">也可以直接在地图上点选。评估域以该点为中心划定，域外面积不计入覆盖率。</p>
+            <p className="wb-hint">也可直接在地图上点选；域外面积不计入覆盖率。</p>
             {!valid && <Alert type="error" title="请输入有效坐标：经度 −180～180，纬度大于 −85 且小于 85" />}
           </section>
         </div>
@@ -402,7 +402,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
               value={budget ?? undefined} placeholder="—"
               onChange={setBudget}
               options={(selectedEngine?.budgets ?? []).map(value => ({ value, label: `${value} 次` }))} /></label>
-            <p className="wb-hint">步行 900 秒 · 服务标准 1000 米 · 坐标 BD09LL</p>
+            <p className="wb-hint">步行 900 秒 · 服务标准 1000 米</p>
             {selectedEngine?.caveat && <Alert type="warning" title={selectedEngine.caveat} />}
             {(view?.quota.label || (view?.quota.lines.length ?? 0) > 0) && <div className="wb-quota">
               {view?.quota.label && <p data-testid="quota-label">{view.quota.label}</p>}
@@ -470,8 +470,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             disabled={state.phase === 'cancelling'}>取消任务</Button>}
           {!live && !busy && state.phase !== 'idle' && <Button onClick={clear}>清除结果</Button>}
         </div>}
-        {live && <p className="wb-hint" data-testid="checkup-live-note">当前任务尚未结束：切换页面、切换算法或刷新都不会取消它。
-          要按新条件体检，请等它完成，或先点"取消任务"。</p>}
+        {live && <p className="wb-hint" data-testid="checkup-live-note">任务未结束：切页、切算法、刷新都不会取消它；要按新条件体检请先取消。</p>}
       </footer>
     </aside>
 
@@ -487,9 +486,9 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
         selectedId={selected} onSelect={setSelected} />
       <div className="wb-map-banners">
         {snapshot && stale && <Alert type="warning" showIcon
-          title="条件已修改。地图与报告仍是上一次体检的结果，需重新体检才会更新。" />}
+          title="条件已修改：地图与报告仍是上次体检的结果。" />}
         {!snapshot && live && stale && <Alert type="info" showIcon
-          title="进行中的任务仍按它提交时的中心计算；新选点要等它结束后再体检。" />}
+          title="任务仍按提交时的中心计算；新选点需等它结束。" />}
         {version && version.outdatedBy.length > 0 && <Alert type="warning" showIcon
           data-testid="checkup-outdated" title={`旧版本（第 ${snapshot?.revision} 版）：水系数据已修订`}
           description={outdatedText(version)} />}
@@ -507,12 +506,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
           </div>
           {state.phase === 'idle' && <div className="wb-empty">
             <p className="wb-empty-title">还没有体检结果</p>
-            <p>在地图上选好中心，点左下角“开始体检”。一次体检会给出：</p>
-            <ul>
-              <li>购物、医疗、教育三类设施的步行覆盖率区间</li>
-              <li>超出 1000 米服务标准的灰区与改进建议</li>
-              <li>抽样设施的真实步行路线核验</li>
-            </ul>
+            <p>选好中心后点“开始体检”，将给出三类设施覆盖率、服务灰区与步行路线核验。</p>
           </div>}
           {state.input && state.phase !== 'idle' && <p className="wb-hint wb-center">
             中心 {state.input.center.lng.toFixed(6)}, {state.input.center.lat.toFixed(6)}</p>}
@@ -535,13 +529,12 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             {liveNow ? facts : <details className="wb-more"><summary>任务信息</summary>{facts}</details>}
             {version && snapshot?.taskId === task.taskId && <p className="wb-hint" data-testid="checkup-version"
               data-recomputed={version.recomputed ? 'yes' : 'no'}>
-              {`结果版本：第 ${snapshot.revision} 版 · 水系 `
-                + (version.applied === null ? '早于水系复核' : version.applied.length === 0 ? 'OSM 原样（未采用复核）'
-                  : version.applied.join('、'))}
+              {'水系数据：' + (version.applied === null ? '早于水系复核'
+                : version.applied.length === 0 ? 'OSM 原样（未采用复核）' : version.applied.join('、'))}
               {version.recomputed && <><br />{recomputedText(version.recomputed)}</>}</p>}
           </>}
           {state.phase === 'cancelled' && <Alert type="info" title="任务已取消"
-            description="取消只停住后续请求；已经发出的调用仍会计入本应用的预算账本。" />}
+            description="取消只停后续请求，已发出的调用仍计预算。" />}
           {state.error && <Alert type="error" title={state.error} showIcon data-testid="checkup-error"
             action={<Button aria-label="重试" size="small"
               onClick={() => void controller.retry()}>{state.recovery === 'unconfirmed' ? '重新提交'
@@ -572,11 +565,11 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
         {snapshot && <section className="wb-sec" data-testid="checkup-nearest">
           <h2 className="wb-h">周边设施 · 每类最近 5 处</h2>
           {!drawables.facilities ? <p className="wb-hint">{layerErrors.facilities
-            ?? '设施结果尚未加载完成，加载后这里列出每类最近的设施。'}</p>
+            ?? '设施结果尚未加载。'}</p>
             : drawables.facilities.state === 'empty' ? <p className="wb-hint">
-              本次体检没有接收的设施（检索未完成或范围内无结果）。</p>
+              本次体检没有接收的设施。</p>
             : <>
-              <p className="wb-hint">按与体检中心的直线距离排序，不是步行距离；点一处可在图上定位，再按需查询步行路线。</p>
+              <p className="wb-hint">按直线距离排序（非步行距离），点击一处可查询路线。</p>
               {nearestGroups.map(group => <div className="wb-near" key={group.category}>
                 <p className="wb-near-head"><i style={{ background: group.color }} />{group.label}
                   <span>共 {group.total} 处</span></p>
@@ -605,7 +598,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             ]} />
             <Button onClick={() => void controller.detail(selectedPoint.key)}
               disabled={busy}>查询步行路线</Button>
-          </> : <p className="wb-hint">从上面的清单或地图上点一处设施，可查询它的实际步行路线。</p>}
+          </> : <p className="wb-hint">点选设施可查询实际步行路线。</p>}
           {(selectedPoint || state.route || state.routeError)
             && <RouteDetail route={state.route} error={state.routeError} />}
         </section>}

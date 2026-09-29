@@ -54,11 +54,11 @@ export function WeatherCard({ center }: { center: Center | null }) {
         <li>湿度 {number(state.reading.humidityPct, '%')}</li>
         <li>风速 {number(state.reading.windKmh, ' km/h')}</li>
       </ul>
-      <p className="wb-hint">数据来自 Open-Meteo{state.reading.observedAt
-        ? ` · 观测时间 ${state.reading.observedAt}` : ''}</p>
+      <p className="wb-hint">Open-Meteo{state.reading.observedAt
+        ? ` · ${state.reading.observedAt}` : ''}</p>
     </> : <p className="wb-hint">{state.status === 'loading' ? '正在获取天气…'
       : state.status === 'unavailable'
-        ? '天气数据暂不可用（需要能访问 api.open-meteo.com）；天气不参与体检结论。'
-        : '确定体检中心后显示该处的当前天气。'}</p>}
+        ? '天气暂不可用（需可访问 api.open-meteo.com）。'
+        : '选定体检中心后显示实况。'}</p>}
   </section>;
 }
