@@ -19,7 +19,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   shopping: '购物', medical: '医疗', education: '教育',
 };
 export const CATEGORY_COLORS: Record<string, string> = {
-  shopping: '#168875', medical: '#397ac6', education: '#c78b36',
+  shopping: '#12b886', medical: '#7b5cff', education: '#ff9f1a',
 };
 
 /** 灰区理由码 → 中文。缺的码原样显示，宁可露出英文码也不猜它的意思。 */
@@ -121,7 +121,7 @@ export function coverageItems(snapshot: CheckupSnapshot): CoverageItem[] {
     const supported = row.supported === true;
     return {
       category, label: categoryLabel(category),
-      color: CATEGORY_COLORS[category] ?? '#7c8b95',
+      color: CATEGORY_COLORS[category] ?? '#8a94a6',
       supported,
       lowerPct: supported ? row.coverageLowerPct ?? null : null,
       upperPct: supported ? row.coverageUpperPct ?? null : null,

@@ -44,7 +44,7 @@ describe('feature collection layers', () => {
       ]) });
     const drawable = drawableLayer('facilities', facilities);
     expect(drawable.points.map(item => [item.key, item.color]))
-      .toEqual([['f-1', '#168875'], ['f-2', '#397ac6']]);
+      .toEqual([['f-1', '#12b886'], ['f-2', '#7b5cff']]);
     expect(drawable.points[0].title).toContain('青禾菜市场');
     expect(drawable.shapes).toEqual([]);
   });
@@ -65,7 +65,7 @@ describe('feature collection layers', () => {
     expect(drawable.shapes.map(shape => shape.key)).toEqual(['zone-0', 'zone-1']);
     // 检索没跑完的灰区不是同一种结论：它可能是目录漏采，颜色必须看得出来。
     expect(drawable.shapes[0].style.fillColor).toBe(LAYER_STYLES.service_gaps.fillColor);
-    expect(drawable.shapes[1].style.fillColor).toBe('#b54708');
+    expect(drawable.shapes[1].style.fillColor).toBe('#ff8a00');
   });
 
   it('colours verification points by what the route actually said', () => {
@@ -75,7 +75,7 @@ describe('feature collection layers', () => {
         feature(point(116.41, 39.91), { facilityId: 'f-2', poiStatus: 'verified_unreachable' }),
       ]) });
     const drawable = drawableLayer('verification', verification);
-    expect(drawable.points.map(item => item.color)).toEqual(['#147d70', '#b54708']);
+    expect(drawable.points.map(item => item.color)).toEqual(['#3366ff', '#ff8a00']);
     expect(drawable.points[1].title).toContain('f-2');
   });
 

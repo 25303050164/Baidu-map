@@ -14,7 +14,7 @@
  * - **图层按修订取、按层失败按层说**。一层没就绪（409 带名字）不该让整页失败，也不该
  *   被画成"这一层是空的"。
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Alert, Button, Checkbox, Descriptions, Drawer, InputNumber, Select } from 'antd';
 import type { Center } from '../types';
 import { LocationControls } from '../analysis/LocationControls';
@@ -27,6 +27,7 @@ import { LAYER_IDS, type LayerId, type Stage } from './validate';
 import { DENSITY_ALL, drawableLayer, LAYER_STYLES, serviceSamples, type LayerDrawable } from './layers';
 import { CheckupMap, DEFAULT_CHECKUP_LAYERS, layerSwatch, type CheckupLayerToggles, type HeatLayer } from './CheckupMap';
 import { CheckupReport } from './CheckupReport';
+import { Fold } from './Fold';
 import { CATEGORY_ORDER, categoryLabel, coverageItems, percent } from './report';
 import { nearestFacilities } from './nearest';
 import { WeatherCard } from './WeatherCard';
@@ -98,7 +99,7 @@ const PHASE_TONE: Partial<Record<CheckupState['phase'], string>> = {
 /** 一条设施路线的读法：判定与距离同进同出，没有距离就不说"在不在标准内"。 */
 function RouteDetail({ route, error }: { route: CheckupState['route']; error?: string }) {
   if (error) return <Alert type="warning" title={error} showIcon />;
-  if (!route) return <p className="api-muted">选择设施后可查询实际步行路线；路线额度与体检共用。</p>;
+  if (!route) return null;
   return <>
     <Descriptions className="wb-facts" size="small" column={1} items={[
       { key: 'facility', label: '设施', children: route.facilityId },
@@ -140,27 +141,6 @@ const DEFAULT_CENTER: Center = { lng: 116.404, lat: 39.915 };
 /** 这些阶段出现过，完成时才自动打开报告；从刷新恢复出来的"已完成"按上次的开合状态来。 */
 const LIVE_PHASES = new Set(['submitting', 'queued', 'running']);
 
-/** 左栏的三个选项卡：位置、引擎与预算、图层各自独立，不堆在同一长条上。 */
-const TAB_KEYS = ['location', 'engine', 'layers'] as const;
-type TabKey = typeof TAB_KEYS[number];
-const TAB_LABELS: Record<TabKey, string> = {
-  location: '体检中心', engine: '引擎与预算', layers: '地图图层',
-};
-const isTabKey = (value: string | undefined): value is TabKey =>
-  value !== undefined && (TAB_KEYS as readonly string[]).includes(value);
-/**
- * 最近一次看过的选项卡。切换成圈算法会把工作台整个重建，新引擎如果没有存过选项卡，
- * 就落在这里 —— 从「引擎与预算」切算法不该把人甩回「体检中心」。
- */
-let lastTab: TabKey = 'location';
-
-/** 有效的中心点（经纬度范围与有限性都过），四舍五入到 6 位；无效返回 null。 */
-function coordinates(lngValue: number | null, latValue: number | null): Center | null {
-  if (lngValue === null || latValue === null || !Number.isFinite(lngValue) || !Number.isFinite(latValue)
-    || lngValue < -180 || lngValue > 180 || latValue <= -85 || latValue >= 85) return null;
-  return { lng: +lngValue.toFixed(6), lat: +latValue.toFixed(6) };
-}
-
 const PHASE_LABELS: Partial<Record<CheckupState['phase'], string>> = {
   submitting: '正在提交', restoring: '正在核对上次的任务', queued: '排队中', running: '运行中',
   fetching: '正在取结果', cancelling: '正在取消', completed: '已完成', cancelled: '已取消', error: '需要处理',
@@ -170,9 +150,7 @@ const PHASE_LABELS: Partial<Record<CheckupState['phase'], string>> = {
  * 体检工作台。`engine` 由外层的算法切换决定：每个引擎有自己的任务登记（`sessions.ts`），
  * 这个组件只订阅它 —— 卸载时退订，任务照跑；只有"取消任务"按钮会让服务端停下。
  */
-export default function CheckupApp({ engine, algorithmSwitch }: { engine: string;
-  /** 顶栏移入「引擎与预算」的成圈算法切换；由外层（AlgorithmApp）构造。 */
-  algorithmSwitch?: ReactNode }) {
+export default function CheckupApp({ engine }: { engine: string }) {
   const service = useMemo(() => createCheckupService(), []);
   const session = useMemo(() => checkupSession(engine), [engine]);
   const controller = session.controller;
@@ -194,14 +172,12 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   const [failed, setFailed] = useState<Partial<Record<LayerId, number>>>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(saved.reportOpen ?? false);
-  const [tab, setTab] = useState<TabKey>(isTabKey(saved.tab) ? saved.tab : lastTab);
-  const chooseTab = (key: TabKey) => { lastTab = key; setTab(key); };
 
   // 界面偏好随改随存：刷新或切回来时，图层开关、热力模式、报告开合都按离开时的样子。
   useEffect(() => {
     session.setPrefs({ draft: center, ...(budget === null ? {} : { budget }),
-      toggles: toggles as Record<string, boolean>, serviceMode, densityCategory, reportOpen, tab });
-  }, [session, center, budget, toggles, serviceMode, densityCategory, reportOpen, tab]);
+      toggles: toggles as Record<string, boolean>, serviceMode, densityCategory, reportOpen });
+  }, [session, center, budget, toggles, serviceMode, densityCategory, reportOpen]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -236,9 +212,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
    */
   useEffect(() => {
     if (state.phase !== 'completed' || revision === undefined) return;
-    const pending = MAP_LAYERS.find(id => (toggles[id]
-      // 设施图层总是取：右栏的「周边设施」与图层开关无关，关了点位也要有清单。
-      || id === 'facilities'
+    const pending = MAP_LAYERS.find(id => (toggles[id] || id === 'facilities'
       || (Object.keys(HEAT_DEPENDENCIES) as HeatLayer[])
         .some(heat => toggles[heat] && HEAT_DEPENDENCIES[heat].includes(id)))
       && state.layers?.[id]?.revision !== revision && failed[id] !== revision);
@@ -276,13 +250,14 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     : (drawables.facilities?.points ?? []).find(item => item.key === selected) ?? null,
   [drawables, selected]);
 
-  const draft = coordinates(lng, lat);
-  const valid = draft !== null;
+  const valid = lng !== null && lat !== null && Number.isFinite(lng) && Number.isFinite(lat)
+    && lng >= -180 && lng <= 180 && lat > -85 && lat < 85;
   const engines = view?.engines ?? [];
   const selectedEngine = engines.find(item => item.engineId === engine) ?? null;
   const live = controller.hasLiveTask;
   /** 这一轮任务提交时的中心：结果、进行中的任务都按它画，不按选点草稿画。 */
   const taskCenter = snapshot?.center ?? state.input?.center;
+  const draft = valid ? { lng: +lng!.toFixed(6), lat: +lat!.toFixed(6) } : null;
   const stale = taskCenter !== undefined && draft !== null
     && (taskCenter.lng !== draft.lng || taskCenter.lat !== draft.lat);
   const canStart = valid && !busy && !live && !!view && !!selectedEngine;
@@ -291,13 +266,14 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   function choose(next: Center) {
     setCenter(next); setLng(next.lng); setLat(next.lat);
   }
-  // 手输坐标同样算一次选点：有效就把地图中心标记跟过去，无效（清空中）保持上一次的位置。
   function edit(axis: 'lng' | 'lat', value: number | null) {
     const nextLng = axis === 'lng' ? value : lng;
     const nextLat = axis === 'lat' ? value : lat;
     if (axis === 'lng') setLng(value); else setLat(value);
-    const next = coordinates(nextLng, nextLat);
-    if (next) setCenter(next);
+    if (nextLng !== null && nextLat !== null && Number.isFinite(nextLng) && Number.isFinite(nextLat)
+      && nextLng >= -180 && nextLng <= 180 && nextLat > -85 && nextLat < 85) {
+      setCenter({ lng: +nextLng.toFixed(6), lat: +nextLat.toFixed(6) });
+    }
   }
   function start() {
     if (!canStart || !draft) return;
@@ -326,11 +302,10 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
 
   const overall = snapshot?.report?.overall ?? snapshot?.scores?.overall ?? null;
   const items = useMemo(() => snapshot ? coverageItems(snapshot) : [], [snapshot]);
-  /** 右栏「周边设施」：始终用本次体检的中心与这一版设施图层，不随地图开关变。 */
   const nearestGroups = useMemo(() => nearestFacilities(drawables.facilities, taskCenter ?? null),
     [drawables.facilities, taskCenter]);
-  /** 天气跟着当前选点走；草稿无效时退回本次体检中心，还没有中心就不显示读数。 */
   const weatherCenter = draft ?? taskCenter ?? null;
+  const idle = state.phase === 'idle';
 
   const facts = task && <Descriptions className="wb-facts" size="small" column={1} items={[
     { key: 'task', label: '任务', children: <span data-testid="checkup-task-id">{task.taskId}</span> },
@@ -338,8 +313,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
       data-revision={task.revision}>{`第 ${task.revision} 版`}</span> },
     { key: 'status', label: '状态', children: task.status +
       (task.businessStatus ? `（${BUSINESS_LABELS[task.businessStatus] ?? task.businessStatus}）` : '') },
-    { key: 'spend', label: '网络请求', children: <span data-testid="checkup-requests"
-      data-count={task.networkRequests}>{`${task.networkRequests} 次`}</span> },
+    { key: 'spend', label: '本任务已用', children: <span data-testid="checkup-requests"
+      data-count={task.networkRequests}>{`${task.networkRequests} 次网络尝试（等时圈、设施与核验各池合计；只数真的发出的请求）`}</span> },
     { key: 'tier', label: '等时圈档位', children: `${task.budget} 次上限` },
     ...(liveNow && liveNow.stage ? [{ key: 'stage', label: '当前阶段', children:
       <span data-testid="checkup-stage-now" data-stage={liveNow.stage}>
@@ -360,61 +335,39 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
           : `${duration(liveNow.activityAgo)}前`}</span> }] : []),
   ]} />;
 
-  return <main className="wb-body" data-stage={state.phase === 'idle' ? 'idle' : 'active'}>
+  return <main className="wb-body" data-stage={idle ? 'idle' : 'active'}>
     <aside className="wb-panel wb-side" aria-label="体检条件">
-      <div className="wb-tabs" role="tablist" aria-label="体检设置">
-        {TAB_KEYS.map(key => <button key={key} type="button" role="tab"
-          id={`checkup-tab-${key}`} data-testid={`checkup-tab-${key}`}
-          aria-selected={tab === key} aria-controls={`checkup-panel-${key}`}
-          tabIndex={tab === key ? 0 : -1}
-          className={tab === key ? 'wb-tab wb-tab-active' : 'wb-tab'}
-          onClick={() => chooseTab(key)}>{TAB_LABELS[key]}</button>)}
-      </div>
-      <div className="wb-tabpanels">
-        <div className="wb-scroll wb-tabpanel" role="tabpanel" id="checkup-panel-location"
-          aria-labelledby="checkup-tab-location" hidden={tab !== 'location'}>
-          <section className="wb-sec">
-            <h2 className="wb-h">体检中心</h2>
-            <LocationControls center={center} onPick={choose} />
-            <div className="wb-coords">
-              <label className="wb-field"><span>经度</span><InputNumber aria-label="经度" value={lng}
-                onChange={value => edit('lng', value)} precision={6} controls={false} /></label>
-              <label className="wb-field"><span>纬度</span><InputNumber aria-label="纬度" value={lat}
-                onChange={value => edit('lat', value)} precision={6} controls={false} /></label>
-            </div>
-            <p className="wb-hint">也可直接在地图上点选；域外面积不计入覆盖率。</p>
-            {!valid && <Alert type="error" title="请输入有效坐标：经度 −180～180，纬度大于 −85 且小于 85" />}
-          </section>
-        </div>
-
-        <div className="wb-scroll wb-tabpanel" role="tabpanel" id="checkup-panel-engine"
-          aria-labelledby="checkup-tab-engine" hidden={tab !== 'engine'}>
-          <section className="wb-sec">
-            <h2 className="wb-h">引擎与预算</h2>
-            <p className="wb-group">成圈算法</p>
-            {algorithmSwitch}
-            {capabilityError && <Alert type="error" title={capabilityError} showIcon />}
-            <p className="wb-hint" data-testid="checkup-engine">引擎：{selectedEngine?.label
-              ?? (view ? `${engine}（后端能力表未提供，无法提交）`
-                : capabilityError ? '未能读取能力表，暂不能提交' : '正在读取能力表')}
-              {selectedEngine?.engineVersion && <span className="wb-version">v{selectedEngine.engineVersion}</span>}</p>
-            <label className="wb-field"><span>等时圈采样预算</span><Select aria-label="调用预算"
-              value={budget ?? undefined} placeholder="—"
-              onChange={setBudget}
-              options={(selectedEngine?.budgets ?? []).map(value => ({ value, label: `${value} 次` }))} /></label>
-            <p className="wb-hint">步行 900 秒 · 服务标准 1000 米</p>
-            {selectedEngine?.caveat && <Alert type="warning" title={selectedEngine.caveat} />}
-            {(view?.quota.label || (view?.quota.lines.length ?? 0) > 0) && <div className="wb-quota">
-              {view?.quota.label && <p data-testid="quota-label">{view.quota.label}</p>}
-              {view?.quota.lines.map(line => <p key={line}>{line}</p>)}
-            </div>}
-          </section>
-        </div>
-
-        <div className="wb-scroll wb-tabpanel" role="tabpanel" id="checkup-panel-layers"
-          aria-labelledby="checkup-tab-layers" hidden={tab !== 'layers'}>
-          <section className="wb-sec">
-            <h2 className="wb-h">地图图层</h2>
+      <div className="wb-scroll">
+        <section className="wb-sec wb-setup">
+          <LocationControls center={center} onPick={choose} />
+          <div className="wb-coords">
+            <InputNumber aria-label="经度" prefix="经度" value={lng}
+              onChange={value => edit('lng', value)} precision={6} controls={false} />
+            <InputNumber aria-label="纬度" prefix="纬度" value={lat}
+              onChange={value => edit('lat', value)} precision={6} controls={false} />
+          </div>
+          {!valid && <Alert type="error" title="请输入有效坐标：经度 −180～180，纬度大于 −85 且小于 85" />}
+          <div className="wb-inline">
+            <span>采样预算</span>
+            <Select aria-label="调用预算" value={budget ?? undefined} placeholder="—" onChange={setBudget}
+              options={(selectedEngine?.budgets ?? []).map(value => ({ value, label: `${value} 次` }))} />
+          </div>
+          {capabilityError && <Alert type="error" title={capabilityError} showIcon />}
+          {selectedEngine?.alert && <Alert type="warning" showIcon title={selectedEngine.alert} />}
+        </section>
+        <footer className="wb-actions">
+          <Button aria-label="开始体检" type="primary" size="large" block onClick={start}
+            disabled={!canStart}>开始体检</Button>
+          {(live || (!busy && !idle)) && <div className="wb-actions-row">
+            {live && <Button onClick={() => void controller.cancel()}
+              disabled={state.phase === 'cancelling'}>取消任务</Button>}
+            {!live && !busy && !idle && <Button onClick={clear}>清除结果</Button>}
+          </div>}
+          {live && <p className="wb-hint" data-testid="checkup-live-note">任务进行中：切页、切换算法或刷新都不会取消它。</p>}
+        </footer>
+        <WeatherCard center={weatherCenter} />
+        <nav className="wb-dir" aria-label="目录">
+          <Fold title="图层" defaultOpen className="wb-layers">
             <p className="wb-group">热力 · 二选一</p>
             <div className="wb-layer">
               <Checkbox checked={!!toggles.service}
@@ -442,36 +395,44 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
                 {LAYER_STYLES[id].label}</Checkbox>
               {layerErrors[id] && <p className="wb-layer-error">{layerErrors[id]}</p>}
             </div>)}
-            <details className="wb-more wb-notes">
-              <summary>读图说明</summary>
-              <dl>
-                <dt>服务覆盖热力</dt>
-                <dd>后端评估格的结论连成渐变面：已覆盖按最近设施步行距离着色，服务不足为灰，数据未知为淡紫。模型估计，不是实测。</dd>
-                <dt>设施密度热力</dt>
-                <dd>圈内已接收设施等权计算，120 米核半径，单位个/公顷；同一疑似重复组只算一处。颜色表示设施扎堆程度，不表示覆盖率。与服务覆盖热力二选一。</dd>
-                <dt>水系标注</dt>
-                <dd data-testid="water-layer-note">
-                  {snapshot && !water.available ? '这一版没有水系证据（早于水系复核），无可标注的内容。'
-                    : '计算用的水系：复核范围（虚线框）内的已核实河道按实测宽度成面，补录水体与桥梁已核对；'
-                      + '底图水面画错处（灰斜线，实为陆地）与来源冲突未裁决处（橙斜线，数据冲突／未知）单独标出。'
-                      + '底图水面只作参照，不代表计算结果。'}</dd>
-                {MAP_LAYERS.map(id => <div key={id}><dt>{LAYER_STYLES[id].label}</dt>
-                  <dd>{LAYER_STYLES[id].note}</dd></div>)}
-              </dl>
-            </details>
-          </section>
-        </div>
+          </Fold>
+          <Fold title="说明" className="wb-notes">
+            <dl>
+              <dt>算法</dt>
+              <dd data-testid="checkup-engine">引擎：{selectedEngine?.label
+                ?? (view ? `${engine}（后端能力表未提供，无法提交）`
+                  : capabilityError ? '未能读取能力表，暂不能提交' : '正在读取能力表')}
+                {selectedEngine?.engineVersion && <span className="wb-version">v{selectedEngine.engineVersion}</span>}</dd>
+              {selectedEngine?.caveat && <dd>{selectedEngine.caveat}</dd>}
+              <dt>口径</dt>
+              <dd>步行 900 秒成圈 · 服务标准步行 1000 米 · 坐标 BD09LL。可以直接在地图上点选中心；评估域以该点划定，域外面积不计入覆盖率。</dd>
+              <dt>未知与灰区</dt>
+              <dd>未知不等于不可达：灰区只覆盖"路网与检索数据都足够、却仍超出服务标准"的连片区域。评分区间是上界与下界，不是一个确定的百分比。</dd>
+              <dt>服务覆盖热力</dt>
+              <dd>后端评估格的结论连成渐变面：已覆盖按最近设施步行距离着色，服务不足为灰，数据未知为淡紫。模型估计，不是实测。</dd>
+              <dt>设施密度热力</dt>
+              <dd>圈内已接收设施等权计算，120 米核半径，单位个/公顷；同一疑似重复组只算一处。颜色表示设施扎堆程度，不表示覆盖率。与服务覆盖热力二选一。</dd>
+              <dt>水系标注</dt>
+              <dd data-testid="water-layer-note">
+                {snapshot && !water.available ? '这一版没有水系证据（早于水系复核），无可标注的内容。'
+                  : '计算用的水系：复核范围（虚线框）内的已核实河道按实测宽度成面，补录水体与桥梁已核对；'
+                    + '底图水面画错处（灰斜线，实为陆地）与来源冲突未裁决处（橙斜线，数据冲突／未知）单独标出。'
+                    + '底图水面只作参照，不代表计算结果。'}</dd>
+              {MAP_LAYERS.map(id => <div key={id}><dt>{LAYER_STYLES[id].label}</dt>
+                <dd>{LAYER_STYLES[id].note}</dd></div>)}
+              {view && <>
+                <dt>预算</dt>
+                <dd className="wb-quota">
+                  {view.quota.label && <p data-testid="quota-label">
+                    {/* 余额的说法逐字来自后端：它只算本应用自己的额度。 */}
+                    {view.quota.label}</p>}
+                  {view.quota.lines.map(line => <p key={line}>{line}</p>)}
+                </dd>
+              </>}
+            </dl>
+          </Fold>
+        </nav>
       </div>
-      <footer className="wb-actions">
-        <Button aria-label="开始体检" type="primary" size="large" block onClick={start}
-          disabled={!canStart}>开始体检</Button>
-        {(live || (!busy && state.phase !== 'idle')) && <div className="wb-actions-row">
-          {live && <Button onClick={() => void controller.cancel()}
-            disabled={state.phase === 'cancelling'}>取消任务</Button>}
-          {!live && !busy && state.phase !== 'idle' && <Button onClick={clear}>清除结果</Button>}
-        </div>}
-        {live && <p className="wb-hint" data-testid="checkup-live-note">任务未结束：切页、切算法、刷新都不会取消它；要按新条件体检请先取消。</p>}
-      </footer>
     </aside>
 
     <section className="wb-map api-map-section" data-testid="checkup-map-section"
@@ -486,71 +447,51 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
         selectedId={selected} onSelect={setSelected} />
       <div className="wb-map-banners">
         {snapshot && stale && <Alert type="warning" showIcon
-          title="条件已修改：地图与报告仍是上次体检的结果。" />}
+          title="中心已修改：地图与报告仍是上次体检的结果" />}
         {!snapshot && live && stale && <Alert type="info" showIcon
-          title="任务仍按提交时的中心计算；新选点需等它结束。" />}
+          title="进行中的任务仍按原中心计算" />}
         {version && version.outdatedBy.length > 0 && <Alert type="warning" showIcon
           data-testid="checkup-outdated" title={`旧版本（第 ${snapshot?.revision} 版）：水系数据已修订`}
           description={outdatedText(version)} />}
       </div>
     </section>
 
-    <aside className="wb-panel wb-results" aria-label="体检结果">
+    {!idle && <aside className="wb-panel wb-results" aria-label="体检结果">
       <div className="wb-scroll">
-        <section className="wb-sec">
+        <section className="wb-sec wb-status">
           <div className="wb-sec-head">
-            <h2 className="wb-h">体检进度</h2>
-            {state.phase !== 'idle' && <span className="wb-phase" data-testid="checkup-phase"
+            <span className="wb-phase" data-testid="checkup-phase"
               data-phase={state.phase} data-tone={PHASE_TONE[state.phase] ?? 'live'}>
-              {PHASE_LABELS[state.phase] ?? state.phase}</span>}
+              {PHASE_LABELS[state.phase] ?? state.phase}</span>
+            {task && <b className="wb-clock" data-testid="checkup-elapsed"
+              data-seconds={liveNow ? liveNow.elapsed ?? '' : task.elapsedSeconds}>
+              {liveNow ? liveNow.kind === 'queued' ? `尚未开始（已排队 ${duration(liveNow.queued)}）`
+                : liveNow.elapsed === null ? '尚未开始' : duration(liveNow.elapsed)
+                : `${task.elapsedSeconds.toFixed(1)} 秒`}</b>}
           </div>
-          {state.phase === 'idle' && <div className="wb-empty">
-            <p className="wb-empty-title">还没有体检结果</p>
-            <p>选好中心后点“开始体检”，将给出三类设施覆盖率、服务灰区与步行路线核验。</p>
-          </div>}
-          {state.input && state.phase !== 'idle' && <p className="wb-hint wb-center">
-            中心 {state.input.center.lng.toFixed(6)}, {state.input.center.lat.toFixed(6)}</p>}
+          {task && <StageProgress stage={task.stage} />}
           {liveNow && <div className="wb-live" role="status" data-testid="checkup-live"
             data-kind={liveNow.kind} data-tone={LIVE_ALERT[liveNow.kind]}>
             <strong>{liveNow.title}</strong>
             <p>{liveNow.hint + (liveNow.kind === 'restoring' && state.input
               ? `（请求标识 ${state.input.clientRequestId}）` : '')}</p>
           </div>}
-          {task && <>
-            <div className="wb-clock">
-              <span>已用时</span>
-              <b data-testid="checkup-elapsed"
-                data-seconds={liveNow ? liveNow.elapsed ?? '' : task.elapsedSeconds}>
-                {liveNow ? liveNow.kind === 'queued' ? `尚未开始（已排队 ${duration(liveNow.queued)}）`
-                  : liveNow.elapsed === null ? '尚未开始' : duration(liveNow.elapsed)
-                  : `${task.elapsedSeconds.toFixed(1)} 秒`}</b>
-            </div>
-            <StageProgress stage={task.stage} />
-            {liveNow ? facts : <details className="wb-more"><summary>任务信息</summary>{facts}</details>}
-            {version && snapshot?.taskId === task.taskId && <p className="wb-hint" data-testid="checkup-version"
-              data-recomputed={version.recomputed ? 'yes' : 'no'}>
-              {'水系数据：' + (version.applied === null ? '早于水系复核'
-                : version.applied.length === 0 ? 'OSM 原样（未采用复核）' : version.applied.join('、'))}
-              {version.recomputed && <><br />{recomputedText(version.recomputed)}</>}</p>}
-          </>}
           {state.phase === 'cancelled' && <Alert type="info" title="任务已取消"
-            description="取消只停后续请求，已发出的调用仍计预算。" />}
+            description="已经发出的调用仍计入本应用的预算账本。" />}
           {state.error && <Alert type="error" title={state.error} showIcon data-testid="checkup-error"
             action={<Button aria-label="重试" size="small"
               onClick={() => void controller.retry()}>{state.recovery === 'unconfirmed' ? '重新提交'
                 : state.recovery === 'expired' || task?.status === 'failed' ? '重新体检' : '重试'}</Button>} />}
         </section>
 
-        <WeatherCard center={weatherCenter} />
-
         {snapshot && <section className="wb-sec wb-summary" aria-label="覆盖区间摘要">
-          <h2 className="wb-h">覆盖率区间</h2>
+          <p className="wb-label">覆盖率</p>
           {overall && overall.available ? <>
             <p className="wb-range"><b>{fixed(overall.coverageLowerPct)}</b><span>～</span>
               <b>{fixed(overall.coverageUpperPct)}</b><small>%</small></p>
             <RangeMeter lower={overall.coverageLowerPct} upper={overall.coverageUpperPct} />
             <p className="wb-meter-key"><i className="k-known" />已知覆盖<i className="k-unknown" />未知
-              <span>可评估 {percent(overall.assessablePct)} · 未知 {percent(overall.unknownPct)}</span></p>
+              <span>可评估 {percent(overall.assessablePct)}</span></p>
           </> : <Alert type="warning" showIcon
             title="总体区间暂不给出" description={overall?.reason ?? '缺少分类结论'} />}
           <ul className="wb-cats">{items.map(item => <li key={item.category}>
@@ -559,15 +500,14 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             <span className="wb-cat-value">{item.supported
               ? `${fixed(item.lowerPct)}–${fixed(item.upperPct)}%` : '无法确定'}</span>
           </li>)}</ul>
-          <Button block onClick={() => setReportOpen(true)}>查看体检报告</Button>
+          <Button block type="primary" ghost onClick={() => setReportOpen(true)}>查看体检报告</Button>
         </section>}
 
-        {snapshot && <section className="wb-sec" data-testid="checkup-nearest">
+        {snapshot && <section className="wb-sec wb-nearest" data-testid="checkup-nearest">
           <h2 className="wb-h">周边设施 · 每类最近 5 处</h2>
           {!drawables.facilities ? <p className="wb-hint">{layerErrors.facilities
             ?? '设施结果尚未加载。'}</p>
-            : drawables.facilities.state === 'empty' ? <p className="wb-hint">
-              本次体检没有接收的设施。</p>
+            : drawables.facilities.state === 'empty' ? <p className="wb-hint">本次体检没有接收的设施。</p>
             : <>
               <p className="wb-hint">按直线距离排序（非步行距离），点击一处可查询路线。</p>
               {nearestGroups.map(group => <div className="wb-near" key={group.category}>
@@ -589,23 +529,32 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             </>}
         </section>}
 
-        {snapshot && <section className="wb-sec">
-          <h2 className="wb-h">设施详情</h2>
-          {selectedPoint ? <>
-            <Descriptions className="wb-facts" size="small" column={1} items={[
-              { key: 'id', label: '设施', children: selectedPoint.key },
-              { key: 'title', label: '摘要', children: selectedPoint.title },
-            ]} />
-            <Button onClick={() => void controller.detail(selectedPoint.key)}
+        {snapshot && (selectedPoint || state.route || state.routeError) && <section className="wb-sec wb-facility">
+          <p className="wb-label">设施</p>
+          {selectedPoint && <>
+            <p className="wb-facility-title">{selectedPoint.title}</p>
+            <Button size="small" onClick={() => void controller.detail(selectedPoint.key)}
               disabled={busy}>查询步行路线</Button>
-          </> : <p className="wb-hint">点选设施可查询实际步行路线。</p>}
-          {(selectedPoint || state.route || state.routeError)
-            && <RouteDetail route={state.route} error={state.routeError} />}
+          </>}
+          <RouteDetail route={state.route} error={state.routeError} />
         </section>}
-      </div>
-    </aside>
 
-    <Drawer title="体检报告" open={reportOpen} onClose={() => setReportOpen(false)} size={760}>
+        {task && <Fold title="任务信息" className="wb-task">
+          {facts}
+          {state.input && <p className="wb-hint wb-center">
+            中心 {state.input.center.lng.toFixed(6)}, {state.input.center.lat.toFixed(6)}</p>}
+          {version && snapshot?.taskId === task.taskId && <p className="wb-hint" data-testid="checkup-version"
+            data-recomputed={version.recomputed ? 'yes' : 'no'}>
+            {`结果版本：第 ${snapshot.revision} 版 · 水系 `
+              + (version.applied === null ? '早于水系复核' : version.applied.length === 0 ? 'OSM 原样（未采用复核）'
+                : version.applied.join('、'))}
+            {version.recomputed && <><br />{recomputedText(version.recomputed)}</>}</p>}
+        </Fold>}
+      </div>
+    </aside>}
+
+    <Drawer title="体检报告" open={reportOpen} onClose={() => setReportOpen(false)} size={960}
+      rootClassName="rp-drawer">
       {snapshot ? <CheckupReport snapshot={snapshot} stale={stale} waterReviews={view?.waterReviews} />
         : <p className="api-muted">体检完成后在这里显示报告。</p>}
     </Drawer>

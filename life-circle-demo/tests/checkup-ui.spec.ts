@@ -192,9 +192,14 @@ function counted(markers: { options: { title: string } }[]): number {
     sum + (Number(/^(\d+) 个点/.exec(marker.options.title)?.[1]) || 1), 0);
 }
 
-/** 左栏现在是三个选项卡：点哪一块就切到哪一块（体检中心 / 引擎与预算 / 地图图层）。 */
-const openTab = (page: Page, tab: '体检中心' | '引擎与预算' | '地图图层') =>
-  page.getByRole('tab', { name: tab }).click();
+/** 地图浮动操作卡把图层与详细说明折叠收纳。 */
+const openTab = async (page: Page, tab: '体检中心' | '引擎与预算' | '地图图层') => {
+  const section = tab === '地图图层' ? '.wb-layers' : tab === '引擎与预算' ? '.wb-notes' : null;
+  if (section) {
+    const fold = page.locator(section);
+    if (await fold.getAttribute('open') === null) await fold.locator('summary').click();
+  }
+};
 
 const pickAndStart = async (page: Page) => {
   await page.getByTestId('checkup-map').click();

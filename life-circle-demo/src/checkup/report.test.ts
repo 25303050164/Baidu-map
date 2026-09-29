@@ -71,7 +71,7 @@ describe('coverage rows', () => {
 
   it('draws the bar from the lower bound, spanning to the upper one', () => {
     expect(coverageBars(coverageItems(snapshot()))[0]).toMatchObject({ lower: 40, span: 30,
-      available: true, color: '#168875' });
+      available: true, color: '#12b886' });
   });
 });
 
