@@ -21,11 +21,14 @@ const OUTPUT = resolve(process.env.CHECKUP_LIVE_OUTPUT_DIR ?? 'output/checkup-li
 const redact = (value: string) => value.replace(/([?&](?:ak|key|token)=)[^&\s]+/gi, '$1[REDACTED]');
 /** 国定一社区。历次真实跑用的同一个中心，报告之间才可比。 */
 const CENTER = { lng: 121.513925, lat: 31.313079 };
-const BUDGET = 400;
-const ENGINES: Record<string, { label: string; version: string }> = {
+/** 档位与引擎可以按轮次收窄（例如只跑 E8.2.1 的 800 档），默认仍是两个引擎各 400。 */
+const BUDGET = Number(process.env.CHECKUP_LIVE_BUDGET ?? 400);
+const ALL_ENGINES: Record<string, { label: string; version: string }> = {
   baidu_e82: { label: '百度边界搜索（E8.2）', version: 'local-multicross-e82' },
   osm_hybrid: { label: 'OSM＋百度', version: 'hybrid-v1.5.0' },
 };
+const ENGINES = Object.fromEntries(Object.entries(ALL_ENGINES).filter(([id]) =>
+  !process.env.CHECKUP_LIVE_ENGINES || process.env.CHECKUP_LIVE_ENGINES.split(',').includes(id)));
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 /** 任务的截止时间是后端自己的 1800 秒，这里留出取图层、截图与写盘的时间。 */
 const TASK_TIMEOUT_MS = 1680000;
@@ -97,8 +100,8 @@ test('浏览器 AK 能加载真实 BMapGL 底图，页面也能连上真后端',
     throw new Error(`真实底图预检失败：${problems.join(' | ') || '没有浏览器错误记录'}\n${error}`);
   });
   expect(await page.evaluate(() => typeof (window as { BMapGL?: unknown }).BMapGL)).toBe('object');
-  // 能力表来自真后端：引擎下拉能选，就说明这一页确实读到了它。
-  await expect(page.getByRole('combobox', { name: '引擎' }))
+  // 能力表来自真后端：预算档位能选，就说明这一页确实读到了它（档位只来自能力表）。
+  await expect(page.getByRole('combobox', { name: '调用预算' }))
     .toBeEnabled({ timeout: 60000 }).catch(error => {
       throw new Error(`读不到 /api/v2/capabilities：${problems.join(' | ') || '没有错误记录'}\n${error}`);
     });
@@ -128,14 +131,14 @@ for (const [engine, { label, version }] of Object.entries(ENGINES)) {
     mkdirSync(dir, { recursive: true });
     await page.goto('/');
 
-    // 引擎与档位都来自后端能力表：界面不自己编档位，这里也不替它编。
-    const engineSelect = page.getByRole('combobox', { name: '引擎' });
-    await expect(engineSelect).toBeEnabled({ timeout: 60000 });
+    // 引擎在页首的算法选择里切换，档位来自后端能力表：界面不自己编档位，这里也不替它编。
+    await page.locator('.ant-segmented-item', { hasText: label }).click();
+    await expect(page.getByRole('combobox', { name: '调用预算' })).toBeEnabled({ timeout: 60000 });
     await page.getByRole('spinbutton', { name: '经度', exact: true }).fill(String(CENTER.lng));
     await page.getByRole('spinbutton', { name: '纬度', exact: true }).fill(String(CENTER.lat));
-    await pick(page, '引擎', label);
-    // 选中的证据用面板上的引擎版本，而不是下拉框内部的类名：换了引擎版本就该跟着变。
-    await expect(page.getByText(`引擎版本 ${version}`)).toBeVisible();
+    // 选中的证据用面板上的引擎版本，而不是控件内部的类名：换了引擎版本就该跟着变。
+    await expect(page.getByTestId('checkup-engine')).toContainText(label);
+    await expect(page.getByTestId('checkup-engine')).toContainText(version);
     await pick(page, '调用预算', String(BUDGET));
 
     const created = page.waitForResponse(response =>
@@ -199,15 +202,16 @@ for (const [engine, { label, version }] of Object.entries(ENGINES)) {
     const text = await drawn.innerText();
     expect(text).toContain('最低覆盖率');
     expect(text).toContain('最高覆盖率');
-    expect(text).toContain('已覆盖 / 缺口 / 未知');
     expect(text, '这一轮没有做出覆盖评估，因此没有灰区面积').not.toContain('本次未进行服务覆盖评估');
     expect(text).toContain('灰区合计');
+    // 每类一行：覆盖率区间（下界～上界）与三态面积。
     const coverage = await page.locator('[data-testid^="coverage-"]').first().innerText();
-    expect(coverage).toMatch(/最低覆盖率[\s\S]*?C \/ A = \d+(\.\d+)?%/);
-    expect(coverage).toMatch(/最高覆盖率[\s\S]*?\(C \+ U\) \/ A = \d+(\.\d+)?%/);
+    expect(coverage).toMatch(/\d+(\.\d+)?%\s*～\s*\d+(\.\d+)?%/);
     // 单位是界面自己定的（一万平方米以上改用公顷），所以这里断的是"带了单位"，
     // 不是"带了某一个单位"。
-    expect(coverage, '覆盖面积要带单位写出来').toMatch(/已覆盖 \/ 缺口 \/ 未知[\s\S]*?(公顷|m²)/);
+    expect(coverage, '覆盖面积要带单位写出来').toMatch(/已覆盖[\s\S]*?(公顷|m²)/);
+    expect(coverage).toContain('缺口');
+    expect(coverage).toContain('未知');
 
     await page.screenshot({ path: resolve(dir, 'report-top.png') });
     await page.keyboard.press('Escape');

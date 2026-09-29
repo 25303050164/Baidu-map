@@ -30,6 +30,7 @@ backend/logs/
 backend/.poi-ledgers/
 backend/.hybrid-ledgers/
 backend/.checkups/
+backend/.checkups-smoke/
 backend/.quota/
 # Offline benchmark outputs and local test logs
 .e82-bench/
