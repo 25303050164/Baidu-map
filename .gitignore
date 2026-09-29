@@ -49,5 +49,6 @@ life-circle-algorithm/build/
 *.osm-cache
 *.osm-cache.tmp
 data/osm/*.poly
+data/osm/*.md5
 data/osm/*.geojson
 data/osm/graph_metadata.json
