@@ -20,6 +20,15 @@ from .protocol import EngineCapabilities, EngineContext, IsochroneAsk, Isochrone
 # The boundary core is tuned for this request shape; a checkup never overrides it.
 MAX_EXTENT_M = 1600
 BUDGET_TIERS = (200, 400, 800)
+#: The synthetic stand-in's walking speed: time is straight-line distance at this
+#: speed, so every boundary it draws is a circle of 900 s × 1.2 m/s = 1080 m.
+SYNTHETIC_SPEED_MPS = 1.2
+SYNTHETIC_NOTES = [
+    "当前为离线合成模式（ANALYSIS_PROVIDER=synthetic）：边界按直线距离算出，"
+    "是半径约 1080 米的正圆，不是百度实测",
+    "合成模式下设施检索、服务覆盖与核验都不运行",
+    "切回百度模式：去掉 ANALYSIS_PROVIDER 环境变量（或设为 baidu），重启后端",
+]
 
 
 def e82_request(origin, budget: int, *, qps: float | None = None,
@@ -42,13 +51,23 @@ class BaiduE82Engine:
     def __init__(self, settings, gate, provider_factory=None):
         self.settings, self.gate, self.provider_factory = settings, gate, provider_factory
 
+    @property
+    def synthetic(self) -> bool:
+        """The built-in circle stand-in answers instead of Baidu."""
+        return self.provider_factory is None and self.settings.analysis_provider == "synthetic"
+
     def capabilities(self) -> EngineCapabilities:
+        # A synthetic deployment must say so where the engine is chosen: its circle
+        # otherwise looks exactly like a real result.
+        notes = SYNTHETIC_NOTES if self.synthetic else [
+            "端点证据来自百度实际返回，不来自合成端点",
+            "半径与网格策略由服务端控制，请求不能覆盖",
+            "内部未独立核验，质量不会高于 partial"]
         return EngineCapabilities(
-            engine_id=self.engine_id, label="百度边界搜索（E8.2）", engine_version=ALGORITHM,
-            budgets=BUDGET_TIERS, default_budget=400, requires_osm_graph=False,
-            notes=["端点证据来自百度实际返回，不来自合成端点",
-                   "半径与网格策略由服务端控制，请求不能覆盖",
-                   "内部未独立核验，质量不会高于 partial"])
+            engine_id=self.engine_id,
+            label="百度边界搜索（E8.2）" + ("· 合成替身" if self.synthetic else ""),
+            engine_version=ALGORITHM, budgets=BUDGET_TIERS, default_budget=400,
+            requires_osm_graph=False, notes=list(notes))
 
     def unavailable_reason(self) -> str | None:
         """Why a task could not run at all, known before it is admitted."""
@@ -64,7 +83,7 @@ class BaiduE82Engine:
             return provider
         if self.settings.analysis_provider == "synthetic":
             # Synthetic points have exact endpoints and never claim real ones.
-            return EndpointAnalyticProvider(origin, lambda x, y: math.hypot(x, y) / 1.2)
+            return EndpointAnalyticProvider(origin, lambda x, y: math.hypot(x, y) / SYNTHETIC_SPEED_MPS)
         if not self.settings.ak_configured:
             raise ValueError("walking_ak_not_configured")
         silence_transport_logs()

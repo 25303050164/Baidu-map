@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -16,6 +18,8 @@ from .analyses import AnalysisManager, analysis_router
 from .hybrid_api import HybridManager, hybrid_router
 from .osm_api import router as osm_router
 from .quota import Quota
+
+logger = logging.getLogger(__name__)
 
 
 class HealthResponse(BaseModel):
@@ -50,6 +54,10 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
         # 重启清点在**开始服务**时做，不在导入时：导入 app 对象（比如导出 OpenAPI）
         # 不该把别人正在跑的体检判成中断。清点只改状态，不重放任何已付费的请求。
         checkups.interrupt_unfinished()
+        if config.analysis_provider == "synthetic" and provider_factory is None:
+            # 环境变量优先于 .env：终端里设过一次 synthetic，之后每次启动都是合成模式。
+            logger.warning("ANALYSIS_PROVIDER=synthetic：离线合成模式，E8.2 只会画出半径约 1080 米的正圆，"
+                           "设施检索、服务覆盖与核验不运行。去掉该环境变量（或设为 baidu）后重启即为百度模式。")
         yield
         await checkups.close()
         await hybrid.close()
