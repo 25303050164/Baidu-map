@@ -214,6 +214,8 @@ async function open(page: Page, slot: 'e82' | 'hybrid', ledger: Ledger) {
 }
 
 async function startAt(page: Page, centre: LngLat) {
+  // 坐标输入在「体检中心」选项卡里；切选项卡不影响任务，只是界面导航。
+  await page.getByTestId('checkup-tab-location').click();
   await page.getByRole('spinbutton', { name: '经度' }).fill(centre.lng.toFixed(6));
   await page.getByRole('spinbutton', { name: '纬度' }).fill(centre.lat.toFixed(6));
   await page.getByRole('spinbutton', { name: '纬度' }).press('Tab');
@@ -224,6 +226,8 @@ async function startAt(page: Page, centre: LngLat) {
 
 const segment = (page: Page, text: string) => page.locator('.ant-segmented-item', { hasText: text });
 async function switchTo(page: Page, text: string) {
+  // 成圈算法切换已并入「引擎与预算」选项卡：先切到那一块，再点算法。
+  await page.getByTestId('checkup-tab-engine').click();
   await segment(page, text).click();
   await expect(segment(page, text)).toHaveClass(/ant-segmented-item-selected/);
 }

@@ -45,6 +45,11 @@ async function setup(page: Page, options: Options = {}) {
   await installMapSdk(page);
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
+    // 天气卡片的数据源：测试里给一份固定的实况，别让用例依赖外网。
+    if (url.hostname === 'api.open-meteo.com') {
+      return route.fulfill({ json: { current: { time: '2026-09-29T18:00', temperature_2m: 21.5,
+        relative_humidity_2m: 55, apparent_temperature: 22.1, weather_code: 1, wind_speed_10m: 9.2 } } });
+    }
     if (url.hostname !== '127.0.0.1') return route.abort();
     if (!url.pathname.startsWith('/api/v2/')) return route.continue();
 
@@ -178,14 +183,18 @@ function snapshotFor(options: Options, submitted: { center: { lng: number; lat: 
 /** 地图审计：只取当前挂在图上的多边形与标记。 */
 const audit = (page: Page) => page.evaluate(() => (window as unknown as { __mapAudit: {
   paths: string[][]; markers: { uid: number; point: { lng: number; lat: number };
-    options: { title: string } }[]; pans: { lng: number; lat: number }[]; creations: number;
-  active: number } }).__mapAudit);
+    options: { title: string } }[]; pans: { lng: number; lat: number }[]; zooms: string[];
+  creations: number; active: number } }).__mapAudit);
 
 /** 标题里的点数：同格合并时写的是这一格的数量，没有数字的按一个算。 */
 function counted(markers: { options: { title: string } }[]): number {
   return markers.reduce((sum, marker) =>
     sum + (Number(/^(\d+) 个点/.exec(marker.options.title)?.[1]) || 1), 0);
 }
+
+/** 左栏现在是三个选项卡：点哪一块就切到哪一块（体检中心 / 引擎与预算 / 地图图层）。 */
+const openTab = (page: Page, tab: '体检中心' | '引擎与预算' | '地图图层') =>
+  page.getByRole('tab', { name: tab }).click();
 
 const pickAndStart = async (page: Page) => {
   await page.getByTestId('checkup-map').click();
@@ -197,6 +206,7 @@ const pickAndStart = async (page: Page) => {
 test('设施密度绘出非透明像素、孔洞保持透明，切换与缩放后仍正确', async ({ page }) => {
   await setup(page, { densityBoundary: true, facilityCount: 1 });
   await page.goto('/');
+  await openTab(page, '地图图层');
   // 设施密度不是默认热力：要自己打开，打开后服务覆盖热力随之关闭（两者互斥）。
   await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).check();
   await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).not.toBeChecked();
@@ -251,6 +261,7 @@ const near = (actual: number[], expected: number[], tolerance = 6) =>
 test('设施密度按类别筛选、疑似重复只算一处，空类别明说，刷新后筛选仍在', async ({ page }) => {
   await setup(page, { densityBoundary: true, facilityCount: 3, duplicateGroup: true });
   await page.goto('/');
+  await openTab(page, '地图图层');
   await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).check();
   await pickAndStart(page);
   const legend = page.getByTestId('density-legend');
@@ -288,6 +299,8 @@ test('设施密度按类别筛选、疑似重复只算一处，空类别明说�
 test('服务覆盖热力默认打开：评估格连成渐变面，圈外与孔洞透明，切类别、切热力都各归其位', async ({ page }) => {
   await setup(page, { densityBoundary: true, serviceCells: true });
   await page.goto('/');
+  // 热力与叠加开关在「地图图层」选项卡里。
+  await openTab(page, '地图图层');
   // 模型网格采样点位本身不勾：热力仍须取到模型网格（与密度热力取设施同理）。
   await expect(page.getByRole('checkbox', { name: '模型网格采样', exact: true })).not.toBeChecked();
   await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).toBeChecked();
@@ -347,6 +360,7 @@ test('a published revision draws its layers, opens the report and keeps the view
   await setup(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
+  await openTab(page, '引擎与预算');
   await expect(page.getByTestId('quota-label'))
     .toHaveText('本应用预算余额（不含浏览器 SDK、其他应用及旧接口流量）');
   // 选点：只会平移这一次；后面取图层、画标记都不再动视角。
@@ -371,6 +385,7 @@ test('a published revision draws its layers, opens the report and keeps the view
 test('layers are independent: unchecking one leaves the others on the map', async ({ page }) => {
   await setup(page, { facilityCount: 3 });
   await page.goto('/');
+  await openTab(page, '地图图层');
   await pickAndStart(page);
   await pathsAre(page, 3);
   // 3 处设施合成 1 枚 + 2 处核验 + 1 枚中心标记。
@@ -437,6 +452,50 @@ test('zoom and pan end re-project the points without moving the view or dropping
     .not.toEqual(before.markers.map(marker => marker.uid));
 });
 
+test('中心标记跟随坐标输入，+/- 按钮走 SDK 的 zoomIn/zoomOut', async ({ page }) => {
+  await setup(page);
+  await page.goto('/');
+  // 手输坐标也算一次选点：中心标记与视野立刻跟到最后一个有效值。
+  await page.getByRole('spinbutton', { name: '经度' }).fill('116.418000');
+  await page.getByRole('spinbutton', { name: '纬度' }).fill('39.923000');
+  await expect.poll(async () => {
+    const marker = (await audit(page)).markers.find(item => item.options.title.startsWith('待体检选点'));
+    return marker ? { lng: marker.point.lng, lat: marker.point.lat } : null;
+  }).toEqual({ lng: 116.418, lat: 39.923 });
+  expect((await audit(page)).pans.at(-1)).toEqual({ lng: 116.418, lat: 39.923 });
+  // 缩放按钮在地图右上角：替身记下调用的是哪一个，不模拟真实级别。
+  const pansBefore = (await audit(page)).pans.length;
+  await page.getByRole('button', { name: '放大' }).click();
+  await page.getByRole('button', { name: '缩小' }).click();
+  await expect.poll(async () => (await audit(page)).zooms).toEqual(['in', 'out']);
+  // 点按钮不允许穿透成"在地图上选点"：选点与视野都不变。
+  expect((await audit(page)).pans.length).toBe(pansBefore);
+  expect((await audit(page)).pans.at(-1)).toEqual({ lng: 116.418, lat: 39.923 });
+  await page.locator('.api-map-shell').screenshot({ path: 'output/checkup-ui/zoom-controls.png' });
+});
+
+test('天气卡片报中心实况，设施清单按类别列出最近的设施', async ({ page }) => {
+  await setup(page, { facilityCount: 12 });
+  await page.goto('/');
+  const weather = page.getByTestId('weather-card');
+  await expect(weather).toHaveAttribute('data-status', 'ready', { timeout: 10000 });
+  await expect(weather).toContainText('21.5');
+  await expect(weather).toContainText('大致晴朗');
+  await expect(weather).toContainText('湿度 55%');
+
+  await pickAndStart(page);
+  const nearest = page.getByTestId('checkup-nearest');
+  await expect(nearest).toContainText('购物');
+  await expect(nearest).toContainText('医疗');
+  await expect(nearest.locator('.wb-near-list button').first()).toBeVisible();
+  // 每类最多 5 处；12 条记录里购物 4、医疗 8，合计 9 条。
+  expect(await nearest.locator('.wb-near-list button').count()).toBe(9);
+  // 点一处设施即选中：设施详情随之出现，可继续查步行路线。
+  await nearest.locator('.wb-near-list button').first().click();
+  await expect(page.getByRole('button', { name: '查询步行路线' })).toBeVisible();
+  await page.locator('.wb-results').screenshot({ path: 'output/checkup-ui/nearest-weather.png' });
+});
+
 test('a layer that is not ready says so by name, and the rest still draw', async ({ page }) => {
   await setup(page, { gapsNotReady: true });
   await page.goto('/');
@@ -451,6 +510,7 @@ test('stages advance as the backend reports them, and the engines come from the 
   await page.goto('/');
   // 还没提交时没有阶段可显示：进度条不是"空着等"，是没有这一栏。
   await expect(page.getByTestId('checkup-stages')).toHaveCount(0);
+  await openTab(page, '引擎与预算');
   await pickAndStart(page);
   const stages = page.getByTestId('checkup-stages');
   await expect(stages).toBeVisible();
