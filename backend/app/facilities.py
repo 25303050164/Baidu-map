@@ -23,7 +23,8 @@ RULE = DistanceRule(metric="walking_route", threshold_m=1000, inclusive=True, to
                     assessment_scope="isochrone", category_policy="major_minor")
 
 
-async def analyze_facilities(result, client, ak, gate, token, *, max_points=9, max_routes_per_group=8, deadline=None, on_progress=None):
+async def analyze_facilities(result, client, ak, gate, token, *, max_points=9, max_routes_per_group=8, deadline=None,
+                             on_progress=None, place_gate=None):
     if max_points < 1 or max_routes_per_group < 1:
         raise ValueError("positive sampling limits required")
     start = time.monotonic()
@@ -33,7 +34,8 @@ async def analyze_facilities(result, client, ak, gate, token, *, max_points=9, m
     # Covers the computation square plus a conservative 1.2km search margin.
     extent = max(abs(v) for v in result.local_geometry.bounds) if result.local_geometry is not None and not result.local_geometry.is_empty else result.config.extent
     radius = math.ceil(math.sqrt(2) * extent + 1200)
-    places = PlacesClient(client, ak, gate, token)
+    # Place searches pace on the place service's gate, routes on the direction gate.
+    places = PlacesClient(client, ak, place_gate or gate, token)
     facilities, queries = await places.search(origin, radius, deadline)
     geometry = shape(result.geometry) if result.geometry else None
     for item in facilities:

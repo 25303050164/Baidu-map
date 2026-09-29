@@ -143,7 +143,7 @@ def candidate_order(facilities, *, majors, zones, entrances, origin, projection=
 
 
 async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, session, origin,
-                            projection=None, progress=None) -> VerificationOutcome:
+                            projection=None, progress=None, token=None) -> VerificationOutcome:
     """跑完核验阶段。``session`` 为 None 表示这个部署没有路线服务。
 
     ``session`` 一次调用就是一个候选的全部尝试（含重试），每条尝试各扣一次 ``route``
@@ -169,6 +169,9 @@ async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, se
     if progress is not None:
         progress(0, len(candidates), session.attempts)
     for asked, item in enumerate(candidates, start=1):
+        if token is not None and token.cancelled:
+            # 取消后不再问下一家：已经问到的留下，其余记为未核验。
+            break
         observation = await session(item['facilityId'], origin, item['location'])
         if progress is not None:
             progress(asked, len(candidates), session.attempts)
@@ -187,7 +190,7 @@ async def verify_facilities(*, facilities, majors, zones, heatmap, entrances, se
             unresolved += 1
     checked = len(records)
     unverified = len(candidates) - checked
-    stopped = session.stop_reason
+    stopped = session.stop_reason or ('cancelled' if token is not None and token.cancelled else None)
     notes = ['核验只对本次检索到的设施成立，不构成目录完整性证明。',
              '单条路线只证明这条路线的两端：它不把整格改判为已实测，也不把未知变成覆盖。',
              '直线距离仅用于候选排序与保守筛选，所有"在服务范围内"的结论都来自返回路线距离。',

@@ -25,11 +25,13 @@ from uuid import uuid4
 from life_circle.coordinates import LocalProjection, normalize
 from life_circle.models import CancelToken
 
+from ..accessibility.grid import AssessmentCancelled
 from ..algorithms.osm_offline.lazy import resolve
 from ..cache import KeyedCache
 from ..catalog import major_of
 from ..contracts import Issue, Origin
 from ..engines import EngineContext, IsochroneAsk, IsochroneSnapshot, canonical_hash
+from ..engines.protocol import EngineCancelled
 from ..poi.planner import RULES as POI_RULES
 from ..poi_evidence import poi_evidence
 from .accessibility_stage import AccessibilityOutcome, assess_accessibility
@@ -47,6 +49,9 @@ from .verification_stage import (VerificationOutcome, carried_over, refusal as v
 # Engines currently enforce their own internal deadline; this is the task-level
 # bound every stage shares.
 DEADLINE_SECONDS = 1800
+ENGINE_UNAVAILABLE = {
+    "walking_ak_not_configured": "后端未配置百度步行服务 AK，百度边界搜索（E8.2）无法成圈。",
+}
 LATER_STAGES_NOTICE = "服务覆盖、灰区与报告阶段尚未接入，本修订只包含成圈结果与设施检索。"
 #: The accessibility revision runs before verification, so its grey zones are
 #: model-only *in that revision*; the next revision carries the route evidence.
@@ -152,6 +157,19 @@ def _point(value) -> Origin | None:
     return Origin(lng=lng, lat=lat)
 
 
+def _with_token(session, token):
+    """Hand the task's cancel token to a transport session that checks it per attempt.
+
+    Set as an attribute so injected transports keep their plain signature.
+    """
+    if token is not None:
+        try:
+            session.token = token
+        except AttributeError:
+            pass
+    return session
+
+
 def _assessment_progress(report):
     """Translate the assessment's own step callbacks into stored progress.
 
@@ -215,6 +233,11 @@ class CheckupManager:
         engine = self.registry.get(payload.engine)
         capabilities = engine.capabilities()
         budget = resolve_budget(capabilities, payload.isochrone.budget)
+        # A deployment that cannot run the engine at all says so before a task
+        # exists, instead of admitting one that can only fail without a reason.
+        reason = getattr(engine, "unavailable_reason", lambda: None)()
+        if reason is not None:
+            raise CheckupError(503, "checkup_engine_unavailable", ENGINE_UNAVAILABLE.get(reason, reason))
         try:
             record, created = self.store.create(
                 task_id=str(uuid4()), client_request_id=payload.client_request_id,
@@ -284,7 +307,12 @@ class CheckupManager:
         try:
             snapshot = await self.registry.get(record.engine).compute(
                 IsochroneAsk(origin=origin, budget=record.budget), context)
+        except EngineCancelled:
+            # The user's cancel stopped the engine: the task ends, the worker serves on.
+            self._finish(task_id, status="cancelled")
+            return
         except asyncio.CancelledError:
+            # The asyncio task itself is being cancelled (shutdown): never swallowed.
             self._finish(task_id, status="cancelled")
             raise
         except Exception:
@@ -313,8 +341,12 @@ class CheckupManager:
         if token.cancelled:
             self._finish(task_id, status="cancelled", business_status=business)
             return
-        assessment = await self._publish_accessibility(task_id, payload, snapshot, budget, outcome,
-                                                       report=report)
+        try:
+            assessment = await self._publish_accessibility(task_id, payload, snapshot, budget, outcome,
+                                                           report=report, token=token)
+        except AssessmentCancelled:
+            self._finish(task_id, status="cancelled", business_status=business)
+            return
         if token.cancelled:
             self._finish(task_id, status="cancelled", business_status=business)
             return
@@ -322,7 +354,7 @@ class CheckupManager:
         # so the report can say what was verified and what stayed model-only.
         verification = await self._publish_verification(
             task_id, payload, snapshot, budget, outcome, assessment, deadline=context.deadline,
-            report=report)
+            report=report, token=token)
         if token.cancelled:
             self._finish(task_id, status="cancelled", business_status=business)
             return
@@ -506,7 +538,7 @@ class CheckupManager:
 
     async def _publish_accessibility(self, task_id: str, payload: CheckupRequest, snapshot,
                                      budget, outcome: FacilityOutcome, *,
-                                     report=None) -> AccessibilityOutcome:
+                                     report=None, token=None) -> AccessibilityOutcome:
         """Run and freeze the accessibility assessment (§5–§7.1).
 
         The graph it needs is the deployment's OSM store, not the engine's: a
@@ -521,6 +553,14 @@ class CheckupManager:
         if report is not None and self.offline is not None:
             report("graph")
         resolved = await self._resolve_offline(report)
+        inner = None if report is None else _assessment_progress(report)
+
+        def progress(step, **detail):
+            # Called for every step and every cell: the cancel checkpoint of the assessment.
+            if token is not None and token.cancelled:
+                raise AssessmentCancelled()
+            if inner is not None:
+                inner(step, **detail)
         assessment = await asyncio.to_thread(
             assess_accessibility, geometry=snapshot.geometry,
             unknown_region=snapshot.unknown_region,
@@ -529,7 +569,7 @@ class CheckupManager:
             store=None if resolved is None else resolved.store,
             coverage=None if resolved is None else resolved.coverage,
             version=self.settings.osm_data_version, settings=self.settings,
-            progress=None if report is None else _assessment_progress(report))
+            progress=progress)
         objects = self._analysis_objects(assessment)
         revision = self.store.get(task_id).revision + 1
         isochrone = snapshot.model_dump(mode="json", by_alias=True)
@@ -551,7 +591,7 @@ class CheckupManager:
 
     async def _publish_verification(self, task_id: str, payload: CheckupRequest, snapshot, budget,
                                     outcome: FacilityOutcome, assessment: AccessibilityOutcome,
-                                    *, deadline: float, report=None) -> VerificationOutcome:
+                                    *, deadline: float, report=None, token=None) -> VerificationOutcome:
         """Run and freeze the route verification (§6.3).
 
         A deployment without a walking-route service publishes the same revision
@@ -589,8 +629,9 @@ class CheckupManager:
                                                      for zone in gaps],
                     heatmap=heatmap, entrances=assessment.entrances,
                     origin=normalize((payload.center.lng, payload.center.lat)),
-                    session=routes.session(self.quota.direction, budget=budget, deadline=deadline),
-                    progress=progress)
+                    session=_with_token(routes.session(self.quota.direction, budget=budget,
+                                                       deadline=deadline), token),
+                    progress=progress, token=token)
         self._freeze_verification(task_id, payload, snapshot, budget, outcome, assessment, result)
         # 核验阶段发的是真实路线请求，所以它也计入任务自己的请求数 —— 任务视图说
         # "本次体检发出了多少请求"，少算这一阶段就等于少报了一百多次调用。运行中的

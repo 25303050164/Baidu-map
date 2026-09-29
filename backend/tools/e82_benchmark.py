@@ -112,6 +112,12 @@ async def run_one(case, truth, factory, budget, arm):
                carved_m2=loop.get('carvedAreaM2'), loop_actions=loop.get('actions'), **measured)
     if measured.get('valid'):
         row.update(classification(pred, truth, request.extent))
+    # The candidate keeps unconverged mixed faces at their midpoint estimate; for the
+    # legacy arm it separates the gain of the scheduler from that of the publication rule.
+    candidate = evidence.get('candidateGeometry')
+    if candidate is not None:
+        shape_ = local(candidate)
+        row['candidate_iou'] = shape_.intersection(truth).area / shape_.union(truth).area
     assert provider.calls <= budget, 'budget exceeded'
     return row, request
 
@@ -121,8 +127,8 @@ def summarize(rows):
     for row in rows:
         groups.setdefault((row['set'], row['budget'], row['arm']), []).append(row)
     lines = ['| set | budget | arm | runs | failed | mean IoU | min IoU | mean P95 truth→outer (m) | '
-             'mean P95 outer→truth (m) | band acc | grid acc | mean calls | mean s |',
-             '|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|']
+             'mean P95 outer→truth (m) | band acc | grid acc | candidate IoU | mean calls | mean s |',
+             '|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|']
     for (name, budget, arm), items in sorted(groups.items()):
         ok = [r for r in items if r.get('valid') and not r.get('failed')]
 
@@ -137,6 +143,7 @@ def summarize(rows):
                      f"{statistics.fmean(p95_in) if p95_in else float('nan'):.1f} | "
                      f"{statistics.fmean(p95_out) if p95_out else float('nan'):.1f} | "
                      f"{mean('band_accuracy'):.4f} | {mean('grid_accuracy'):.4f} | "
+                     f"{mean('candidate_iou'):.4f} | "
                      f"{mean('calls', items):.1f} | {mean('elapsed_s', items):.2f} |")
     return '\n'.join(lines)
 

@@ -19,7 +19,7 @@ import httpx
 from life_circle.providers import BaiduProvider
 
 from ..baidu import silence_transport_logs
-from ..quota import BudgetExhausted, DeadlineReached
+from ..quota import AttemptCancelled, BudgetExhausted, DeadlineReached
 
 #: 任务自己的池名，与 ``quota.TaskBudget`` 的拼写一致。
 ROUTE_POOL = 'route'
@@ -87,8 +87,10 @@ class RouteSession:
     静默的空结果。
     """
 
-    def __init__(self, transport, pool, *, budget, deadline):
+    def __init__(self, transport, pool, *, budget, deadline, token=None):
         self.transport, self.pool, self.budget, self.deadline = transport, pool, budget, deadline
+        # The task's cancel token, checked by the pool before every attempt is sent.
+        self.token = token
         self.attempts = 0
         self.stop_reason: str | None = None
 
@@ -112,7 +114,7 @@ class RouteSession:
                 return None
             try:
                 async with self.pool.attempt(self.deadline, budget=self.budget,
-                                             pool=pool) as attempt:
+                                             pool=pool, token=self.token) as attempt:
                     timeout = self.deadline - time.monotonic()
                     if timeout <= 0:
                         attempt.outcome('deadline')
@@ -129,6 +131,10 @@ class RouteSession:
                 return None
             except DeadlineReached:
                 self.stop_reason = 'deadline'
+                return None
+            except AttemptCancelled:
+                # 取消之后不再发出新的请求；已发出的那一次收不回，但不会有下一次。
+                self.stop_reason = 'cancelled'
                 return None
             if value.reason in STOP_REASONS:
                 self.stop_reason = value.reason

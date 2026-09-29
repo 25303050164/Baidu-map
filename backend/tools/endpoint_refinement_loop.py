@@ -642,7 +642,12 @@ def publish(state, token=None):
                                      edgeBrackets=[], physicalBarrierVerified=False),
                     refinementLoop=loop_meta)
     connected = version['connected']
-    estimate, carved_region, carved = carve_conflicts(state, version['estimate'])
+    # A mixed face that was not bisected to the target is still published at its
+    # midpoint estimate (reachable corners plus crossing midpoints), exactly as the
+    # star connects bracket midpoints, and stays inside the solver-unresolved
+    # region. Dropping the whole face would bias the boundary inward.
+    published = connected['combined_candidate'].intersection(domain)
+    estimate, carved_region, carved = carve_conflicts(state, published)
     still = [r['id'] for r in session.records
              if r['duration'] > 900 and estimate.covers(Point(r['xy']))]
     # Unresolved boundary segments outside the patches: a strip, not an error bound.
@@ -663,7 +668,7 @@ def publish(state, token=None):
     geometry = None if still or estimate.is_empty else business_geometry(estimate, projection)
     return dict(
         geometry=geometry,
-        candidateGeometry=business_geometry(connected['combined_candidate'].intersection(domain), projection),
+        candidateGeometry=business_geometry(published, projection),
         unknownRegion=business_geometry(unresolved, projection),
         quality='experimental_evidence_conflict' if still else 'experimental_closed_loop',
         uncertaintyBand=None,

@@ -174,11 +174,21 @@ class LimitedProvider:
                 self.gate.completed(reason, cost=cost)
 
 
+def effective_qps(settings, gate) -> float | None:
+    """The rate a boundary engine's scheduler paces at: the configured cap when set,
+    otherwise the ceiling the shared gate enforces right now."""
+    if settings.analysis_qps is not None:
+        return settings.analysis_qps
+    current = getattr(gate, "current_qps", None)
+    return current() if callable(current) else gate.qps
+
+
 class AnalysisManager:
-    def __init__(self, settings, provider_factory=None):
+    def __init__(self, settings, provider_factory=None, *, gate=None, place_gate=None):
         self.settings, self.provider_factory = settings, provider_factory
         self.jobs = {}
-        self.gate = RateGate(settings.analysis_qps)
+        self.gate = gate if gate is not None else RateGate(settings.analysis_qps)
+        self.place_gate = place_gate if place_gate is not None else self.gate
 
     def prune(self):
         terminal = sorted((job for job in self.jobs.values() if job.status in TERMINAL and job.finished_at is not None), key=lambda job: job.finished_at)
@@ -207,8 +217,9 @@ class AnalysisManager:
             raise HTTPException(409, f"分析服务忙：另一项分析正在进行（已运行 {view['elapsedSeconds']:.0f} 秒，"
                                      f"已用 {view['requests']}/{view['budget']} 次调用）。请等待其完成或取消后重试")
         if self.settings.analysis_provider == "baidu" and not self.provider_factory:
-            if not self.settings.ak_configured or self.settings.analysis_qps is None:
-                raise HTTPException(503, "请在后端配置步行服务 AK 和 ANALYSIS_QPS")
+            # The rate comes from the shared gate's tier; ANALYSIS_QPS only lowers it.
+            if not self.settings.ak_configured or effective_qps(self.settings, self.gate) is None:
+                raise HTTPException(503, "请在后端配置步行服务 AK")
         source = "synthetic" if self.settings.analysis_provider == "synthetic" else "baidu_walking"
         job = Job(str(uuid4()), payload, source)
         self.jobs[job.task_id] = job
@@ -239,14 +250,14 @@ class AnalysisManager:
                     )
                 request = IsochroneRequest(origin, "bd09ll", budget=budget,
                     max_extent=1600, expand=False, time_bands=(15,), config_version="local-multicross-e82",
-                    qps=self.settings.analysis_qps if provider.network else None)
+                    qps=effective_qps(self.settings, self.gate) if provider.network else None)
                 result = await compute_e82(request, provider, job.token, on_progress=lambda p: self.update(job, p))
                 if not self.provider_factory and provider.network and result.quality != "insufficient" and not job.token.cancelled:
                     self.update(job, ProgressSnapshot("facilities", result.statistics.requests,
                         result.statistics.network_requests, budget, time.monotonic() - job.started))
                     business = await analyze_facilities(result, client,
                         self.settings.baidu_map_ak.get_secret_value(), self.gate, job.token,
-                        deadline=job.started + 600)
+                        deadline=job.started + 600, place_gate=self.place_gate)
             # Commit only after transport cleanup; cancellation during cleanup wins.
             if job.token.cancelled:
                 job.status = "cancelled"

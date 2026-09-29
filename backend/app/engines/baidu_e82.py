@@ -12,7 +12,7 @@ from life_circle.models import IsochroneRequest
 from life_circle.providers import BaiduProvider
 
 from ..algorithms.baidu_e82 import ALGORITHM, EndpointAnalyticProvider, compute_e82
-from ..analyses import LimitedProvider
+from ..analyses import LimitedProvider, effective_qps
 from ..baidu import silence_transport_logs
 from .protocol import EngineCapabilities, EngineContext, IsochroneAsk, IsochroneSnapshot
 
@@ -42,6 +42,12 @@ class BaiduE82Engine:
                    "半径与网格策略由服务端控制，请求不能覆盖",
                    "内部未独立核验，质量不会高于 partial"])
 
+    def unavailable_reason(self) -> str | None:
+        """Why a task could not run at all, known before it is admitted."""
+        if self.provider_factory is not None or self.settings.analysis_provider == "synthetic":
+            return None
+        return None if self.settings.ak_configured else "walking_ak_not_configured"
+
     async def _provider(self, stack, origin):
         if self.provider_factory:
             provider = self.provider_factory(origin)
@@ -65,7 +71,7 @@ class BaiduE82Engine:
         async with AsyncExitStack() as stack:
             provider = await self._provider(stack, ask.origin)
             request = e82_request(ask.origin, ask.budget,
-                                 qps=self.settings.analysis_qps if provider.network else None)
+                                 qps=effective_qps(self.settings, self.gate) if provider.network else None)
             result = await compute_e82(request, provider, context.token,
                                        on_progress=context.progress)
         payload = result.to_dict()
