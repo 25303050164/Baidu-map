@@ -52,7 +52,7 @@ describe('clock', () => {
     expect(view.activityAgo).toBeNull();
     expect(view.step).toBeNull();
     expect(view.kind).toBe('working');
-    expect(view.hint).toContain('后端正在执行');
+    expect(view.hint).toContain('任务正在运行');
   });
 });
 
@@ -71,12 +71,12 @@ describe('three kinds of silence', () => {
   it('gives a step that reports no counts its own, longer allowance before calling it stalled', () => {
     const quiet = running({ progress: { step: 'graph', label: '载入 OSM 步行路网', count: null, limit: null,
       unit: null, since: STARTED_AT + 1 } });
-    expect(liveView(quiet, AT)!.hint).toContain('不报中间计数');
+    expect(liveView(quiet, AT)!.stepCount).toBeNull();
     // 不计数的一步持续几分钟是正常的：计数步骤的 90 秒对它不适用。
     const minutes = liveView(quiet, after(STALL_SECONDS * 3))!;
     expect(minutes.kind).toBe('working');
     expect(minutes.stepFor).toBeCloseTo(3.5 + STALL_SECONDS * 3);
-    expect(minutes.hint).toContain(`超过 ${duration(QUIET_STALL_SECONDS)}没有任何进展才提示疑似停滞`);
+    expect(minutes.hint).toContain('最近进展');
     const stalled = liveView(quiet, after(QUIET_STALL_SECONDS))!;
     expect(stalled.kind).toBe('stalled');
     expect(stalled.hint).toContain('载入 OSM 步行路网');
@@ -88,8 +88,8 @@ describe('three kinds of silence', () => {
     expect(view.kind).toBe('lost');
     expect(view.attempts).toBe(3);
     expect(view.lostFor).toBeCloseTo(STALL_SECONDS * 2 - 10);
-    expect(view.hint).toContain('连续失败 3 次');
-    expect(view.hint).toContain('不会因断网被取消或重新提交');
+    expect(view.hint).toContain('已重试 3 次');
+    expect(view.hint).toContain('不会重复提交');
     // 已用时仍在走，只是按本机时钟推算。
     expect(view.elapsed).toBeCloseTo(4.5 + STALL_SECONDS * 2);
   });

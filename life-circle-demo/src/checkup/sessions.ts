@@ -24,7 +24,7 @@ export type CheckupPrefs = {
   serviceMode?: string;
   densityCategory?: string;
   reportOpen?: boolean;
-  /** 左栏当前选项卡（体检中心 / 引擎与预算 / 地图图层）。 */
+  /** 左栏当前选项卡。 */
   tab?: string;
 };
 

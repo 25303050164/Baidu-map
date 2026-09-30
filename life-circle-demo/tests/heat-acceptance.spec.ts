@@ -863,7 +863,7 @@ for (const slug of SLUGS) {
     const { probes, points } = densityProbes(plan);
     expect(probes.filter(p => p.expect.kind === 'colour').length).toBeGreaterThan(2);
     await open(page, slug, { e82: DENSITY_ONLY, hybrid: DENSITY_ONLY });
-    // 类别筛选在「地图图层」选项卡里。
+    // 类别筛选在「图层备注」选项卡里。
     await page.getByTestId('checkup-tab-layers').click();
     const legend = page.getByTestId('density-legend');
     await expect(legend).toHaveAttribute('data-points', String(points.length));
@@ -904,7 +904,7 @@ for (const slug of SLUGS) {
     // 三类都已知、但只覆盖了一两类的地方很少（扫描格上个位数），至少判一个。
     expect(blend.filter(p => p.name.startsWith('composite-partial-')).length, '部分覆盖至少一个点').toBeGreaterThan(0);
     await open(page, slug, { e82: COMPOSITE_ONLY, hybrid: COMPOSITE_ONLY });
-    // 覆盖类别在「地图图层」选项卡里。
+    // 覆盖类别在「图层备注」选项卡里。
     await page.getByTestId('checkup-tab-layers').click();
     const legend = page.getByTestId('service-legend');
     await expect(legend).toContainText('三类均已知处覆盖类别占比 0–100%');
@@ -954,7 +954,7 @@ test('百度边界搜索（E8.2）：河道（硬障碍）—— 压在水面上
   expect(water.nearestCoveredM).toBeGreaterThan(25);
   expect(water.medical.filter(p => p.name.startsWith('water-')).length).toBeGreaterThan(1);
   await open(page, 'e82', { e82: SERVICE_ONLY, hybrid: SERVICE_ONLY });
-  // 覆盖类别在「地图图层」选项卡里。
+  // 覆盖类别在「图层备注」选项卡里。
   await page.getByTestId('checkup-tab-layers').click();
   await page.waitForTimeout(1500);
   const views: Record<string, Reading[]> = {};
@@ -1193,7 +1193,7 @@ test('合成密集设施（验收用，非百度数据）：高密度饱和、�
       font: '600 13px/1.4 system-ui, sans-serif', color: '#5c4400', pointerEvents: 'none', maxWidth: '80%' });
     shell?.appendChild(banner);
   }, real.length);
-  // 密度类别在「地图图层」选项卡里。
+  // 密度类别在「图层备注」选项卡里。
   await page.getByTestId('checkup-tab-layers').click();
   const legend = page.getByTestId('density-legend');
   await expect(legend).toContainText(`${all.length} 处设施参与（1 条疑似重复已合并）`);
@@ -1272,7 +1272,7 @@ test('反复开关、切模式、切算法、打开报告、刷新：只剩一�
   const steps: Record<string, unknown> = {};
   steps.initial = await readProbes(page, 'service-heat-canvas', probesFor('e82'));
 
-  // 图层开关与热力类别在「地图图层」选项卡里。
+  // 图层开关与热力类别在「图层备注」选项卡里。
   await page.getByTestId('checkup-tab-layers').click();
   const service = page.getByRole('checkbox', { name: '服务覆盖热力', exact: true });
   const density = page.getByRole('checkbox', { name: '设施密度热力', exact: true });
@@ -1293,7 +1293,7 @@ test('反复开关、切模式、切算法、打开报告、刷新：只剩一�
   steps.afterModeSwitch = await readProbes(page, 'service-heat-canvas', probesFor('e82'));
 
   // 切到 OSM＋百度：另一条任务、另一套读数；旧地图的热力画布不得留在文档里。
-  // 算法切换已并入「引擎与预算」选项卡。
+  // 算法切换已并入「采样与引擎」选项卡。
   await page.getByTestId('checkup-tab-engine').click();
   await page.getByTestId('algorithm-hybrid').click();
   await expectRealBasemap(page);

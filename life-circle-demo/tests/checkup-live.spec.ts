@@ -132,7 +132,7 @@ for (const [engine, { label, version }] of Object.entries(ENGINES)) {
     mkdirSync(dir, { recursive: true });
     await page.goto('/');
 
-    // 引擎在「引擎与预算」选项卡里切换，档位来自后端能力表：界面不自己编档位，这里也不替它编。
+    // 引擎在「采样与引擎」选项卡里切换，档位来自后端能力表：界面不自己编档位，这里也不替它编。
     await page.getByRole('spinbutton', { name: '经度', exact: true }).fill(String(CENTER.lng));
     await page.getByRole('spinbutton', { name: '纬度', exact: true }).fill(String(CENTER.lat));
     await page.getByTestId('checkup-tab-engine').click();
@@ -220,7 +220,7 @@ for (const [engine, { label, version }] of Object.entries(ENGINES)) {
     await expect(drawn).toBeHidden();
 
     // 真底图 + 真图层。要的就是"这不是示意地图"：默认的服务覆盖热力先截一张，
-    // 再换成设施密度截一张。图层开关在「地图图层」选项卡里。
+    // 再换成设施密度截一张。图层开关在「图层备注」选项卡里。
     await expectRealBasemap(page);
     await page.getByTestId('checkup-tab-layers').click();
     // 只数业务 Canvas 上画了多少像素，不能把百度底图或图表 Canvas 当作热力。

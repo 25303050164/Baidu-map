@@ -14,9 +14,9 @@
 }
 *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased}button,input,select{font:inherit}button{cursor:pointer}button:focus-visible,select:focus-visible,[role=button]:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}h1,h2,h3,h4,p{margin:0}button:disabled{cursor:not-allowed}::selection{background:#d6e0ff}svg text{user-select:none}
 
-/* 顶栏：白底细线，左边标志与名称，右边算法切换；窄屏时切换换到第二行、选项等分。 */
+/* 顶栏：白底细线，只保留名称；算法切换放在左侧设置面板。 */
 .wb { display: flex; flex-direction: column; height: 100dvh; min-height: 560px; font-size: 14px; }
-.wb-top { position: relative; z-index: 20; flex: none; display: flex; align-items: center; justify-content: space-between;
+.wb-top { position: relative; z-index: 20; flex: none; display: flex; align-items: center; justify-content: flex-start;
   gap: 10px 24px; flex-wrap: wrap; min-height: 56px; padding: 8px 24px; background: var(--panel);
   border-bottom: 1px solid var(--rule); }
 .wb-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }

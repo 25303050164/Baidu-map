@@ -440,9 +440,9 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
     {(unavailable || mode === 'loading') && <div className="api-map-notice" role="status">
       <strong>{unavailable ? '地图不可用' : '正在加载百度地图'}</strong>
       <p>{unavailable ? (failureReason === 'missing-key'
-        ? '尚未配置浏览器地图密钥，请联系项目管理员完成地图配置。仍可输入坐标、执行体检和查看报告。'
-        : '百度地图脚本未能加载，请检查网络及浏览器地图密钥的权限和来源限制，修复后刷新页面。')
-        : '地图就绪后可点击选择体检中心。'}</p>
+        ? '未配置地图密钥，可输入坐标继续体检。'
+        : '加载失败，请检查网络或地图密钥后刷新。')
+        : '加载后可在地图上选点。'}</p>
     </div>}
     {/* 还没有任何一层画上去时不出图例：空图上的一串色块只会让人以为已经有结论。 */}
     {Object.values(drawables).some(Boolean) && (legend.length > 0 || heatOn || waterOn)

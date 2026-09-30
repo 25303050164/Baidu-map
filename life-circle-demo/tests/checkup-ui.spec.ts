@@ -192,14 +192,8 @@ function counted(markers: { options: { title: string } }[]): number {
     sum + (Number(/^(\d+) 个点/.exec(marker.options.title)?.[1]) || 1), 0);
 }
 
-/** 地图浮动操作卡把图层与详细说明折叠收纳。 */
-const openTab = async (page: Page, tab: '体检中心' | '引擎与预算' | '地图图层') => {
-  const section = tab === '地图图层' ? '.wb-layers' : tab === '引擎与预算' ? '.wb-notes' : null;
-  if (section) {
-    const fold = page.locator(section);
-    if (await fold.getAttribute('open') === null) await fold.locator('summary').click();
-  }
-};
+const openTab = (page: Page, tab: '我的位置' | '采样与引擎' | '图层备注') =>
+  page.getByRole('tab', { name: tab }).click();
 
 const pickAndStart = async (page: Page) => {
   await page.getByTestId('checkup-map').click();
@@ -211,7 +205,7 @@ const pickAndStart = async (page: Page) => {
 test('设施密度绘出非透明像素、孔洞保持透明，切换与缩放后仍正确', async ({ page }) => {
   await setup(page, { densityBoundary: true, facilityCount: 1 });
   await page.goto('/');
-  await openTab(page, '地图图层');
+  await openTab(page, '图层备注');
   // 设施密度不是默认热力：要自己打开，打开后服务覆盖热力随之关闭（两者互斥）。
   await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).check();
   await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).not.toBeChecked();
@@ -266,7 +260,7 @@ const near = (actual: number[], expected: number[], tolerance = 6) =>
 test('设施密度按类别筛选、疑似重复只算一处，空类别明说，刷新后筛选仍在', async ({ page }) => {
   await setup(page, { densityBoundary: true, facilityCount: 3, duplicateGroup: true });
   await page.goto('/');
-  await openTab(page, '地图图层');
+  await openTab(page, '图层备注');
   await page.getByRole('checkbox', { name: '设施密度热力', exact: true }).check();
   await pickAndStart(page);
   const legend = page.getByTestId('density-legend');
@@ -304,8 +298,8 @@ test('设施密度按类别筛选、疑似重复只算一处，空类别明说�
 test('服务覆盖热力默认打开：评估格连成渐变面，圈外与孔洞透明，切类别、切热力都各归其位', async ({ page }) => {
   await setup(page, { densityBoundary: true, serviceCells: true });
   await page.goto('/');
-  // 热力与叠加开关在「地图图层」选项卡里。
-  await openTab(page, '地图图层');
+  // 热力与叠加开关在「图层备注」选项卡里。
+  await openTab(page, '图层备注');
   // 模型网格采样点位本身不勾：热力仍须取到模型网格（与密度热力取设施同理）。
   await expect(page.getByRole('checkbox', { name: '模型网格采样', exact: true })).not.toBeChecked();
   await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).toBeChecked();
@@ -365,7 +359,7 @@ test('a published revision draws its layers, opens the report and keeps the view
   await setup(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await openTab(page, '引擎与预算');
+  await openTab(page, '采样与引擎');
   await expect(page.getByTestId('quota-label'))
     .toHaveText('本应用预算余额（不含浏览器 SDK、其他应用及旧接口流量）');
   // 选点：只会平移这一次；后面取图层、画标记都不再动视角。
@@ -390,7 +384,7 @@ test('a published revision draws its layers, opens the report and keeps the view
 test('layers are independent: unchecking one leaves the others on the map', async ({ page }) => {
   await setup(page, { facilityCount: 3 });
   await page.goto('/');
-  await openTab(page, '地图图层');
+  await openTab(page, '图层备注');
   await pickAndStart(page);
   await pathsAre(page, 3);
   // 3 处设施合成 1 枚 + 2 处核验 + 1 枚中心标记。
@@ -443,6 +437,10 @@ test('zoom and pan end re-project the points without moving the view or dropping
     const audit = (window as unknown as { __mapAudit: { views: Record<string, (() => void)[]> } }).__mapAudit;
     for (const type of ['zoomend', 'moveend']) for (const handler of audit.views[type] ?? []) handler();
   });
+  await expect.poll(async () => {
+    const current = await audit(page);
+    return current.markers.filter((marker, index) => marker.uid !== before.markers[index]?.uid).length;
+  }).toBeGreaterThan(0);
   const after = await audit(page);
   // 点图层重新投影过：设施与核验的标记是新建的（中心标记不动，所以不是"全都换了"）。
   expect(after.markers.filter((marker, index) => marker.uid !== before.markers[index]?.uid).length)
@@ -483,16 +481,24 @@ test('天气卡片报中心实况，设施清单按类别列出最近的设施',
   await setup(page, { facilityCount: 12 });
   await page.goto('/');
   const weather = page.getByTestId('weather-card');
+  await expect(page.locator('.wb-results')).toBeVisible();
   await expect(weather).toHaveAttribute('data-status', 'ready', { timeout: 10000 });
   await expect(weather).toContainText('21.5');
   await expect(weather).toContainText('大致晴朗');
   await expect(weather).toContainText('湿度 55%');
+  const atPanelBottom = () => weather.evaluate(element => {
+    const container = element.parentElement;
+    return container?.classList.contains('wb-weather-bottom')
+      && container.parentElement?.lastElementChild === container;
+  });
+  expect(await atPanelBottom()).toBe(true);
 
   await pickAndStart(page);
   const nearest = page.getByTestId('checkup-nearest');
   await expect(nearest).toContainText('购物');
   await expect(nearest).toContainText('医疗');
   await expect(nearest.locator('.wb-near-list button').first()).toBeVisible();
+  expect(await atPanelBottom()).toBe(true);
   // 每类最多 5 处；12 条记录里购物 4、医疗 8，合计 9 条。
   expect(await nearest.locator('.wb-near-list button').count()).toBe(9);
   // 点一处设施即选中：设施详情随之出现，可继续查步行路线。
@@ -501,10 +507,79 @@ test('天气卡片报中心实况，设施清单按类别列出最近的设施',
   await page.locator('.wb-results').screenshot({ path: 'output/checkup-ui/nearest-weather.png' });
 });
 
+test('左右面板可拖动和缩放，且保持在地图范围内', async ({ page }) => {
+  await setup(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+
+  const drag = async (handle: ReturnType<Page['getByTestId']>, dx: number, dy: number) => {
+    const box = await handle.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + dx, box!.y + box!.height / 2 + dy, { steps: 5 });
+    await page.mouse.up();
+  };
+
+  const side = page.locator('.wb-side');
+  const sideStart = await side.boundingBox();
+  expect(sideStart).not.toBeNull();
+  await drag(page.getByTestId('panel-move-side'), 64, 48);
+  await drag(page.getByTestId('panel-resize-side'), 48, 36);
+  const sideEnd = await side.boundingBox();
+  expect(sideEnd!.x).toBeGreaterThan(sideStart!.x + 40);
+  expect(sideEnd!.y).toBeGreaterThan(sideStart!.y + 24);
+  expect(sideEnd!.width).toBeGreaterThan(sideStart!.width + 24);
+  expect(sideEnd!.height).toBeGreaterThan(sideStart!.height + 20);
+  await drag(page.getByTestId('panel-resize-side'), 2000, 2000);
+  const sideMax = await side.boundingBox();
+  expect(sideMax!.width).toBe(480);
+  expect(sideMax!.height).toBe(760);
+  await drag(page.getByTestId('panel-resize-side'), -2000, -2000);
+  const sideMin = await side.boundingBox();
+  expect(sideMin!.width).toBe(300);
+  expect(sideMin!.height).toBe(280);
+
+  const results = page.locator('.wb-results');
+  const resultStart = await results.boundingBox();
+  expect(resultStart).not.toBeNull();
+  await drag(page.getByTestId('panel-move-results'), -72, 40);
+  await drag(page.getByTestId('panel-resize-results'), 72, 48);
+  const resultEnd = await results.boundingBox();
+  const workspace = await page.locator('.wb-body').boundingBox();
+  expect(resultEnd!.x).toBeLessThan(resultStart!.x - 40);
+  expect(resultEnd!.width).toBeGreaterThan(resultStart!.width + 40);
+  expect(resultEnd!.height).toBeGreaterThan(resultStart!.height + 30);
+  expect(resultEnd!.x).toBeGreaterThanOrEqual(workspace!.x + 15);
+  expect(resultEnd!.y).toBeGreaterThanOrEqual(workspace!.y + 15);
+  expect(resultEnd!.x + resultEnd!.width).toBeLessThanOrEqual(workspace!.x + workspace!.width - 15);
+  expect(resultEnd!.y + resultEnd!.height).toBeLessThanOrEqual(workspace!.y + workspace!.height - 15);
+  await drag(page.getByTestId('panel-resize-results'), 2000, 2000);
+  const resultMax = await results.boundingBox();
+  expect(resultMax!.width).toBe(520);
+  expect(resultMax!.height).toBe(760);
+  expect(resultMax!.x + resultMax!.width).toBeLessThanOrEqual(workspace!.x + workspace!.width - 15);
+  expect(resultMax!.y + resultMax!.height).toBeLessThanOrEqual(workspace!.y + workspace!.height - 15);
+  await drag(page.getByTestId('panel-resize-results'), -2000, -2000);
+  const resultMin = await results.boundingBox();
+  expect(resultMin!.width).toBe(320);
+  expect(resultMin!.height).toBe(280);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('panel-move-results')).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(async () => {
+    const sideBox = await side.boundingBox();
+    const resultsBox = await results.boundingBox();
+    return sideBox && resultsBox ? resultsBox.x > sideBox.x + sideBox.width : false;
+  }).toBe(true);
+});
+
 test('a layer that is not ready says so by name, and the rest still draw', async ({ page }) => {
   await setup(page, { gapsNotReady: true });
   await page.goto('/');
   await pickAndStart(page);
+  await openTab(page, '图层备注');
   // 后端的原话照登：把 409 说成"这一层是空的"，读者会以为灰区已经查过了。
   await expect(page.getByText('服务灰区图层尚未生成，请等待该阶段完成', { exact: true })).toBeVisible();
   await pathsAre(page, 2);
@@ -515,7 +590,7 @@ test('stages advance as the backend reports them, and the engines come from the 
   await page.goto('/');
   // 还没提交时没有阶段可显示：进度条不是"空着等"，是没有这一栏。
   await expect(page.getByTestId('checkup-stages')).toHaveCount(0);
-  await openTab(page, '引擎与预算');
+  await openTab(page, '采样与引擎');
   await pickAndStart(page);
   const stages = page.getByTestId('checkup-stages');
   await expect(stages).toBeVisible();
@@ -524,12 +599,14 @@ test('stages advance as the backend reports them, and the engines come from the 
   }
   // 档位是引擎自己带来的，不是界面写死的三档。
   // antd 的下拉项由虚拟列表渲染，可见性判定不稳，这里断言挂载与文本 —— 那才是"能选什么"。
+  await expect(page.getByTestId('checkup-time-estimate')).toHaveAttribute('data-budget', '400');
+  await expect(page.getByTestId('checkup-time-estimate')).toContainText('全程约 3–14 分钟');
   await page.getByRole('combobox', { name: '调用预算' }).click();
-  await expect(page.getByRole('option', { name: '800 次' })).toBeAttached();
-  // 选项正文只有数字，"次"在无障碍标签上 —— 断言两者，免得哪天单位丢了也没人发现。
-  expect(await page.getByRole('option').allTextContents()).toEqual(['200', '400', '800']);
+  await expect(page.getByRole('option', { name: /200 次.*2–7 分钟/ })).toBeAttached();
+  await expect(page.getByRole('option', { name: /400 次.*3–14 分钟/ })).toBeAttached();
+  await expect(page.getByRole('option', { name: /800 次.*6–28 分钟/ })).toBeAttached();
   await page.keyboard.press('Escape');
-  // 两个引擎都列着（页面顶部的算法切换）：路网没配好只影响后端的取舍，界面不替它隐藏其中一个。
+  // 两个引擎都列着：路网没配好只影响后端的取舍，界面不替它隐藏其中一个。
   // 引擎名取自能力表，不是界面写死的。
   await expect(page.getByTestId('checkup-engine')).toContainText('引擎：百度边界搜索（E8.2）');
   await page.getByTestId('algorithm-hybrid').click();

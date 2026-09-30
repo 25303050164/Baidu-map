@@ -14,7 +14,8 @@
  * - **图层按修订取、按层失败按层说**。一层没就绪（409 带名字）不该让整页失败，也不该
  *   被画成"这一层是空的"。
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Alert, Button, Checkbox, Descriptions, Drawer, InputNumber, Select } from 'antd';
 import type { Center } from '../types';
 import { LocationControls } from '../analysis/LocationControls';
@@ -141,8 +142,65 @@ const DEFAULT_CENTER: Center = { lng: 116.404, lat: 39.915 };
 /** 这些阶段出现过，完成时才自动打开报告；从刷新恢复出来的"已完成"按上次的开合状态来。 */
 const LIVE_PHASES = new Set(['submitting', 'queued', 'running']);
 
+const TAB_KEYS = ['location', 'engine', 'layers'] as const;
+type TabKey = typeof TAB_KEYS[number];
+const TAB_LABELS: Record<TabKey, string> = {
+  location: '我的位置', engine: '采样与引擎', layers: '图层备注',
+};
+const isTabKey = (value: string | undefined): value is TabKey =>
+  value !== undefined && (TAB_KEYS as readonly string[]).includes(value);
+let lastTab: TabKey = 'location';
+
+type PanelId = 'side' | 'results';
+type PanelLayout = { x: number; y: number; width: number; height: number };
+type WorkspaceSize = { width: number; height: number };
+type PanelInteraction = {
+  panel: PanelId;
+  mode: 'move' | 'resize';
+  pointerId: number;
+  startX: number;
+  startY: number;
+  initial: PanelLayout;
+};
+
+const PANEL_SIZE_LIMITS: Record<PanelId, { minWidth: number; maxWidth: number }> = {
+  side: { minWidth: 300, maxWidth: 480 }, results: { minWidth: 320, maxWidth: 520 },
+};
+
+function boundedLayout(layout: PanelLayout, panel: PanelId, workspace: WorkspaceSize): PanelLayout {
+  const limits = PANEL_SIZE_LIMITS[panel];
+  const maxWidth = Math.min(limits.maxWidth, Math.max(limits.minWidth, workspace.width - 32));
+  const maxHeight = Math.min(760, Math.max(280, workspace.height - 32));
+  const width = Math.min(maxWidth, Math.max(limits.minWidth, layout.width));
+  const height = Math.min(maxHeight, Math.max(280, layout.height));
+  return {
+    x: Math.max(16, Math.min(layout.x, workspace.width - width - 16)),
+    y: Math.max(16, Math.min(layout.y, workspace.height - height - 16)),
+    width,
+    height,
+  };
+}
+
+function initialPanelLayouts(): Record<PanelId, PanelLayout> {
+  const workspaceHeight = Math.max(320, window.innerHeight - 52);
+  const sideHeight = Math.min(620, Math.max(280, workspaceHeight - 32));
+  const resultsHeight = Math.min(660, Math.max(280, workspaceHeight - 32));
+  return {
+    side: { x: 16, y: 16, width: 344, height: sideHeight },
+    results: { x: Math.max(16, window.innerWidth - 376), y: 16, width: 360, height: resultsHeight },
+  };
+}
+
+/** 400 次预算的历史完整任务耗时约 191–812 秒；缩放成范围提示，不当作完成承诺。 */
+function estimateTime(budget: number): string {
+  const scale = budget / 400;
+  const minimum = Math.max(1, Math.round((191.2 * scale) / 60));
+  const maximum = Math.max(minimum, Math.ceil((812.3 * scale) / 60));
+  return `${minimum}–${maximum} 分钟`;
+}
+
 const PHASE_LABELS: Partial<Record<CheckupState['phase'], string>> = {
-  submitting: '正在提交', restoring: '正在核对上次的任务', queued: '排队中', running: '运行中',
+  submitting: '提交中', restoring: '恢复中', queued: '排队中', running: '运行中',
   fetching: '正在取结果', cancelling: '正在取消', completed: '已完成', cancelled: '已取消', error: '需要处理',
 };
 
@@ -150,12 +208,22 @@ const PHASE_LABELS: Partial<Record<CheckupState['phase'], string>> = {
  * 体检工作台。`engine` 由外层的算法切换决定：每个引擎有自己的任务登记（`sessions.ts`），
  * 这个组件只订阅它 —— 卸载时退订，任务照跑；只有"取消任务"按钮会让服务端停下。
  */
-export default function CheckupApp({ engine }: { engine: string }) {
+export default function CheckupApp({ engine, algorithmSwitch }: { engine: string; algorithmSwitch?: ReactNode }) {
   const service = useMemo(() => createCheckupService(), []);
   const session = useMemo(() => checkupSession(engine), [engine]);
   const controller = session.controller;
   const state = useCheckupState(session);
   const saved = useMemo(() => session.prefs(), [session]);
+  const workspaceRef = useRef<HTMLElement>(null);
+  const [workspaceSize, setWorkspaceSize] = useState<WorkspaceSize>(() => ({
+    width: window.innerWidth, height: Math.max(320, window.innerHeight - 52),
+  }));
+  const [panelLayouts, setPanelLayouts] = useState<Record<PanelId, PanelLayout>>(initialPanelLayouts);
+  const [frontPanel, setFrontPanel] = useState<PanelId>('side');
+  const panelInteraction = useRef<PanelInteraction | null>(null);
+  const wasFloating = useRef(window.innerWidth > 1080);
+  const [tab, setTab] = useState<TabKey>(isTabKey(saved.tab) ? saved.tab : lastTab);
+  const chooseTab = (key: TabKey) => { lastTab = key; setTab(key); };
   const initial = saved.draft ?? state.input?.center ?? DEFAULT_CENTER;
   const [center, setCenter] = useState<Center>(initial);
   const [lng, setLng] = useState<number | null>(initial.lng);
@@ -173,11 +241,36 @@ export default function CheckupApp({ engine }: { engine: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(saved.reportOpen ?? false);
 
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const measure = () => {
+      const bounds = workspace.getBoundingClientRect();
+      const nextSize = { width: bounds.width, height: bounds.height };
+      setWorkspaceSize(nextSize);
+      const floating = nextSize.width > 1080;
+      const enteringFloating = floating && !wasFloating.current;
+      wasFloating.current = floating;
+      setPanelLayouts(current => {
+        const side = boundedLayout(current.side, 'side', nextSize);
+        const results = boundedLayout(current.results, 'results', nextSize);
+        return {
+          side,
+          results: { ...results, x: enteringFloating ? nextSize.width - results.width - 16 : results.x },
+        };
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(workspace);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+
   // 界面偏好随改随存：刷新或切回来时，图层开关、热力模式、报告开合都按离开时的样子。
   useEffect(() => {
     session.setPrefs({ draft: center, ...(budget === null ? {} : { budget }),
-      toggles: toggles as Record<string, boolean>, serviceMode, densityCategory, reportOpen });
-  }, [session, center, budget, toggles, serviceMode, densityCategory, reportOpen]);
+      toggles: toggles as Record<string, boolean>, serviceMode, densityCategory, reportOpen, tab });
+  }, [session, center, budget, toggles, serviceMode, densityCategory, reportOpen, tab]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -313,8 +406,8 @@ export default function CheckupApp({ engine }: { engine: string }) {
       data-revision={task.revision}>{`第 ${task.revision} 版`}</span> },
     { key: 'status', label: '状态', children: task.status +
       (task.businessStatus ? `（${BUSINESS_LABELS[task.businessStatus] ?? task.businessStatus}）` : '') },
-    { key: 'spend', label: '本任务已用', children: <span data-testid="checkup-requests"
-      data-count={task.networkRequests}>{`${task.networkRequests} 次网络尝试（等时圈、设施与核验各池合计；只数真的发出的请求）`}</span> },
+    { key: 'spend', label: '已发请求', children: <span data-testid="checkup-requests"
+      data-count={task.networkRequests}>{`${task.networkRequests} 次`}</span> },
     { key: 'tier', label: '等时圈档位', children: `${task.budget} 次上限` },
     ...(liveNow && liveNow.stage ? [{ key: 'stage', label: '当前阶段', children:
       <span data-testid="checkup-stage-now" data-stage={liveNow.stage}>
@@ -331,108 +424,194 @@ export default function CheckupApp({ engine }: { engine: string }) {
     ...(liveNow && (task.status === 'running' || task.status === 'cancelling') ? [{ key: 'activity',
       label: '服务端最近活动', children: <span data-testid="checkup-activity"
         data-seconds={liveNow.activityAgo ?? ''}>
-        {liveNow.activityAgo === null ? '未记录（后端版本不报活动时间）'
+        {liveNow.activityAgo === null ? '未记录'
           : `${duration(liveNow.activityAgo)}前`}</span> }] : []),
   ]} />;
 
-  return <main className="wb-body" data-stage={idle ? 'idle' : 'active'}>
-    <aside className="wb-panel wb-side" aria-label="体检条件">
-      <div className="wb-scroll">
-        <section className="wb-sec wb-setup">
-          <LocationControls center={center} onPick={choose} />
-          <div className="wb-coords">
-            <InputNumber aria-label="经度" prefix="经度" value={lng}
-              onChange={value => edit('lng', value)} precision={6} controls={false} />
-            <InputNumber aria-label="纬度" prefix="纬度" value={lat}
-              onChange={value => edit('lat', value)} precision={6} controls={false} />
-          </div>
-          {!valid && <Alert type="error" title="请输入有效坐标：经度 −180～180，纬度大于 −85 且小于 85" />}
-          <div className="wb-inline">
-            <span>采样预算</span>
-            <Select aria-label="调用预算" value={budget ?? undefined} placeholder="—" onChange={setBudget}
-              options={(selectedEngine?.budgets ?? []).map(value => ({ value, label: `${value} 次` }))} />
-          </div>
-          {capabilityError && <Alert type="error" title={capabilityError} showIcon />}
-          {selectedEngine?.alert && <Alert type="warning" showIcon title={selectedEngine.alert} />}
-        </section>
-        <footer className="wb-actions">
-          <Button aria-label="开始体检" type="primary" size="large" block onClick={start}
-            disabled={!canStart}>开始体检</Button>
-          {(live || (!busy && !idle)) && <div className="wb-actions-row">
-            {live && <Button onClick={() => void controller.cancel()}
-              disabled={state.phase === 'cancelling'}>取消任务</Button>}
-            {!live && !busy && !idle && <Button onClick={clear}>清除结果</Button>}
-          </div>}
-          {live && <p className="wb-hint" data-testid="checkup-live-note">任务进行中：切页、切换算法或刷新都不会取消它。</p>}
-        </footer>
-        <WeatherCard center={weatherCenter} />
-        <nav className="wb-dir" aria-label="目录">
-          <Fold title="图层" defaultOpen className="wb-layers">
-            <p className="wb-group">热力 · 二选一</p>
-            <div className="wb-layer">
-              <Checkbox checked={!!toggles.service}
-                onChange={event => toggleHeat('service', event.target.checked)}>服务覆盖热力</Checkbox>
-              {toggles.service && <Select className="wb-layer-select" size="small" aria-label="覆盖类别"
-                value={serviceMode} onChange={setServiceMode} options={SERVICE_MODES} popupMatchSelectWidth={false} />}
-            </div>
-            <div className="wb-layer">
-              <Checkbox checked={!!toggles.density}
-                onChange={event => toggleHeat('density', event.target.checked)}>设施密度热力</Checkbox>
-              {toggles.density && <Select className="wb-layer-select" size="small" aria-label="密度类别"
-                value={densityCategory} onChange={setDensityCategory} options={DENSITY_CATEGORIES}
-                popupMatchSelectWidth={false} />}
-            </div>
-            <p className="wb-group">叠加</p>
-            <div className="wb-layer">
-              <Checkbox checked={!!toggles.water}
-                onChange={event => setToggles({ ...toggles, water: event.target.checked })}>
-                <i className="api-swatch wb-swatch-water" />水系标注</Checkbox>
-            </div>
-            {MAP_LAYERS.map(id => <div className="wb-layer" key={id}>
-              <Checkbox checked={!!toggles[id]}
-                onChange={event => setToggles({ ...toggles, [id]: event.target.checked })}>
-                <i className="api-swatch" style={layerSwatch(id)} />
-                {LAYER_STYLES[id].label}</Checkbox>
-              {layerErrors[id] && <p className="wb-layer-error">{layerErrors[id]}</p>}
-            </div>)}
-          </Fold>
-          <Fold title="说明" className="wb-notes">
-            <dl>
-              <dt>算法</dt>
-              <dd data-testid="checkup-engine">引擎：{selectedEngine?.label
-                ?? (view ? `${engine}（后端能力表未提供，无法提交）`
-                  : capabilityError ? '未能读取能力表，暂不能提交' : '正在读取能力表')}
-                {selectedEngine?.engineVersion && <span className="wb-version">v{selectedEngine.engineVersion}</span>}</dd>
-              {selectedEngine?.caveat && <dd>{selectedEngine.caveat}</dd>}
-              <dt>口径</dt>
-              <dd>步行 900 秒成圈 · 服务标准步行 1000 米 · 坐标 BD09LL。可以直接在地图上点选中心；评估域以该点划定，域外面积不计入覆盖率。</dd>
-              <dt>未知与灰区</dt>
-              <dd>未知不等于不可达：灰区只覆盖"路网与检索数据都足够、却仍超出服务标准"的连片区域。评分区间是上界与下界，不是一个确定的百分比。</dd>
-              <dt>服务覆盖热力</dt>
-              <dd>后端评估格的结论连成渐变面：已覆盖按最近设施步行距离着色，服务不足为灰，数据未知为淡紫。模型估计，不是实测。</dd>
-              <dt>设施密度热力</dt>
-              <dd>圈内已接收设施等权计算，120 米核半径，单位个/公顷；同一疑似重复组只算一处。颜色表示设施扎堆程度，不表示覆盖率。与服务覆盖热力二选一。</dd>
-              <dt>水系标注</dt>
-              <dd data-testid="water-layer-note">
-                {snapshot && !water.available ? '这一版没有水系证据（早于水系复核），无可标注的内容。'
-                  : '计算用的水系：复核范围（虚线框）内的已核实河道按实测宽度成面，补录水体与桥梁已核对；'
-                    + '底图水面画错处（灰斜线，实为陆地）与来源冲突未裁决处（橙斜线，数据冲突／未知）单独标出。'
-                    + '底图水面只作参照，不代表计算结果。'}</dd>
-              {MAP_LAYERS.map(id => <div key={id}><dt>{LAYER_STYLES[id].label}</dt>
-                <dd>{LAYER_STYLES[id].note}</dd></div>)}
-              {view && <>
-                <dt>预算</dt>
-                <dd className="wb-quota">
-                  {view.quota.label && <p data-testid="quota-label">
-                    {/* 余额的说法逐字来自后端：它只算本应用自己的额度。 */}
-                    {view.quota.label}</p>}
-                  {view.quota.lines.map(line => <p key={line}>{line}</p>)}
-                </dd>
-              </>}
-            </dl>
-          </Fold>
-        </nav>
+  const floatingPanels = workspaceSize.width > 1080;
+  const panelStyle = (panel: PanelId): CSSProperties | undefined => floatingPanels ? {
+    left: panelLayouts[panel].x,
+    top: panelLayouts[panel].y,
+    width: panelLayouts[panel].width,
+    height: panelLayouts[panel].height,
+    zIndex: frontPanel === panel ? 12 : 10,
+  } : undefined;
+
+  function beginPanelInteraction(event: ReactPointerEvent<HTMLButtonElement>, panel: PanelId,
+    mode: PanelInteraction['mode']) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    setFrontPanel(panel);
+    panelInteraction.current = { panel, mode, pointerId: event.pointerId,
+      startX: event.clientX, startY: event.clientY, initial: panelLayouts[panel] };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function movePanel(event: ReactPointerEvent<HTMLButtonElement>) {
+    const interaction = panelInteraction.current;
+    if (!interaction || interaction.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - interaction.startX;
+    const deltaY = event.clientY - interaction.startY;
+    const next = interaction.mode === 'move'
+      ? { ...interaction.initial, x: interaction.initial.x + deltaX, y: interaction.initial.y + deltaY }
+      : { ...interaction.initial, width: interaction.initial.width + deltaX,
+        height: interaction.initial.height + deltaY };
+    setPanelLayouts(current => ({ ...current,
+      [interaction.panel]: boundedLayout(next, interaction.panel, workspaceSize) }));
+  }
+
+  function endPanelInteraction(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (panelInteraction.current?.pointerId === event.pointerId) panelInteraction.current = null;
+  }
+
+  function nudgePanel(event: ReactKeyboardEvent<HTMLButtonElement>, panel: PanelId, mode: PanelInteraction['mode']) {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    setFrontPanel(panel);
+    const step = event.shiftKey ? 24 : 8;
+    setPanelLayouts(current => {
+      const layout = current[panel];
+      const horizontal = event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0;
+      const vertical = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0;
+      const next = mode === 'move'
+        ? { ...layout, x: layout.x + horizontal, y: layout.y + vertical }
+        : { ...layout, width: layout.width + horizontal, height: layout.height + vertical };
+      return { ...current, [panel]: boundedLayout(next, panel, workspaceSize) };
+    });
+  }
+
+  const panelChrome = (panel: PanelId, label: string) => floatingPanels && <>
+    <div className="wb-panel-chrome">
+      <button type="button" className="wb-panel-move" data-testid={`panel-move-${panel}`}
+        aria-label={`拖动${label}`} title="拖动面板"
+        onPointerDown={event => beginPanelInteraction(event, panel, 'move')}
+        onPointerMove={movePanel} onPointerUp={endPanelInteraction} onPointerCancel={endPanelInteraction}
+        onKeyDown={event => nudgePanel(event, panel, 'move')}>
+        <span className="wb-grip-dots" aria-hidden="true">
+          {Array.from({ length: 6 }, (_, index) => <i key={index} />)}
+        </span>
+      </button>
+    </div>
+    <button type="button" className="wb-panel-resize" data-testid={`panel-resize-${panel}`}
+      aria-label={`调整${label}大小`} title="拖动调整大小"
+      onPointerDown={event => beginPanelInteraction(event, panel, 'resize')}
+      onPointerMove={movePanel} onPointerUp={endPanelInteraction} onPointerCancel={endPanelInteraction}
+      onKeyDown={event => nudgePanel(event, panel, 'resize')}><span aria-hidden="true" /></button>
+  </>;
+
+  return <main ref={workspaceRef} className="wb-body" data-stage={idle ? 'idle' : 'active'}>
+    <aside className="wb-panel wb-side" style={panelStyle('side')} aria-label="体检条件">
+      {panelChrome('side', '左侧面板')}
+      <div className="wb-tabs" role="tablist" aria-label="体检设置">
+        {TAB_KEYS.map(key => <button key={key} type="button" role="tab"
+          id={`checkup-tab-${key}`} data-testid={`checkup-tab-${key}`}
+          aria-selected={tab === key} aria-controls={`checkup-panel-${key}`}
+          tabIndex={tab === key ? 0 : -1}
+          className={tab === key ? 'wb-tab wb-tab-active' : 'wb-tab'}
+          onClick={() => chooseTab(key)}>{TAB_LABELS[key]}</button>)}
       </div>
+      <div className="wb-tabpanels">
+        <div className="wb-scroll wb-tabpanel" role="tabpanel" id="checkup-panel-location"
+          aria-labelledby="checkup-tab-location" hidden={tab !== 'location'}>
+          <section className="wb-sec wb-setup">
+            <LocationControls center={center} onPick={choose} />
+            <div className="wb-coords">
+              <InputNumber aria-label="经度" prefix="经度" value={lng}
+                onChange={value => edit('lng', value)} precision={6} controls={false} />
+              <InputNumber aria-label="纬度" prefix="纬度" value={lat}
+                onChange={value => edit('lat', value)} precision={6} controls={false} />
+            </div>
+            {!valid && <Alert type="error" title="坐标无效：经度 −180～180，纬度 −85～85" />}
+          </section>
+        </div>
+
+        <div className="wb-scroll wb-tabpanel" role="tabpanel" id="checkup-panel-engine"
+          aria-labelledby="checkup-tab-engine" hidden={tab !== 'engine'}>
+          <section className="wb-sec wb-engine">
+            {algorithmSwitch}
+            {capabilityError && <Alert type="error" title={capabilityError} showIcon />}
+            <p className="wb-engine-name" data-testid="checkup-engine">引擎：{selectedEngine?.label
+              ?? (view ? `${engine}（后端能力表未提供，无法提交）`
+                : capabilityError ? '未能读取能力表，暂不能提交' : '正在读取能力表')}
+              {selectedEngine?.engineVersion && <span className="wb-version">v{selectedEngine.engineVersion}</span>}</p>
+            <label className="wb-field"><span>采样预算</span><Select aria-label="调用预算"
+              value={budget ?? undefined} placeholder="—" onChange={setBudget}
+              options={(selectedEngine?.budgets ?? []).map(value => ({
+                value, label: `${value} 次 · ${estimateTime(value)}`,
+              }))} /></label>
+            {budget !== null && <p className="wb-estimate" data-testid="checkup-time-estimate"
+              data-budget={budget}>全程约 {estimateTime(budget)}</p>}
+            <p className="wb-hint">实际用时受网络影响</p>
+            <p className="wb-hint">步行 900 秒 · 服务标准 1000 米</p>
+            {selectedEngine?.alert && <Alert type="warning" showIcon title={selectedEngine.alert} />}
+            {selectedEngine?.caveat && selectedEngine.caveat !== selectedEngine.alert
+              && <p className="wb-hint">{selectedEngine.caveat}</p>}
+            {(view?.quota.label || (view?.quota.lines.length ?? 0) > 0) && <div className="wb-quota">
+              {view?.quota.label && <p data-testid="quota-label">{view.quota.label}</p>}
+              {view?.quota.lines.map(line => <p key={line}>{line}</p>)}
+            </div>}
+          </section>
+        </div>
+
+        <div className="wb-scroll wb-tabpanel" role="tabpanel" id="checkup-panel-layers"
+          aria-labelledby="checkup-tab-layers" hidden={tab !== 'layers'}>
+          <nav className="wb-dir" aria-label="图层与备注">
+            <Fold title="图层" defaultOpen className="wb-layers">
+              <p className="wb-group">热力 · 二选一</p>
+              <div className="wb-layer">
+                <Checkbox checked={!!toggles.service}
+                  onChange={event => toggleHeat('service', event.target.checked)}>服务覆盖热力</Checkbox>
+                {toggles.service && <Select className="wb-layer-select" size="small" aria-label="覆盖类别"
+                  value={serviceMode} onChange={setServiceMode} options={SERVICE_MODES} popupMatchSelectWidth={false} />}
+              </div>
+              <div className="wb-layer">
+                <Checkbox checked={!!toggles.density}
+                  onChange={event => toggleHeat('density', event.target.checked)}>设施密度热力</Checkbox>
+                {toggles.density && <Select className="wb-layer-select" size="small" aria-label="密度类别"
+                  value={densityCategory} onChange={setDensityCategory} options={DENSITY_CATEGORIES}
+                  popupMatchSelectWidth={false} />}
+              </div>
+              <p className="wb-group">叠加</p>
+              <div className="wb-layer">
+                <Checkbox checked={!!toggles.water}
+                  onChange={event => setToggles({ ...toggles, water: event.target.checked })}>
+                  <i className="api-swatch wb-swatch-water" />水系标注</Checkbox>
+              </div>
+              {MAP_LAYERS.map(id => <div className="wb-layer" key={id}>
+                <Checkbox checked={!!toggles[id]}
+                  onChange={event => setToggles({ ...toggles, [id]: event.target.checked })}>
+                  <i className="api-swatch" style={layerSwatch(id)} />
+                  {LAYER_STYLES[id].label}</Checkbox>
+                {layerErrors[id] && <p className="wb-layer-error">{layerErrors[id]}</p>}
+              </div>)}
+            </Fold>
+            <Fold title="备注" className="wb-notes">
+              <dl>
+                <dt>服务覆盖热力</dt>
+                <dd>已覆盖按最近设施步行距离着色；灰色为服务不足，淡紫为未知。模型估计，不是实测。</dd>
+                <dt>设施密度热力</dt>
+                <dd>圈内设施等权计算，核半径 120 米；疑似重复只算一处，不代表覆盖率。</dd>
+                <dt>水系标注</dt>
+                <dd data-testid="water-layer-note">
+                  {snapshot && !water.available ? '本次结果没有水系证据。'
+                    : '已核实河道按实测宽度成面；错误底图水面与未裁决冲突单独标出。'}</dd>
+                {MAP_LAYERS.map(id => <div key={id}><dt>{LAYER_STYLES[id].label}</dt>
+                  <dd>{LAYER_STYLES[id].note}</dd></div>)}
+              </dl>
+            </Fold>
+          </nav>
+        </div>
+      </div>
+      <footer className="wb-actions">
+        <Button aria-label="开始体检" type="primary" size="large" block onClick={start}
+          disabled={!canStart}>开始体检</Button>
+        {(live || (!busy && !idle)) && <div className="wb-actions-row">
+          {live && <Button onClick={() => void controller.cancel()}
+            disabled={state.phase === 'cancelling'}>取消任务</Button>}
+          {!live && !busy && !idle && <Button onClick={clear}>清除结果</Button>}
+        </div>}
+        {live && <p className="wb-hint" data-testid="checkup-live-note">切换算法或刷新不会取消任务。</p>}
+      </footer>
     </aside>
 
     <section className="wb-map api-map-section" data-testid="checkup-map-section"
@@ -456,8 +635,10 @@ export default function CheckupApp({ engine }: { engine: string }) {
       </div>
     </section>
 
-    {!idle && <aside className="wb-panel wb-results" aria-label="体检结果">
+    <aside className="wb-panel wb-results" style={panelStyle('results')} aria-label="体检报告">
+      {panelChrome('results', '右侧面板')}
       <div className="wb-scroll">
+        {!idle ? <>
         <section className="wb-sec wb-status">
           <div className="wb-sec-head">
             <span className="wb-phase" data-testid="checkup-phase"
@@ -477,7 +658,7 @@ export default function CheckupApp({ engine }: { engine: string }) {
               ? `（请求标识 ${state.input.clientRequestId}）` : '')}</p>
           </div>}
           {state.phase === 'cancelled' && <Alert type="info" title="任务已取消"
-            description="已经发出的调用仍计入本应用的预算账本。" />}
+            description="已发请求仍计入预算。" />}
           {state.error && <Alert type="error" title={state.error} showIcon data-testid="checkup-error"
             action={<Button aria-label="重试" size="small"
               onClick={() => void controller.retry()}>{state.recovery === 'unconfirmed' ? '重新提交'
@@ -509,7 +690,7 @@ export default function CheckupApp({ engine }: { engine: string }) {
             ?? '设施结果尚未加载。'}</p>
             : drawables.facilities.state === 'empty' ? <p className="wb-hint">本次体检没有接收的设施。</p>
             : <>
-              <p className="wb-hint">按直线距离排序（非步行距离），点击一处可查询路线。</p>
+              <p className="wb-hint">按直线距离排序；点选可查步行路线。</p>
               {nearestGroups.map(group => <div className="wb-near" key={group.category}>
                 <p className="wb-near-head"><i style={{ background: group.color }} />{group.label}
                   <span>共 {group.total} 处</span></p>
@@ -550,8 +731,10 @@ export default function CheckupApp({ engine }: { engine: string }) {
                 : version.applied.join('、'))}
             {version.recomputed && <><br />{recomputedText(version.recomputed)}</>}</p>}
         </Fold>}
+        </> : <section className="wb-sec wb-empty-report"><p className="wb-hint">暂无体检结果</p></section>}
+        <div className="wb-weather-bottom"><WeatherCard center={weatherCenter} /></div>
       </div>
-    </aside>}
+    </aside>
 
     <Drawer title="体检报告" open={reportOpen} onClose={() => setReportOpen(false)} size={960}
       rootClassName="rp-drawer">
