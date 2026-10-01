@@ -98,10 +98,22 @@ class Mesh:
 def _coverage(faces):
     """Whole Delaunay faces share exact edges, so they merge as a coverage in one
     linear pass instead of a full overlay; the overlay that follows still snaps
-    everything to the overlay grid."""
+    everything to the overlay grid.
+
+    GEOS does not check its input: overlapping faces (near-degenerate slivers can
+    look so) either raise or come back as an invalid result. Then, or whenever the
+    merged area is not the faces' total, the faces go to the overlay as they are.
+    """
     if len(faces) < 2:
         return list(faces)
-    return [shapely.coverage_union_all(faces)]
+    try:
+        merged = shapely.coverage_union_all(faces)
+    except shapely.errors.GEOSException:
+        return list(faces)
+    total = float(shapely.area(faces).sum())
+    if not merged.is_valid or abs(merged.area - total) > 1e-6 * max(1.0, total):
+        return list(faces)
+    return [merged]
 
 
 def _covered(region, records):

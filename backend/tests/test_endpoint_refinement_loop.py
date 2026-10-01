@@ -63,6 +63,18 @@ def test_faces_cached_inside_one_patch_assemble_a_wider_patch_exactly_as_fresh_o
         assert faces, seed
 
 
+def test_faces_that_do_not_form_a_coverage_go_to_the_overlay_unchanged():
+    import numpy as np
+    from tools.endpoint_geometry import polygon_union
+    from tools.endpoint_refinement_loop import _coverage
+    faces = np.array([box(0, 0, 2, 2), box(1, 1, 3, 3)], dtype=object)  # overlapping
+    merged = _coverage(faces)
+    assert len(merged) == 2
+    assert abs(polygon_union(merged).area - 7) < 1e-9
+    tiles = np.array([box(0, 0, 1, 1), box(1, 0, 2, 1)], dtype=object)  # a true coverage
+    assert len(_coverage(tiles)) == 1 and abs(_coverage(tiles)[0].area - 2) < 1e-9
+
+
 def test_rebuilds_run_on_a_worker_thread_not_the_event_loop(monkeypatch):
     import threading
     import tools.endpoint_refinement_loop as loop
