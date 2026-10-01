@@ -269,6 +269,27 @@ def test_only_one_attempt_per_service_is_in_flight(tmp_path):
     assert depths == [1, 1, 1, 1]
 
 
+def test_the_route_pool_holds_as_many_attempts_as_configured_and_places_stay_serial(tmp_path):
+    quota = Quota(settings_with(tmp_path, baidu_direction_max_inflight=2), clock=before_switch)
+
+    async def depths_of(service):
+        active, depths = [], []
+
+        async def attempt():
+            async with service.attempt(time.monotonic() + 10):
+                active.append(1)
+                depths.append(len(active))
+                # Longer than the 16 QPS interval, so a second slot can be used.
+                await asyncio.sleep(0.2)
+                active.pop()
+        await asyncio.gather(*(attempt() for _ in range(4)))
+        return depths
+
+    assert max(asyncio.run(depths_of(quota.direction))) == 2
+    assert max(asyncio.run(depths_of(quota.place))) == 1
+    assert quota.balance()['services']['direction']['maxInflight'] == 2
+
+
 def test_queued_expiry_does_not_spend_or_dispatch(tmp_path):
     async def run():
         service = make_pool(tmp_path, PLACE)
@@ -378,8 +399,9 @@ def test_matrix_stays_disabled_for_this_release(tmp_path):
 
 def test_quota_settings_reject_unsafe_values():
     for unsuitable in ({"baidu_place_daily_budget": -1}, {"baidu_direction_qps": 0},
-                       {"baidu_place_qps": 0}, {"baidu_direction_max_inflight": 2},
-                       {"baidu_place_max_inflight": 0},
+                       {"baidu_place_qps": 0}, {"baidu_direction_max_inflight": 4},
+                       {"baidu_direction_max_inflight": 0},
+                       {"baidu_place_max_inflight": 0}, {"baidu_place_max_inflight": 2},
                        # An instant without an offset is not an instant.
                        {"baidu_quota_fallback_at": "2026-09-30T00:00:00"},
                        {"baidu_fallback_place_daily_budget": -5}):

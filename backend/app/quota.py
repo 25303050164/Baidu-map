@@ -136,9 +136,9 @@ class TieredGate(RateGate):
     the tier's ceiling, never raise it.
     """
 
-    def __init__(self, ceiling, *, cap: float | None = None):
+    def __init__(self, ceiling, *, cap: float | None = None, max_inflight: int = 1):
         self.ceiling, self.cap = ceiling, cap
-        super().__init__(self.current_qps())
+        super().__init__(self.current_qps(), max_inflight=max_inflight)
 
     def current_qps(self) -> float:
         qps = self.ceiling()
@@ -371,9 +371,12 @@ class Quota:
         self.ledger.initialize()
         self.matrix_enabled = settings.baidu_matrix_enabled
         cap = settings.analysis_qps
+        # Only the route gate may hold more than one attempt; place searches stay serial.
+        direction_inflight = settings.baidu_direction_max_inflight
         self.direction = ServicePool(
-            DIRECTION, TieredGate(lambda: self.tiers.active().direction_qps, cap=cap), self.ledger,
-            self.tiers, max_inflight=settings.baidu_direction_max_inflight)
+            DIRECTION, TieredGate(lambda: self.tiers.active().direction_qps, cap=cap,
+                                  max_inflight=direction_inflight),
+            self.ledger, self.tiers, max_inflight=direction_inflight)
         self.place = ServicePool(
             PLACE, TieredGate(lambda: self.tiers.active().place_qps, cap=cap), self.ledger,
             self.tiers, max_inflight=settings.baidu_place_max_inflight)
