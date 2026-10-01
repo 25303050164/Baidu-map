@@ -48,6 +48,34 @@ def test_the_shared_mesh_reproduces_the_legacy_patch_assembly():
         assert set(mixed_edges(evidence, patch, 25)) == set(mesh_mixed_edges(Mesh(evidence), patch, 25))
 
 
+def test_faces_cached_inside_one_patch_assemble_a_wider_patch_exactly_as_fresh_ones():
+    for seed in range(5):
+        evidence = records(seed)
+        mesh, faces = Mesh(evidence), {}
+        base = box(-350, -300, 300, 350)
+        # The second patch contains the first: every face cached there is reused here.
+        for patch in (box(-250, -250, 150, 200), box(-300, -280, 250, 300)):
+            fresh = mesh_close_patch_evidence(mesh, evidence, patch, base, [], target=25)
+            cached = mesh_close_patch_evidence(mesh, evidence, patch, base, [], target=25, faces=faces)
+            for key in ('estimate', 'reachable', 'unreachable', 'unknown', 'combined_candidate'):
+                assert fresh[key].symmetric_difference(cached[key]).area < 1e-6, (seed, key)
+            assert fresh['conflicts'] == cached['conflicts']
+        assert faces, seed
+
+
+def test_rebuilds_run_on_a_worker_thread_not_the_event_loop(monkeypatch):
+    import threading
+    import tools.endpoint_refinement_loop as loop
+    on_loop_thread, rebuild = [], loop.rebuild
+
+    def spy(state):
+        on_loop_thread.append(threading.current_thread() is threading.main_thread())
+        return rebuild(state)
+    monkeypatch.setattr(loop, 'rebuild', spy)
+    run('circle', 200, 'loop')
+    assert on_loop_thread and not any(on_loop_thread)
+
+
 # -- spending: explore past the smooth case, never past the budget ----------------
 
 def test_a_smooth_circle_keeps_exploring_but_the_budget_is_a_ceiling():
