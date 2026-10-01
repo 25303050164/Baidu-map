@@ -85,6 +85,10 @@ class RouteObservation:
     request_origin: Point | None = None
     distance_m: float | None = None
     route_path: list = field(default_factory=list)
+    # Seconds from the route's start to each route_path vertex, from the per-step
+    # durations; empty when any step lacks one. A prefix of a walkable route bounds
+    # the walking time to that vertex from above.
+    route_path_seconds: list = field(default_factory=list)
     # Route evidence survives rejection at the requested coordinate.
     observed_duration: float | None = None
     origin_offset_m: float | None = None

@@ -122,22 +122,43 @@ class BaiduProvider:
             distance = route.get("distance")
             if type(distance) not in (int, float) or not math.isfinite(distance) or distance < 0:
                 distance = None
-            path = []
+            path, seconds = [], []
+            elapsed, timed = 0.0, isinstance(steps, list) and bool(steps)
             for step in steps if isinstance(steps, list) else []:
                 if not isinstance(step, dict) or not isinstance(step.get("path"), str):
+                    timed = False
                     continue
+                points = []
                 for pair in step["path"].split(";"):
                     parts = pair.split(",")
                     point = self._endpoint({"lng": parts[0], "lat": parts[1]}) if len(parts) == 2 else None
-                    if point and (not path or path[-1] != point):
+                    if point:
+                        points.append(point)
+                step_seconds = step.get("duration")
+                if type(step_seconds) not in (int, float) or not math.isfinite(step_seconds) or step_seconds < 0:
+                    timed, step_seconds = False, 0
+                # Within a step, time grows with distance along its own polyline.
+                local = [projection.to_local(p) for p in points]
+                along = [0.0]
+                for a, b in zip(local, local[1:]):
+                    along.append(along[-1] + math.dist(a, b))
+                for point, metres in zip(points, along):
+                    if not path or path[-1] != point:
                         path.append(point)
+                        seconds.append(elapsed + (step_seconds * metres / along[-1] if along[-1] > 0 else 0.0))
+                elapsed += step_seconds
+            if timed and elapsed > 0 and observation.duration:
+                # Scaled so the last vertex carries the route's own duration, the label it is judged by.
+                seconds = [value * observation.duration / elapsed for value in seconds]
+            elif not timed or elapsed <= 0:
+                seconds = []
             if self.route_metric == "distance" and distance is None:
                 reason = "invalid_distance"
                 continue
             item = RouteObservation(destination, observation.duration, reason="endpoint_offset" if offset else None,
                 observed_duration=observation.duration, endpoint_verified=start is not None and end is not None,
                 route_origin=start, route_destination=end, distance_m=distance, route_path=path,
-                origin_offset_m=origin_shift, destination_offset_m=destination_shift)
+                route_path_seconds=seconds, origin_offset_m=origin_shift, destination_offset_m=destination_shift)
             (offset_routes if offset else valid).append(item)
         candidates = valid or offset_routes
         return min(candidates, key=lambda o: o.distance_m if self.route_metric == "distance" else o.observed_duration) if candidates else unknown(reason)

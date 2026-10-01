@@ -11,13 +11,16 @@ from one evidence version.
 The budget is a ceiling, not a target: the loop stops when no action is worth a
 query. Priorities are fixed tiers -- evidence conflicts, then unlocalized
 boundary, then wide angular gaps -- rather than an information-gain model.
-Geometry only ever uses actual route endpoints; requested angles steer queries.
+By default geometry only ever uses actual route endpoints; requested angles steer
+queries. The route_prefix experiment also connects points reached within 900 s along
+returned routes (tools.endpoint_route_prefix), never fewer measured ones.
 
 Rebuilding and planning are pure CPU over this task's own state, so they run on a
 worker thread: the event loop stays free for status polls and other tasks while
 the loop awaits them, and nothing else touches the state meanwhile.
 """
 import asyncio
+from dataclasses import asdict, dataclass
 import math
 
 import numpy as np
@@ -28,9 +31,10 @@ from shapely.ops import triangulate, unary_union
 from life_circle.field import multipolygon
 from tools.endpoint_boundary_band import TAU, connect_estimate, nodes_from_rows, probe_sides
 from tools.endpoint_boundary_surface import add_origin_condition
-from tools.endpoint_geometry import (OVERLAY_GRID_M, business_geometry, polygon_difference,
-                                     polygon_intersection, polygon_union)
-from tools.endpoint_multicross_boundary import discover_patches
+from tools.endpoint_geometry import (OVERLAY_GRID_M, ROUNDTRIP_TOLERANCE_M, business_geometry,
+                                     polygon_difference, polygon_intersection, polygon_union)
+from tools.endpoint_multicross_boundary import discover_patches, measure_batch
+from tools.endpoint_route_prefix import SOURCE_KIND as ROUTE_PREFIX, PrefixStore
 
 VERSION = 'local-multicross-e82.1'
 BATCH_ATTEMPTS = 8
@@ -46,6 +50,62 @@ EXPLORE_MIN_FACE_M2 = 2500
 EXPLORE_OUTER_SCALES = (1.15, 1.3, 1.45)
 EXPLORE_OUTER_POINTS = 96
 GOLDEN = (math.sqrt(5) - 1) / 2
+
+
+@dataclass(frozen=True)
+class LoopConfig:
+    """Every tunable of the loop. The defaults are E8.2.1 as published; each
+    coverage switch below is an experiment and stays off unless named."""
+    batch_attempts: int = BATCH_ATTEMPTS
+    explore_share: float = EXPLORE_SHARE
+    coarse_chord_m: float = COARSE_CHORD_M
+    max_directions: int = MAX_DIRECTIONS
+    edge_rounds: int = EDGE_ROUNDS
+    direction_rounds: int = DIRECTION_ROUNDS
+    conflict_reach_m: float = CONFLICT_REACH_M
+    explore_min_face_m2: float = EXPLORE_MIN_FACE_M2
+    explore_outer_scales: tuple = EXPLORE_OUTER_SCALES
+    explore_outer_points: int = EXPLORE_OUTER_POINTS
+    # A scan ray whose outermost sample is reachable keeps going outward, doubling
+    # its step, inside a corridor that joins the patch.
+    scan_extend: bool = False
+    scan_extend_max_m: float = 400
+    scan_corridor_m: float = 75
+    # A direction whose probe falls inside a patch is still proposed, from the
+    # outer neighbour's radius.
+    densify_in_patch: bool = False
+    # Between every two adjacent boundary nodes, a probe just past the outer one.
+    gap_explore: bool = False
+    gap_explore_margin_m: float = 100
+    gap_explore_min_chord_m: float = 60
+    # After an interior contradiction, more than one interior probe per batch.
+    interior_adaptive: bool = False
+    interior_max_per_batch: int = 2
+    # With no other action left, exploration may run past its reserve.
+    explore_beyond_reserve: bool = False
+    # A batch that sent nothing still made progress if it tried a new candidate (an
+    # exploration point answered from the cache, say): keep going instead of
+    # stopping with budget and actions left.
+    stall_continue: bool = False
+    # Route prefixes (needs route_path_seconds): points reached within 900 s along
+    # the returned routes join the mesh as reachable evidence near or outside the
+    # estimate; one outside it widens the patch around it, without scans of its own.
+    route_prefix: bool = False
+    prefix_spacing_m: float = 50
+    prefix_merge_m: float = 10
+    prefix_max_seconds: float = 900
+    prefix_band_m: float = 150
+    prefix_patch_m: float = 75
+    # Where a route crosses 900 s outside the estimate, a direction is searched from there.
+    crossing_hints: bool = False
+    # Throughput, not coverage: a scan ray's samples go to the scheduler together
+    # (committed in requested order), and the first ring of the 16 initial
+    # directions is fetched together, so a gate with several slots can overlap them.
+    scan_batch: bool = False
+    ring_prefetch: bool = False
+
+
+DEFAULT_CONFIG = LoopConfig()
 
 
 def _key(xy):
@@ -230,12 +290,12 @@ def mesh_close_patch_evidence(mesh, records, patch, base, blocked, *, target=25,
 
 
 class LoopState:
-    def __init__(self, session, rows, *, target, radial_step, coarse_chord, explore_share):
-        self.session, self.rows = session, rows
-        self.target, self.radial_step, self.coarse_chord = target, radial_step, coarse_chord
+    def __init__(self, session, rows, *, target, radial_step, config=DEFAULT_CONFIG):
+        self.session, self.rows, self.config = session, rows, config
+        self.target, self.radial_step, self.coarse_chord = target, radial_step, config.coarse_chord_m
         self.start_calls = session.scheduler.stats.requests
         self.initial_remaining = max(0, session.scheduler.remaining)
-        self.explore_reserve = int(explore_share * self.initial_remaining)
+        self.explore_reserve = int(config.explore_share * self.initial_remaining)
         self.explore_spent = 0
         self.patch = polygon_union([])
         self.spec_keys, self.scan_queue, self.scanned = set(), [], set()
@@ -249,8 +309,17 @@ class LoopState:
                            conflict_patches=0, outside_positive_patches=0)
         # Pieces of mixed faces wholly inside the patch, kept across rebuilds.
         self.faces = {}
+        # The last interior probe found an unreachable pocket inside the estimate.
+        self.interior_hot = False
+        self.prefix = (PrefixStore(session, spacing_m=config.prefix_spacing_m, merge_m=config.prefix_merge_m,
+                                   max_seconds=config.prefix_max_seconds)
+                       if config.route_prefix or config.crossing_hints else None)
         self.version = None
         self.stop_reason = None
+
+    def count(self, name):
+        """A counter that only an enabled experiment creates, so defaults stay unchanged."""
+        self.counts[name] = self.counts.get(name, 0) + 1
 
     @property
     def scheduler(self):
@@ -306,6 +375,12 @@ def rebuild(state):
         _add_scan_spec(state, spec['angle'], spec['gap'], spec['start'], spec['end'], 'patch')
     state.patch = polygon_union([state.patch, patch])
     records = session.records
+    if state.prefix is not None:
+        state.prefix.absorb()
+        if state.config.route_prefix:
+            previous = state.version['estimate'] if state.version else None
+            records = records + state.prefix.select(previous if previous is not None else base['candidate'],
+                                                    state.config.prefix_band_m)
     mesh = Mesh(records)
     version = dict(origin=origin, base=base, mesh=mesh, estimate=None, connected=None,
                    conflicts=[], conflict_xy=[])
@@ -351,8 +426,17 @@ def _open_contradictions(state, records, by_id, connected, estimate):
         positives = [r for r, ok in zip(positives, placed) if not ok]
     for record in positives:
         state.handled_points.add(('outside', record['id']))
-        state.counts['outside_positive_patches'] += 1
-        _point_patch(state, record['xy'], 'outside_positive')
+        if record.get('source_kind') == ROUTE_PREFIX:
+            # A route reached here within 900 s: the patch widens so the mesh connects
+            # it, and mixed edges around it are bisected with real requests. A window
+            # with four scan rays for each such point would cost more than it learns.
+            x, y = record['xy']
+            m = state.config.prefix_patch_m
+            state.patch = polygon_union([state.patch, box(x - m, y - m, x + m, y + m).intersection(state.session.domain)])
+            state.count('prefix_patches')
+        else:
+            state.counts['outside_positive_patches'] += 1
+            _point_patch(state, record['xy'], 'outside_positive')
         opened += 1
     return opened
 
@@ -361,14 +445,14 @@ def _open_contradictions(state, records, by_id, connected, estimate):
 
 def _near_conflict(state, xy):
     points = state.version['conflict_xy'] if state.version else []
-    return any(math.dist(p, xy) <= CONFLICT_REACH_M for p in points)
+    return any(math.dist(p, xy) <= state.config.conflict_reach_m for p in points)
 
 
 def _direction_actions(state):
     version = state.version
     origin, base = version['origin'], version['base']
     nodes = nodes_from_rows(state.rows, origin, state.session.domain, state.session._conflicts)
-    if len(state.rows) + len(state.failed_directions) >= MAX_DIRECTIONS:
+    if len(state.rows) + len(state.failed_directions) >= state.config.max_directions:
         return []
     actions = []
     uncommitted = [r for r in state.failed_directions]
@@ -387,7 +471,12 @@ def _direction_actions(state):
         hint = (ra + rb) / 2
         probe = (origin[0] + hint * math.cos(angle), origin[1] + hint * math.sin(angle))
         if state.patch.covers(Point(probe)):
-            continue
+            if not state.config.densify_in_patch:
+                continue
+            # Scans in a patch stop at the outer neighbour's radius; a direction
+            # searched from there finds a lobe reaching past it.
+            hint = max(ra, rb)
+            probe = (origin[0] + hint * math.cos(angle), origin[1] + hint * math.sin(angle))
         score = 0.0
         if base['candidate'] is None or gap >= math.pi / 2 - 1e-9:
             score = SUPPORT + gap
@@ -408,6 +497,34 @@ def _direction_actions(state):
             gaps = [((taken[(i + 1) % len(taken)] - t) % TAU or TAU, t) for i, t in enumerate(taken)]
             gap, start = max(gaps)
             actions.append((SUPPORT + gap, gap, 'direction', dict(angle=(start + gap / 2) % TAU, hint=600, step=150)))
+    if state.config.crossing_hints and state.prefix is not None and version['estimate'] is not None:
+        actions += _crossing_actions(state, origin)
+    return actions
+
+
+def _crossing_actions(state, origin):
+    """A direction toward each point where a route crossed 900 s outside the estimate.
+
+    The crossing is only a hint: the direction is searched and bracketed with real
+    requests like any other, from the crossing's radius.
+    """
+    estimate = state.version['estimate']
+    pending = [c for c in state.prefix.crossings if ('crossing', c['id']) not in state.handled_points]
+    if not pending or estimate.is_empty:
+        return []
+    xy = np.array([c['xy'] for c in pending], dtype=float)
+    near = shapely.dwithin(estimate, shapely.points(xy), state.target)
+    actions = []
+    for crossing, inside in zip(pending, near):
+        if inside:
+            continue
+        x, y = crossing['xy']
+        angle = math.atan2(y - origin[1], x - origin[0]) % TAU
+        if any(abs((angle - old + math.pi) % TAU - math.pi) < 1e-3 for old in state.attempted_angles):
+            continue
+        outside = estimate.distance(Point(x, y))
+        actions.append((UNLOCALIZED + min(.99, outside / 400), outside, 'direction',
+                        dict(angle=angle, hint=math.dist(crossing['xy'], origin), step=50, crossing=crossing['id'])))
     return actions
 
 
@@ -415,7 +532,7 @@ def _patch_actions(state):
     actions = []
     # Scans discover structure, edges resolve it. Like the legacy 50/50 split, the two
     # alternate: scans lead while they have not out-spent edge bisection by a batch.
-    scans_lead = state.calls['scan'] <= state.calls['edge'] + BATCH_ATTEMPTS
+    scans_lead = state.calls['scan'] <= state.calls['edge'] + state.config.batch_attempts
     origin = state.version['origin']
     for ray in state.scan_queue:
         if ray['key'] in state.scanned:
@@ -442,13 +559,14 @@ def _explore_candidates(state):
     estimate = state.version['estimate']
     if estimate is None or estimate.is_empty:
         return []
+    config = state.config
     mesh = state.version['mesh']
     candidates = []
     if len(mesh.triangles):
         # Faces filled only because all three corners are reachable: nobody checked inside.
         areas = shapely.area(mesh.triangles)
         reachable = np.array([all(v['duration'] <= 900 for v in vertices) for vertices in mesh.vertices])
-        chosen = np.nonzero((areas >= EXPLORE_MIN_FACE_M2) & reachable)[0]
+        chosen = np.nonzero((areas >= config.explore_min_face_m2) & reachable)[0]
         centroids = shapely.get_coordinates(shapely.centroid(mesh.triangles[chosen]))
         covered = shapely.intersects_xy(estimate, centroids[:, 0], centroids[:, 1])
         for i, (x, y), inside in zip(chosen, centroids.tolist(), covered):
@@ -456,15 +574,17 @@ def _explore_candidates(state):
             if inside and key not in state.explored:
                 candidates.append((float(areas[i]), key, (x, y)))
     candidates.sort(reverse=True)
-    interior = [(key, xy) for _, key, xy in candidates[:1]]
+    width = config.interior_max_per_batch if config.interior_adaptive and state.interior_hot else 1
+    interior = [(key, xy) for _, key, xy in candidates[:width]]
     origin = state.version['origin']
     domain = state.session.domain
+    gaps = _gap_candidates(state, estimate) if config.gap_explore else []
     # The next exterior point is held until it is actually probed.
-    while state.pending_outer is None and state.outer_index < EXPLORE_OUTER_POINTS * len(EXPLORE_OUTER_SCALES):
+    while state.pending_outer is None and state.outer_index < config.explore_outer_points * len(config.explore_outer_scales):
         index = state.outer_index
         state.outer_index += 1
         angle = (index * GOLDEN % 1) * TAU
-        scale = EXPLORE_OUTER_SCALES[index % len(EXPLORE_OUTER_SCALES)]
+        scale = config.explore_outer_scales[index % len(config.explore_outer_scales)]
         ray = LineString([origin, (origin[0] + 4000 * math.cos(angle), origin[1] + 4000 * math.sin(angle))])
         crossing = ray.intersection(estimate.boundary)
         if crossing.is_empty:
@@ -478,9 +598,43 @@ def _explore_candidates(state):
         if key not in state.explored and domain.covers(Point(xy)):
             state.pending_outer = (key, xy)
     exterior = [state.pending_outer] if state.pending_outer is not None else []
+    if gaps:
+        # Gap and golden-angle probes take turns: neither starves the other.
+        explored = [key[0] for key in state.explored]
+        gap_turn = not exterior or explored.count('gap') <= explored.count('outer')
+        exterior = gaps[:1] + exterior if gap_turn else exterior + gaps[:1]
     # Alternate: interior when available on even probes, exterior otherwise.
     order = interior + exterior if state.counts['explore_probes'] % 2 == 0 else exterior + interior
     return order
+
+
+def _gap_candidates(state, estimate):
+    """A probe just past the outer node of every wide gap between adjacent nodes.
+
+    Sector scans stop 75 m past the outer neighbour and golden-angle points are a
+    fixed pool, so a lobe reaching further between two rays is never sampled. These
+    candidates are rebuilt from the current nodes on every version; a reachable one
+    becomes an outside positive and opens its own window at the next rebuild.
+    """
+    config, origin, domain = state.config, state.version['origin'], state.session.domain
+    nodes = nodes_from_rows(state.rows, origin, domain, state.session._conflicts)
+    found = []
+    for i, a in enumerate(nodes if len(nodes) > 1 else []):
+        b = nodes[(i + 1) % len(nodes)]
+        gap = (b['angle'] - a['angle']) % TAU
+        chord = math.dist(a['xy'], b['xy'])
+        if gap <= 1e-6 or chord < config.gap_explore_min_chord_m:
+            continue
+        ra, rb = math.dist(a['xy'], origin), math.dist(b['xy'], origin)
+        angle = (a['angle'] + gap / 2) % TAU
+        radius = max(ra, rb) + config.gap_explore_margin_m
+        xy = (origin[0] + radius * math.cos(angle), origin[1] + radius * math.sin(angle))
+        key = ('gap', _key(xy))
+        if key in state.explored or not domain.covers(Point(xy)) or estimate.covers(Point(xy)):
+            continue
+        found.append((chord, abs(ra - rb), -angle, key, xy))
+    found.sort(reverse=True)
+    return [(key, xy) for *_, key, xy in found]
 
 
 async def search_near(state, angle, hint, step):
@@ -561,7 +715,7 @@ async def search_near(state, angle, hint, step):
     if not session.domain.covers(Point(outside['xy'])) or not session.domain.covers(Point(inside['xy'])):
         row['reason'] = 'actual_endpoint_outside_domain'
         return row
-    bracket = await session.refine(inside, outside, target=target, max_rounds=DIRECTION_ROUNDS)
+    bracket = await session.refine(inside, outside, target=target, max_rounds=state.config.direction_rounds)
     if bracket['reason'] == 'offset_stagnation':
         bracket, row['sideProbes'] = await probe_sides(session, bracket, target=target)
     row.update(status=bracket['status'], reason=bracket['reason'], bracket=bracket,
@@ -569,11 +723,39 @@ async def search_near(state, angle, hint, step):
     return row
 
 
+async def _extend_scan(state, spec, origin, direction):
+    """Carry a scan ray outward while it stays reachable, doubling the step.
+
+    The extension lies inside a corridor joined to the patch, so a positive it finds
+    is pending edge work for this patch, not a new outside contradiction that would
+    open a window and four more rays of its own.
+    """
+    session, config = state.session, state.config
+    (ox, oy), (ux, uy) = origin, direction
+    cap = max(0, state.scheduler.request.extent - .1 - max(abs(ox), abs(oy))) / max(abs(ux), abs(uy))
+    limit = min(cap, spec['end'] + config.scan_extend_max_m)
+    radius, step, reached = spec['end'], state.radial_step, spec['end']
+    state.count('scan_extensions')
+    while radius < limit - 1e-7 and not state.stopped():
+        radius = min(limit, radius + step)
+        record, _ = await session.measure((ox + radius * ux, oy + radius * uy), 'local_radial_scan')
+        reached = radius
+        if record is None or record['duration'] > 900:
+            break
+        step *= 2
+    if reached > spec['end']:
+        ray = LineString([(ox + spec['end'] * ux, oy + spec['end'] * uy), (ox + reached * ux, oy + reached * uy)])
+        state.patch = polygon_union([state.patch, ray.buffer(config.scan_corridor_m).intersection(session.domain)])
+
+
 async def _run_action(state, kind, spec):
     session = state.session
     before = state.scheduler.stats.requests
     if kind == 'direction':
         state.attempted_angles.append(spec['angle'])
+        if spec.get('crossing'):
+            state.handled_points.add(('crossing', spec['crossing']))
+            state.count('crossing_directions')
         row = await search_near(state, spec['angle'], spec['hint'], spec['step'])
         if row['committed']:
             state.rows.append(row)
@@ -587,30 +769,45 @@ async def _run_action(state, kind, spec):
         ox, oy = state.version['origin']
         ux, uy = math.cos(spec['angle']), math.sin(spec['angle'])
         count = max(1, math.ceil((spec['end'] - spec['start']) / state.radial_step))
-        for i in range(count + 1):
-            if state.stopped():
-                break
-            radius = spec['start'] + (spec['end'] - spec['start']) * i / count
-            if radius < 1:
-                continue
-            # Samples only: flips become mixed edges and are bisected as their own actions.
-            await session.measure((ox + radius * ux, oy + radius * uy), 'local_radial_scan')
+        radii = [r for r in (spec['start'] + (spec['end'] - spec['start']) * i / count for i in range(count + 1))
+                 if r >= 1]
+        last = None
+        if state.config.scan_batch:
+            # Samples only, as below; the scheduler commits them in this order.
+            if radii and not state.stopped():
+                results = await measure_batch(session, [(ox + r * ux, oy + r * uy) for r in radii],
+                                              'local_radial_scan')
+                last = results[-1][0]
+        else:
+            for radius in radii:
+                if state.stopped():
+                    break
+                # Samples only: flips become mixed edges and are bisected as their own actions.
+                last, _ = await session.measure((ox + radius * ux, oy + radius * uy), 'local_radial_scan')
+        if state.config.scan_extend and last is not None and last['duration'] <= 900:
+            await _extend_scan(state, spec, (ox, oy), (ux, uy))
     elif kind == 'edge':
         state.attempted_edges.add(spec['key'])
         state.counts['edge_brackets'] += 1
-        await session.refine(spec['a'], spec['b'], target=state.target, max_rounds=EDGE_ROUNDS)
+        await session.refine(spec['a'], spec['b'], target=state.target, max_rounds=state.config.edge_rounds)
     elif kind == 'explore':
         key, xy = spec
         state.explored.add(key)
         if state.pending_outer is not None and state.pending_outer[0] == key:
             state.pending_outer = None
         state.counts['explore_probes'] += 1
+        if key[0] == 'gap':
+            state.count('gap_probes')
         record, _ = await session.measure(xy, 'exploration')
         estimate = state.version['estimate']
         if record is not None and estimate is not None:
             inside = estimate.covers(Point(record['xy']))
             if inside != (record['duration'] <= 900):
                 state.counts['explore_contradictions'] += 1
+                if key[0] == 'gap':
+                    state.count('gap_contradictions')
+            if key[0] == 'face':
+                state.interior_hot = inside and record['duration'] > 900
     spent = state.scheduler.stats.requests - before
     state.calls[kind] += spent
     if kind == 'explore':
@@ -622,14 +819,13 @@ def _plan(state):
     """Every action the current evidence version proposes, best first."""
     actions = sorted(_direction_actions(state) + _patch_actions(state),
                      key=lambda a: (a[0], a[1]), reverse=True)
-    explore = _explore_candidates(state) if state.reserve_left() > 0 else []
+    beyond = state.config.explore_beyond_reserve and not actions
+    explore = _explore_candidates(state) if state.reserve_left() > 0 or beyond else []
     return actions, explore
 
 
-async def refinement_loop(session, rows, *, target=25, radial_step=50, coarse_chord=COARSE_CHORD_M,
-                          explore_share=EXPLORE_SHARE, token=None):
-    state = LoopState(session, rows, target=target, radial_step=radial_step,
-                      coarse_chord=coarse_chord, explore_share=explore_share)
+async def refinement_loop(session, rows, *, target=25, radial_step=50, config=None, token=None):
+    state = LoopState(session, rows, target=target, radial_step=radial_step, config=config or DEFAULT_CONFIG)
     await asyncio.to_thread(rebuild, state)
     while True:
         if token is not None and token.cancelled:
@@ -646,14 +842,20 @@ async def refinement_loop(session, rows, *, target=25, radial_step=50, coarse_ch
             state.stop_reason = 'no_ambiguity_left'
             break
         batch_start = state.scheduler.stats.requests
+        tried = _tried(state)
         progress = state.used / max(1, state.initial_remaining)
         only_reserve_left = state.scheduler.remaining <= state.reserve_left()
         # Exploration keeps pace with overall progress instead of waiting until the end.
         if explore and (not actions or only_reserve_left
                         or state.explore_spent < state.explore_reserve * progress + 1):
             await _run_action(state, 'explore', explore[0])
+            # A pocket just found inside the estimate: its neighbours are checked now.
+            for spec in explore[1:] if state.config.interior_adaptive and state.interior_hot else []:
+                if spec[0][0] != 'face' or state.stopped():
+                    continue
+                await _run_action(state, 'explore', spec)
         for _, _, kind, spec in actions:
-            if state.stopped() or state.scheduler.stats.requests - batch_start >= BATCH_ATTEMPTS:
+            if state.stopped() or state.scheduler.stats.requests - batch_start >= state.config.batch_attempts:
                 break
             # Other actions never eat into exploration's unspent reserve.
             if state.scheduler.remaining <= state.reserve_left():
@@ -661,6 +863,11 @@ async def refinement_loop(session, rows, *, target=25, radial_step=50, coarse_ch
             await _run_action(state, kind, spec)
         state.counts['batches'] += 1
         if state.scheduler.stats.requests == batch_start:
+            if state.config.stall_continue and _tried(state) != tried:
+                # A cached candidate cost nothing but is now spent: the next one may
+                # not be. The evidence did not change, so neither does the version.
+                state.count('stalled_batches')
+                continue
             # Every candidate was cached or rejected before a send: nothing more to learn.
             state.stop_reason = 'no_ambiguity_left'
             await asyncio.to_thread(rebuild, state)
@@ -669,19 +876,26 @@ async def refinement_loop(session, rows, *, target=25, radial_step=50, coarse_ch
     return state
 
 
+def _tried(state):
+    """Candidates spent so far; each set only grows, so a stalled loop still ends."""
+    return (len(state.explored), len(state.attempted_edges), len(state.attempted_angles), len(state.scanned))
+
+
 # -- publication --------------------------------------------------------------
 
 def carve_conflicts(state, estimate):
     """Remove a disk around every negative the estimate still covers.
 
     Radius min(50, 0.49 d) with d the distance to the nearest reachable evidence:
-    no positive is ever removed, and the negative ends strictly outside.
+    no positive is ever removed, and the negative ends strictly outside. A negative
+    on the boundary counts as covered: within the export round-trip tolerance it can
+    land on either side once projected to bd09.
     """
     records = state.session.records
     positives = [r for r in records if r['duration'] <= 900]
     disks, carved = [], []
     for record in records:
-        if record['duration'] <= 900 or not estimate.covers(Point(record['xy'])):
+        if record['duration'] <= 900 or not shapely.dwithin(estimate, Point(record['xy']), ROUNDTRIP_TOLERANCE_M):
             continue
         nearest = min((math.dist(record['xy'], p['xy']) for p in positives), default=100)
         radius = min(50, .49 * nearest)
@@ -705,9 +919,15 @@ def publish(state, token=None):
     loop_meta = dict(version=VERSION, stopReason=state.stop_reason, calls=dict(state.calls),
                      counts=dict(state.counts), exploreReserve=state.explore_reserve,
                      exploreSpent=state.explore_spent, initialRemaining=state.initial_remaining,
-                     parameters=dict(batchAttempts=BATCH_ATTEMPTS, exploreShare=EXPLORE_SHARE,
-                                     coarseChordM=state.coarse_chord, maxDirections=MAX_DIRECTIONS,
+                     parameters=dict(batchAttempts=state.config.batch_attempts,
+                                     exploreShare=state.config.explore_share,
+                                     coarseChordM=state.coarse_chord, maxDirections=state.config.max_directions,
                                      targetM=state.target, radialStepM=state.radial_step))
+    if state.config != DEFAULT_CONFIG:
+        # Only an experiment says which switches it ran with; the default stays as published.
+        loop_meta['parameters']['loopConfig'] = asdict(state.config)
+    if state.prefix is not None:
+        loop_meta['routePrefix'] = dict(points=len(state.prefix.records), crossings=len(state.prefix.crossings))
     initial_unfinished = sum(r.get('status') != 'localized' for r in state.rows if r.get('source') != 'densify')
     pending_rays = sum(ray['key'] not in state.scanned for ray in state.scan_queue)
     if version is None or version['estimate'] is None:

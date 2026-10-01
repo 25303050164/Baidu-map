@@ -159,7 +159,8 @@ async def compute_multicross_boundary(request,provider,token,*,radial_step=50,ta
                                      allow_network=False,parallel_sampling=False,edge_batch_size=1,
                                      on_checkpoint=None, diverse_batches=False, coverage_first=False,
                                      edge_queue_policy=None, on_local_start=None, poi_guided=False,
-                                     poi_discovery_only=False, on_progress=None, refinement='legacy'):
+                                     poi_discovery_only=False, on_progress=None, refinement='legacy',
+                                     loop_config=None):
     if provider.network and not allow_network:raise ValueError('E8.2 requires explicit real-provider enablement')
     if refinement not in ('legacy', 'loop'):raise ValueError('Invalid refinement mode')
     if not math.isfinite(radial_step) or radial_step<=0:raise ValueError('Invalid radial step')
@@ -303,13 +304,14 @@ async def compute_multicross_boundary(request,provider,token,*,radial_step=50,ta
         # E8.2.1: one scheduler for directions, patches, edges and exploration;
         # the published extension comes from the last evidence version.
         from tools.endpoint_refinement_loop import publish, refinement_loop
-        state=await refinement_loop(session,rows,target=target,radial_step=radial_step,token=token)
+        state=await refinement_loop(session,rows,target=target,radial_step=radial_step,config=loop_config,token=token)
         extension.update(await asyncio.to_thread(publish,state,token))
         extension['refinementLoop']['truncatedDirections']=sum(
             r.get('status')=='truncated' for r in state.failed_directions)
+    prefetch=parallel_sampling or bool(loop_config is not None and loop_config.ring_prefetch)
     result=await compute_radial_boundary(request,provider,token,directions=16,boundary_bands=True,
         target=target,on_sampling_complete=loop_repair if refinement=='loop' else repair,
-        on_session_start=initialize if parallel_sampling else None,
+        on_session_start=initialize if prefetch else None,
         coverage_first=coverage_first,on_progress=on_progress)
     result.update(extension)
     if extension.get('refinementLoop',{}).get('truncatedDirections'):

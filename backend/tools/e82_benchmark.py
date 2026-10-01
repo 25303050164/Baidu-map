@@ -30,6 +30,7 @@ from life_circle.models import CancelToken
 from app.algorithms.baidu_e82 import compute_e82
 from app.engines.baidu_e82 import e82_request
 from tools.diagnostic_common import no_network
+from tools.e82_variants import describe, resolve_arm
 from tools.endpoint_e83_experiment import cases as stress_cases, metrics as shape_metrics
 from tools.endpoint_multicross_experiment import CASES82, RotatedSynthetic, truth_for
 from tools.endpoint_radial_experiment import ORIGIN, local
@@ -84,11 +85,12 @@ def classification(pred, truth, extent):
 
 async def run_one(case, truth, factory, budget, arm):
     provider = factory()
-    request = e82_request(ORIGIN, budget, refinement=arm)
+    refinement, config = resolve_arm(arm)
+    request = e82_request(ORIGIN, budget, refinement=refinement)
     started = time.perf_counter()
     row = dict(case=case, family=family(case), budget=budget, arm=arm)
     try:
-        result = await compute_e82(request, provider, CancelToken(), refinement=arm)
+        result = await compute_e82(request, provider, CancelToken(), refinement=refinement, loop_config=config)
     except GeometryError as error:
         return dict(row, calls=provider.calls, elapsed_s=time.perf_counter() - started,
                     valid=False, failed=True, failure=str(error)), None
@@ -166,6 +168,7 @@ def _job(job):
 
 
 def run(args):
+    variants = describe(args.arms)  # an unknown arm fails here, before any run
     args.output.mkdir(parents=True, exist_ok=False)
     identity = freeze()
     jobs = [(name, case, budget, arm) for name in args.sets for case, _, _ in case_set(name)
@@ -184,7 +187,8 @@ def run(args):
         print(json.dumps({k: row.get(k) for k in ('set', 'case', 'budget', 'arm', 'calls', 'iou', 'failed')}),
               flush=True)
     dump(args.output / 'protocol.json', dict(sets=args.sets, budgets=args.budgets, arms=args.arms,
-         effective_requests=requests, grid_m=GRID_M, band_m=BAND_M, live_calls=0, **identity))
+         variants=variants, effective_requests=requests, grid_m=GRID_M, band_m=BAND_M, live_calls=0,
+         **identity))
     dump(args.output / 'metrics.json', rows)
     (args.output / 'summary.md').write_text(summarize(rows) + '\n', encoding='utf-8')
     if freeze() != identity:
@@ -192,9 +196,22 @@ def run(args):
     print(summarize(rows))
 
 
+def pick_arm(rows, arm, label):
+    """One arm's rows: rows of several arms keyed only by case would overwrite each other."""
+    arms = sorted({r['arm'] for r in rows})
+    if arm is None:
+        if len(arms) != 1:
+            raise SystemExit(f'{label} holds arms {arms}: name one with --{label}-arm')
+        arm = arms[0]
+    if arm not in arms:
+        raise SystemExit(f'{label} has no arm {arm!r} (found {arms})')
+    return [r for r in rows if r['arm'] == arm]
+
+
 def compare(args):
-    base = {(r['set'], r['case'], r['budget']): r for r in json.loads((args.baseline / 'metrics.json').read_text('utf-8'))}
-    cand = json.loads((args.candidate / 'metrics.json').read_text('utf-8'))
+    base_rows = pick_arm(json.loads((args.baseline / 'metrics.json').read_text('utf-8')), args.baseline_arm, 'baseline')
+    base = {(r['set'], r['case'], r['budget']): r for r in base_rows}
+    cand = pick_arm(json.loads((args.candidate / 'metrics.json').read_text('utf-8')), args.candidate_arm, 'candidate')
     lines = ['| set | case | budget | arm | ΔIoU | ΔP95 truth→outer (m) | ΔP95 outer→truth (m) | Δband acc | calls base→cand |',
              '|---|---|---:|---|---:|---:|---:|---:|---|']
     worse = []
@@ -230,11 +247,14 @@ def main():
     runner.add_argument('--output', type=Path, required=True)
     runner.add_argument('--sets', nargs='+', choices=SETS, default=['base', 'development'])
     runner.add_argument('--budgets', nargs='+', type=int, default=[400, 800])
-    runner.add_argument('--arms', nargs='+', default=['legacy'])
+    runner.add_argument('--arms', nargs='+', default=['legacy'],
+                        help="legacy, loop, or 'E1' plus coverage switches (see tools.e82_variants)")
     runner.add_argument('--workers', type=int, default=1)
     comparer = sub.add_parser('compare')
     comparer.add_argument('--baseline', type=Path, required=True)
     comparer.add_argument('--candidate', type=Path, required=True)
+    comparer.add_argument('--baseline-arm')
+    comparer.add_argument('--candidate-arm')
     comparer.add_argument('--output', type=Path)
     args = parser.parse_args()
     if args.command == 'compare':

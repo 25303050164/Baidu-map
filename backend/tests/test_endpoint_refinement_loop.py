@@ -124,6 +124,38 @@ def test_the_loop_is_deterministic():
     assert first['refinementLoop']['counts'] == second['refinementLoop']['counts']
 
 
+def test_the_default_config_is_the_published_loop():
+    # Pinned before the tunables moved into LoopConfig; any drift changes E8.2.1 itself.
+    pinned = {'reentry_rotated11': (400, dict(batches=55, edge_brackets=31, explore_contradictions=1,
+                                              explore_probes=55, scan_rays=21), 1467733.576),
+              'circle': (352, dict(batches=57, directions_added=48, explore_probes=57), 1323220.856)}
+    for case, (calls, counts, area) in pinned.items():
+        result, _ = run(case, 400, 'loop')
+        assert result['calls'] == calls, case
+        assert {k: v for k, v in result['refinementLoop']['counts'].items() if v} == counts, case
+        assert abs(local(result['geometry']).area - area) < 1e-3, case
+        assert 'loopConfig' not in result['refinementLoop']['parameters']
+
+
+def test_coverage_switches_stay_deterministic_and_within_budget():
+    from tools.e82_variants import resolve_arm
+    refinement, config = resolve_arm('E1cabde')
+
+    def once():
+        provider = RotatedSynthetic('narrow')
+        result = asyncio.run(compute_multicross_boundary(
+            e82_request(ORIGIN, 200, refinement=refinement), provider, CancelToken(),
+            refinement=refinement, loop_config=config))
+        return result, provider
+    first, provider = once()
+    second, _ = once()
+    assert first['calls'] == provider.calls <= 200
+    assert first['geometry'] == second['geometry']
+    assert first['refinementLoop']['counts'] == second['refinementLoop']['counts']
+    assert first['refinementLoop']['counts'].get('gap_probes', 0) > 0
+    assert first['refinementLoop']['parameters']['loopConfig']['gap_explore'] is True
+
+
 def test_a_cancelled_run_publishes_no_boundary_and_the_adapter_says_why():
     token = CancelToken()
     token.cancel()
@@ -166,6 +198,20 @@ def test_carving_removes_the_negative_and_never_a_positive():
     # min(50, 0.49 d) with the nearest positive 8 m away: no lower bound that could reach it.
     assert items == [dict(id='n', radiusM=0.49 * 8)]
     assert 0 < disk.area < 3.2 * (0.49 * 8) ** 2
+
+
+def test_a_negative_on_the_boundary_is_carved_like_a_covered_one():
+    class _Session:
+        domain = box(-500, -500, 500, 500)
+        records = [dict(id='n', xy=[300 + 1e-9, 0], duration=1900), dict(id='p', xy=[200, 0], duration=400)]
+    state = LoopState.__new__(LoopState)
+    state.session = _Session()
+    estimate = box(-300, -300, 300, 300)
+    assert not estimate.covers(Point(300 + 1e-9, 0))
+    carved, _, items = carve_conflicts(state, estimate)
+    # Within the export round-trip tolerance it may land inside once in bd09: carve it.
+    assert [item['id'] for item in items] == ['n'] and abs(items[0]['radiusM'] - 49) < 1e-6
+    assert carved.distance(Point(300 + 1e-9, 0)) > 40
 
 
 def test_the_unresolved_region_is_reported_with_its_overlap():

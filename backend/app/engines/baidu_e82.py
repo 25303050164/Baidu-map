@@ -102,6 +102,7 @@ class BaiduE82Engine:
             # The default 2 keeps today's request (and hash) unless the gate holds three.
             request = e82_request(ask.origin, ask.budget,
                                  qps=effective_qps(self.settings, self.gate) if provider.network else None,
+                                 refinement=self.settings.e82_refinement,
                                  concurrency=max(2, self.settings.baidu_direction_max_inflight))
             result = await compute_e82(request, provider, context.token,
                                        on_progress=context.progress)

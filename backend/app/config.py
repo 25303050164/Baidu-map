@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     baidu_map_ak: SecretStr = SecretStr("")
     analysis_provider: Literal["baidu", "synthetic"] = "baidu"
     analysis_qps: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    # Which E8.2 refinement checkups run: loop is E8.2.1; loop2 is E8.2.2, to be
+    # switched on only after its live independent validation.
+    e82_refinement: Literal["loop", "loop2"] = "loop"
     osm_pbf_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.osm.pbf"
     osm_graph_cache_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.osm-cache"
     osm_data_version: str = "unconfigured"

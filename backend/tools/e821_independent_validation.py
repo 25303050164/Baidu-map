@@ -133,33 +133,66 @@ def draw(regions, allocation, projection, road_distance, *, seed=SEED, attempts=
     return rows
 
 
-def sources(old_path=OLD_REPORT, new_path=NEW_REVISION):
+E82_VERSIONS = ('local-multicross-e82.1', 'local-multicross-e82.2')
+
+
+def shown(path):
+    """A source path as recorded: relative to the repository when it lies inside."""
+    path = Path(path).resolve()
+    try:
+        return str(path.relative_to(BACKEND.parent))
+    except ValueError:
+        return str(path)
+
+
+def sources(old_path=OLD_REPORT, new_path=NEW_REVISION, old_label='09-27 checkup, E8.2 legacy, budget 400',
+            new_label='09-29 smoke checkup, E8.2.1, budget 800'):
+    """The two polygons. The old one is a report's domain or an isochrone revision; the
+    new one an E8.2.1 or E8.2.2 isochrone revision from the test origin."""
     old, new = read(old_path), read(new_path)
     iso = new['isochrone']
-    if iso['parameters']['config_version'] != 'local-multicross-e82.1':
-        raise ValueError('new_polygon_not_e821')
+    if iso['parameters']['config_version'] not in E82_VERSIONS:
+        raise ValueError('new_polygon_not_e821_or_e822')
     if normalize((new['center']['lng'], new['center']['lat'])) != NORMALIZED_TEST_ORIGIN:
         raise ValueError('new_polygon_other_origin')
+    old_polygon = old['isochrone']['geometry'] if 'isochrone' in old else old['document']['domain']
     strip = lambda g: {k: v for k, v in g.items() if k != 'coordinateSystem'}
-    for g in (old['document']['domain'], iso['geometry']):
+    for g in (old_polygon, iso['geometry']):
         if g.get('coordinateSystem') != 'bd09ll':
             raise ValueError('polygon_not_bd09ll')
-    return dict(old=strip(old['document']['domain']), new=strip(iso['geometry']),
+    old_source = dict(path=shown(old_path), sha256=file_hash(old_path), label=old_label)
+    if 'isochrone' in old:
+        old_source.update(taskId=old['taskId'], isochroneHash=old['isochrone']['isochroneHash'],
+                          configVersion=old['isochrone']['parameters']['config_version'],
+                          requestsUsed=old['isochrone']['requestsUsed'])
+    else:
+        old_source.update(resultHash=old['resultHash'])
+    return dict(old=strip(old_polygon), new=strip(iso['geometry']),
                 new_unresolved=strip(iso['unknownRegion']), extent=strip(iso['computationExtent']),
-                old_source=dict(path=str(Path(old_path).relative_to(BACKEND)), sha256=file_hash(old_path),
-                                label='09-27 checkup, E8.2 legacy, budget 400', resultHash=old['resultHash']),
-                new_source=dict(path=str(Path(new_path).relative_to(BACKEND)), sha256=file_hash(new_path),
-                                label='09-29 smoke checkup, E8.2.1, budget 800', taskId=new['taskId'],
-                                isochroneHash=iso['isochroneHash'], requestsUsed=iso['requestsUsed']))
+                old_source=old_source,
+                new_source=dict(path=shown(new_path), sha256=file_hash(new_path), label=new_label,
+                                taskId=new['taskId'], isochroneHash=iso['isochroneHash'],
+                                configVersion=iso['parameters']['config_version'],
+                                requestsUsed=iso['requestsUsed']))
 
 
-def make_plan(road_distance, source):
+def proportional_allocation(regions, total=ALLOCATION['new_only'] + ALLOCATION['old_only'], least=6):
+    """The disagreement points split by stratum area, at least ``least`` on each side;
+    the other strata keep their fixed allocation. Decided before any point is drawn."""
+    new_area, old_area = regions['new_only'].area, regions['old_only'].area
+    share = new_area / (new_area + old_area) if new_area + old_area else .5
+    new_only = min(total - least, max(least, round(total * share)))
+    return dict(ALLOCATION, new_only=new_only, old_only=total - new_only)
+
+
+def make_plan(road_distance, source, *, proportional=False):
     projection = MetricProjection(METRIC_CRS)
     old_bd, new_bd = shape(source['old']), shape(source['new'])
     unresolved_bd = shape(source['new_unresolved'])
     old, new = to_metric(projection, old_bd), to_metric(projection, new_bd)
     regions = strata(old, new, to_metric(projection, shape(source['extent'])))
-    cases = draw(regions, ALLOCATION, projection, road_distance)
+    allocation = proportional_allocation(regions) if proportional else ALLOCATION
+    cases = draw(regions, allocation, projection, road_distance)
     for case in cases:
         point, xy = Point(case['coordinate']), Point(case['xy'])
         case.update(old_inside=bool(old_bd.covers(point)), new_inside=bool(new_bd.covers(point)),
@@ -168,7 +201,7 @@ def make_plan(road_distance, source):
                     new_boundary_m=round(new.boundary.distance(xy), 2))
     assert len(cases) == BUDGET and len({tuple(c['coordinate']) for c in cases}) == BUDGET
     return dict(schema_version=SCHEMA, origin=list(NORMALIZED_TEST_ORIGIN), seed=SEED, metric_crs=METRIC_CRS,
-                budget=BUDGET, allocation=ALLOCATION,
+                budget=BUDGET, allocation=allocation,
                 rules=dict(threshold_s=THRESHOLD_S, tolerance_s=TOLERANCE_S, offset_limit_m=OFFSET_LIMIT_M,
                            band_m=BAND_M, exterior_m=EXTERIOR_M, road_reach_m=ROAD_REACH_M,
                            min_spacing_m=MIN_SPACING_M, retries=0),
@@ -321,7 +354,7 @@ def road_distance_from(store):
     return reach
 
 
-def plan_command(output, replace=None):
+def plan_command(output, replace=None, pair=None):
     supersedes = []
     previous = output / 'plan.json'
     if previous.exists():
@@ -334,7 +367,9 @@ def plan_command(output, replace=None):
         supersedes = [*prior.get('supersedes', []), dict(plan_hash=content_hash(prior), reason=replace)]
         previous.rename(output / f"plan-superseded-{supersedes[-1]['plan_hash'][:8]}.json")
     store, settings = load_store()
-    plan = make_plan(road_distance_from(store), sources())
+    # Another pair of polygons splits the disagreement points by area: its strata
+    # sizes are unknown beforehand, and the split is fixed before any point is drawn.
+    plan = make_plan(road_distance_from(store), sources(**pair) if pair else sources(), proportional=bool(pair))
     plan.update(osm_data_version=settings.osm_data_version, supersedes=supersedes)
     output.mkdir(parents=True, exist_ok=True)
     # A plan is written once; a redraw would no longer be independent of what was seen.
@@ -447,11 +482,21 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--replace', metavar='REASON', help='redraw an unused plan, keeping the old one on record')
+    parser.add_argument('--old', type=Path, help='old polygon: a report or an isochrone revision (plan only)')
+    parser.add_argument('--new', type=Path, help='new polygon: an E8.2.1/E8.2.2 isochrone revision (plan only)')
+    parser.add_argument('--old-label')
+    parser.add_argument('--new-label')
     args = parser.parse_args()
     output = args.output.resolve()
+    pair = None
+    if args.old or args.new:
+        if not (args.old and args.new and args.old_label and args.new_label):
+            raise SystemExit('--old, --new, --old-label and --new-label go together')
+        pair = dict(old_path=args.old.resolve(), new_path=args.new.resolve(),
+                    old_label=args.old_label, new_label=args.new_label)
     try:
         if args.command == 'plan':
-            plan_command(output, args.replace)
+            plan_command(output, args.replace, pair)
         elif args.command == 'run':
             run_command(output, args.dry_run)
         else:
