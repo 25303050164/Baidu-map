@@ -10,7 +10,7 @@
  * - 同一阶段持续运行：采样按节奏推进，界面上的计数跟着后端涨，阶段不变。
  * - 阶段切换：后端换到设施检索，界面在几秒内跟上。
  * - 长时间无进展：检索停住 90 秒以上 —— "疑似停滞"，说明停在哪一步、可以取消；放行后恢复。
- *   不报中间计数的步骤（载入路网）停住同样久仍是"正在计算或等待"，并说明为什么没有计数。
+ *   不报中间计数的步骤（载入路网）停住同样久仍是"正在计算或等待"，不会提前报停滞。
  * - 断网与服务端不可达：连接中断、失败次数与已用时照走；后端期间继续推进，恢复后马上跟上。
  * - 切算法、刷新：接回同一个任务与进度，已用时不归零。
  * - 取消中恢复：取消后刷新仍是"正在取消"，放行后停在"已取消"。
@@ -214,7 +214,7 @@ async function open(page: Page, slot: 'e82' | 'hybrid', ledger: Ledger) {
 }
 
 async function startAt(page: Page, centre: LngLat) {
-  // 坐标输入在「体检中心」选项卡里；切选项卡不影响任务，只是界面导航。
+  // 坐标输入在「我的位置」选项卡里；切选项卡不影响任务，只是界面导航。
   await page.getByTestId('checkup-tab-location').click();
   await page.getByRole('spinbutton', { name: '经度' }).fill(centre.lng.toFixed(6));
   await page.getByRole('spinbutton', { name: '纬度' }).fill(centre.lat.toFixed(6));
@@ -226,7 +226,7 @@ async function startAt(page: Page, centre: LngLat) {
 
 const segment = (page: Page, text: string) => page.locator('.ant-segmented-item', { hasText: text });
 async function switchTo(page: Page, text: string) {
-  // 成圈算法切换已并入「引擎与预算」选项卡：先切到那一块，再点算法。
+  // 成圈算法切换已并入「采样与引擎」选项卡：先切到那一块，再点算法。
   await page.getByTestId('checkup-tab-engine').click();
   await segment(page, text).click();
   await expect(segment(page, text)).toHaveClass(/ant-segmented-item-selected/);
@@ -380,7 +380,7 @@ test('百度边界搜索（E8.2）一个任务走完全程：首次请求前刷�
   await page.waitForTimeout(30000);
   const waiting = await read(page);
   expect(waiting.kind).toBe('working');
-  expect(waiting.hint).toContain('没有任何进展会提示疑似停滞');
+  expect(waiting.hint).toContain('最近进展');
   await expect(liveKind(page)).toHaveAttribute('data-kind', 'stalled', { timeout: (STALL_SECONDS + 15) * 1000 });
   const stalled = await read(page);
   const serverNow = (await taskView(request, taskId)).serverTime!;
@@ -573,8 +573,7 @@ test('两个引擎、两个中心：OSM＋百度的任务排在 E8.2 之后；�
   const quiet = await read(page);
   expect(quiet.kind).toBe('working');
   expect(quiet.count).toBeNull();
-  expect(quiet.hint).toContain('不报中间计数');
-  expect(quiet.hint).toContain('超过 15 分 0 秒没有任何进展才提示疑似停滞');
+  expect(quiet.hint).toContain('最近进展');
   const quietFrom = Date.now();
 
   // 等待的同时切回 E8.2：它已完成，地图与报告都是 A 的那一个。

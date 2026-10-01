@@ -6,8 +6,7 @@
 .wb-body{position:relative;flex:1;min-height:0;overflow:hidden}
 .wb-panel{position:absolute;z-index:10;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;
   background:var(--panel);border:1px solid #edf0f5;border-radius:var(--radius-card);box-shadow:var(--shadow-card)}
-.wb-side{top:16px;left:16px;width:320px;max-height:calc(100% - 32px)}
-.wb-results{top:16px;right:16px;width:340px;max-height:calc(100% - 196px);overflow-wrap:anywhere}
+.wb-results{overflow-wrap:anywhere}
 .wb-scroll{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#d5dae3 transparent}
 .wb-sec{padding:16px 18px}
 .wb-sec+.wb-sec{border-top:1px solid var(--rule)}
@@ -16,15 +15,55 @@
 .wb-version{margin-left:6px;padding:0 6px;border-radius:999px;background:#f5f7fa;font:11px/18px var(--num);color:var(--ink-3)}
 .wb-panel .ant-alert{border-radius:10px;font-size:12px;padding:8px 12px}
 
-/* 操作卡：搜索、坐标、预算、主按钮，一屏之内不用滚动。 */
+/* 面板可拖动、可调节大小；小屏自动改为上下排列。 */
+.wb-panel-chrome{flex:none;display:flex;align-items:center;justify-content:center;height:23px;
+  border-bottom:1px solid var(--rule);background:#fff}
+.wb-panel-move{display:grid;place-items:center;width:48px;height:19px;padding:0;border:0;border-radius:6px;
+  background:transparent;color:#9aa2ad;cursor:grab;touch-action:none}
+.wb-grip-dots{display:grid;grid-template-columns:repeat(2,3px);grid-auto-rows:3px;gap:2px}
+.wb-grip-dots i{width:3px;height:3px;border-radius:50%;background:currentColor}
+.wb-panel-move:hover{background:#f5f7fa;color:var(--accent)}
+.wb-panel-move:active{cursor:grabbing}
+.wb-panel-resize{position:absolute;right:3px;bottom:3px;z-index:3;width:18px;height:18px;padding:0;
+  border:0;border-radius:4px;background:transparent;cursor:nwse-resize;touch-action:none}
+.wb-panel-resize:hover{background:#f0f3f8}
+.wb-panel-resize span{position:absolute;right:4px;bottom:4px;width:8px;height:8px;
+  border-right:2px solid #aab2bd;border-bottom:2px solid #aab2bd}
+.wb-panel-resize:hover span{border-color:var(--accent)}
+
+/* 左侧三选项卡。 */
+.wb-tabs{flex:none;display:flex;gap:2px;padding:5px 8px 0;border-bottom:1px solid var(--rule)}
+.wb-tab{flex:1;min-width:0;padding:8px 3px;border:0;border-bottom:2px solid transparent;background:none;
+  font-size:12.5px;color:var(--ink-2);white-space:nowrap}
+.wb-tab:hover{color:var(--ink)}
+.wb-tab-active{border-bottom-color:var(--accent);color:var(--accent);font-weight:600}
+.wb-tabpanels{display:flex;flex:1;min-height:0}
+.wb-tabpanel{flex:1;min-width:0;min-height:0}
+.wb-tabpanel[hidden]{display:none}
+.wb-tabpanel .wb-sec{border:0}
+.wb-engine{display:grid;align-content:start;gap:10px}
+.wb-engine .algorithm-switch{display:block}
+.wb-engine .algorithm-switch .ant-segmented{display:block;width:100%;max-width:none}
+.wb-engine .algorithm-switch .ant-segmented-group{display:flex}
+.wb-engine .algorithm-switch .ant-segmented-item{flex:1 1 0;min-width:0}
+.wb-engine .algorithm-switch .ant-segmented-item-label{display:flex;align-items:center;justify-content:center;
+  min-height:32px;padding:4px;font-size:12px;line-height:1.35;white-space:normal}
+.wb-engine .algorithm-activity{margin-left:4px}
+.wb-engine-name{font-size:12px;color:var(--ink-2);line-height:1.6}
+.wb-engine .wb-field{display:grid;gap:5px;font-size:12px;color:var(--ink-2)}
+.wb-engine .wb-field .ant-select{width:100%}
+.wb-estimate{font-size:13px;font-weight:600;color:var(--ink)}
+.wb-engine .wb-hint{margin:0}
+.wb-quota{margin-top:4px;padding-top:10px;border-top:1px solid var(--rule);font-size:11.5px;line-height:1.6;color:var(--ink-3)}
+.wb-quota p+p{margin-top:3px}
+
+/* 主操作固定在左侧面板底部。 */
 .wb-setup{display:grid;gap:10px;padding-bottom:12px}
 .wb-coords{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .wb-coords .ant-input-number{width:100%}
 .wb-coords .ant-input-number-prefix{margin-inline-end:6px;font-size:12px;color:var(--ink-3)}
 .wb-coords .ant-input-number-input{font-family:var(--num);font-variant-numeric:tabular-nums}
-.wb-inline{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:var(--ink-2)}
-.wb-inline .ant-select{width:132px}
-.wb-actions{display:grid;gap:8px;padding:2px 18px 16px;background:var(--panel)}
+.wb-actions{flex:none;display:grid;gap:8px;padding:2px 18px 16px;background:var(--panel)}
 .wb-actions .ant-btn-primary{height:44px;border:0;border-radius:10px;font-size:15px;font-weight:600;letter-spacing:.2em}
 .wb-actions .ant-btn-primary:not(:disabled){background:var(--brand-gradient);box-shadow:0 6px 16px rgba(58,101,255,.28)}
 .wb-actions .ant-btn-primary:not(:disabled):hover{filter:brightness(1.06)}
@@ -58,7 +97,6 @@
 .wb-notes dt{margin-top:12px;font-weight:500;color:var(--ink)}
 .wb-notes dl>dt:first-child{margin-top:0}
 .wb-notes dd{margin:2px 0 0;color:var(--ink-2)}
-.wb-quota p+p{margin-top:2px}
 
 /* 结果卡：阶段与用时、渐变大数字、三类区间、报告入口。 */
 .wb-sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -114,6 +152,10 @@
 .wb-weather span{font-size:13px;color:var(--ink-2)}
 .wb-weather-facts{display:flex;flex-wrap:wrap;gap:4px 12px;list-style:none;margin:0 0 6px;padding:0;
   font-size:12px;color:var(--ink-2)}
+.wb-results .wb-scroll{display:flex;flex-direction:column}
+.wb-results .wb-scroll>*{flex:none}
+.wb-weather-bottom{flex:none;margin-top:auto}
+.wb-empty-report{min-height:120px}
 .wb-near{margin-top:12px}
 .wb-near-head{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--ink)}
 .wb-near-head i{width:7px;height:7px;border-radius:50%}
@@ -143,15 +185,14 @@
 .wb-map{position:absolute;inset:0;z-index:0;min-width:0;min-height:0;background:#eef1f6}
 .api-map-shell{position:absolute;inset:0;overflow:hidden;background:#eef1f6}
 .api-map{position:absolute;inset:0}
-.api-map-zoom{position:absolute;top:16px;right:16px;z-index:9999;display:grid;gap:1px;
+.api-map-zoom{position:absolute;top:16px;left:50%;z-index:9999;display:grid;gap:1px;transform:translateX(-50%);
   border:1px solid var(--rule-strong);border-radius:10px;overflow:hidden;background:var(--rule-strong);
   box-shadow:var(--shadow-card);pointer-events:auto}
 .api-map-zoom button{display:flex;align-items:center;justify-content:center;width:34px;height:34px;
   border:0;background:#fff;color:var(--ink);font:400 18px/1 var(--num)}
 .api-map-zoom button:hover{background:var(--accent-wash)}
 .api-map-zoom button:active{background:#e5ecff}
-@media(min-width:1081px){.wb-body[data-stage="active"] .api-map-zoom{right:372px}}
-.wb-map-banners{position:absolute;top:16px;left:352px;right:372px;z-index:5;display:grid;gap:8px;justify-items:center;pointer-events:none}
+.wb-map-banners{position:absolute;top:62px;left:16px;right:16px;z-index:5;display:grid;gap:8px;justify-items:center;pointer-events:none}
 .wb-map-banners .ant-alert{max-width:520px;margin:0;border:0;border-radius:12px;padding:8px 16px;background:#fff;box-shadow:var(--shadow-pop);pointer-events:auto}
 .api-map-notice{position:absolute;top:50%;left:50%;width:min(400px,86%);transform:translate(-50%,-50%);padding:20px 24px;border-radius:var(--radius-card);background:#fff;box-shadow:var(--shadow-pop);color:var(--ink-2);font-size:13px;line-height:1.8;text-align:center}
 .api-map-notice strong{display:block;margin-bottom:4px;font-size:15px;color:var(--ink)}
@@ -183,22 +224,24 @@
   .wb{height:auto;min-height:100dvh}
   .wb-body{flex:none;display:grid;overflow:visible;align-items:start;gap:12px;padding-bottom:12px;
     grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"map map" "side results"}
-  .wb-body[data-stage="idle"]{grid-template-areas:"map map" "side side"}
   .wb-map{position:relative;inset:auto;grid-area:map;height:62vh;min-height:420px}
   /* z-index 回到 auto：网格项带 z-index 会自成层叠上下文，手机上固定在底部的主按钮栏就会被
      排在后面的结果卡盖住。 */
-  .wb-panel{position:static;z-index:auto;width:auto;max-height:none}
+  .wb-panel{position:static;z-index:auto;width:auto;height:auto;max-height:none}
+  .wb-panel-chrome,.wb-panel-resize{display:none}
   .wb-side{grid-area:side;margin-left:12px}
   .wb-results{grid-area:results;margin-right:12px}
-  .wb-body[data-stage="idle"] .wb-side{margin-right:12px}
   .wb-scroll{flex:none;overflow:visible}
+  .wb-results .wb-scroll{display:block}
+  .wb-tabpanels{display:block;flex:none;min-height:0}
+  .wb-tabpanel{display:block;overflow:visible}
+  .wb-tabpanel[hidden]{display:none}
   .wb-map-banners{left:12px;right:12px}
 }
 @media(max-width:700px){
   .wb-body{grid-template-columns:minmax(0,1fr);grid-template-areas:"map" "side" "results";padding-bottom:84px}
   /* 手机上有了任务就先看进度与结果，设置挪到后面。 */
   .wb-body[data-stage="active"]{grid-template-areas:"map" "results" "side"}
-  .wb-body[data-stage="idle"]{grid-template-areas:"map" "side"}
   .wb-side,.wb-results{margin:0 10px}
   .wb-map{height:58vh;min-height:360px}
   .wb-actions{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;align-items:center;gap:8px;
@@ -207,6 +250,7 @@
   .wb-actions-row .ant-btn{flex:none;height:44px}
   .wb-actions .wb-hint{display:none}
   .wb-sec{padding:14px 14px 16px}
+  .wb-weather-bottom{margin-top:0}
   /* 小屏图例只留热力与水系，图层清单在下方卡片里有同样的色块。 */
   .api-map-legend{left:10px;right:10px;bottom:36px;width:auto;max-width:none}
   .api-legend-layers,.api-legend-cats,.api-legend-count{display:none!important}

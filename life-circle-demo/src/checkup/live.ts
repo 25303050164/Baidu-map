@@ -148,41 +148,32 @@ export function liveView(state: CheckupState, now: number): LiveView | null {
 
   if (lost) {
     // 问不到后端时，不对任务下任何判断：它可能照常在跑，也可能早就结束了。
-    return { ...view, kind: 'lost', title: '连接中断，正在自动重连',
-      hint: `已 ${secs(view.lostFor)}没有连上后端（连续失败 ${view.attempts ?? 0} 次，按 1、2、4、8、10 秒退避重试），`
-        + `最近一次成功连接在 ${secs(contactAgo)}前。任务在服务端照常进行，不会因断网被取消或重新提交；`
-        + '网络恢复后自动接上，并补齐这段时间的进度。已用时暂按本机时钟推算。' };
+    return { ...view, kind: 'lost', title: '连接中断，正在重连',
+      hint: `最近连接 ${secs(contactAgo)}前，已重试 ${view.attempts ?? 0} 次。`
+        + '任务仍在服务端运行，恢复后自动同步，不会重复提交。' };
   }
   if (phase === 'submitting') {
-    return { ...view, kind: 'submitting', title: '正在提交',
-      hint: '等待服务端确认创建任务。确认之前刷新页面，会按请求标识找回同一个任务，不会重复提交。' };
+    return { ...view, kind: 'submitting', title: '提交中',
+      hint: '创建确认前刷新，会按请求标识恢复，不会重复提交。' };
   }
   if (phase === 'restoring' || !task) {
-    return { ...view, kind: 'restoring', title: '正在向后端核对上次的任务',
-      hint: '按保存的任务标识向后端询问它的当前状态；核对期间不会提交新任务。' };
+    return { ...view, kind: 'restoring', title: '恢复任务中',
+      hint: '正在查询上次任务；完成前不能提交新任务。' };
   }
   if (status === 'queued') {
     return { ...view, kind: 'queued', title: '排队中',
-      hint: `已排队 ${secs(view.queued)}。体检服务一次只执行一个任务（两个引擎共用），前面的任务结束后自动开始。` };
+      hint: '前序任务结束后自动开始。' };
   }
   const stepName = step ? `「${step.label}」` : '当前步骤';
-  const quiet = step !== null && step.count === null;
   if (view.activityAgo !== null && view.activityAgo >= stallAfter(step)) {
-    return { ...view, kind: 'stalled', title: '疑似停滞：后端很久没有新进展',
-      hint: `后端仍能连上（最近一次联系在 ${secs(contactAgo)}前），但已 ${secs(view.activityAgo)}`
-        + `没有任何新进展，停在${stepName}${view.stepFor === null ? '' : `已 ${secs(view.stepFor)}`}。`
-        + (quiet ? `这一步本身不报中间计数，但已超过为它留的 ${secs(QUIET_STALL_SECONDS)}；` : '')
-        + '可以继续等待；若长时间仍无变化，可取消后重新体检（已发布的修订会保留）。' };
+    return { ...view, kind: 'stalled', title: '疑似停滞',
+      hint: `后端仍可连接，${secs(view.activityAgo)}无进展（${stepName}）。`
+        + '可继续等待，也可取消后重试。' };
   }
   if (status === 'cancelling' || phase === 'cancelling') {
     return { ...view, kind: 'cancelling', title: '正在取消',
-      hint: `已请求取消，后端会在${stepName}的下一个检查点停下；已发布的修订保留，已经发出的请求仍计入额度。` };
+      hint: `将在${stepName}结束时停止；已发请求仍计入额度。` };
   }
   return { ...view, kind: 'working', title: '正在计算或等待',
-    hint: (view.activityAgo === null ? '后端正在执行。'
-      : `后端最近一次进展在 ${secs(view.activityAgo)}前。`)
-      + (quiet
-        ? `${stepName}不报中间计数，只显示已持续多久；`
-          + `超过 ${secs(QUIET_STALL_SECONDS)}没有任何进展才提示疑似停滞。`
-        : `计数只在真的发出请求或完成判定时增加；超过 ${secs(STALL_SECONDS)}没有任何进展会提示疑似停滞。`) };
+    hint: view.activityAgo === null ? '任务正在运行。' : `最近进展 ${secs(view.activityAgo)}前。` };
 }

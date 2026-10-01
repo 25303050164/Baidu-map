@@ -759,7 +759,7 @@ for (const slot of SLOTS) {
     screenshots.push(await shot(page, `${slot}-conflict-channel-z19.png`, marksOf(views.channelZ19 as Reading[], '冲')));
 
     // 关掉水系标注：画布与桥梁标记一起摘掉，热力照旧；再打开回到热力之上。
-    // 图层开关在「地图图层」选项卡里。
+    // 图层开关在「图层备注」选项卡里。
     await page.getByTestId('checkup-tab-layers').click();
     const toggle = page.getByRole('checkbox', { name: '水系标注', exact: true });
     await toggle.uncheck();
@@ -961,7 +961,7 @@ test('旧版本（第 5 版，早于水系复核）：标明旧版本与所缺�
   await setView(page, CENTER, 16);
   const screenshots = [await shot(page, 'old-e82-rev5-z16.png')];
 
-  // 切到第 7 版：不再是旧版本，标注回来。算法切换已并入「引擎与预算」选项卡。
+  // 切到第 7 版：不再是旧版本，标注回来。算法切换已并入「采样与引擎」选项卡。
   await page.getByTestId('checkup-tab-engine').click();
   await page.getByTestId('algorithm-hybrid').click();
   await expectRealBasemap(page);

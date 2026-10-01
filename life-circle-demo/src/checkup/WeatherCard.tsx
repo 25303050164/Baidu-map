@@ -41,8 +41,8 @@ export function WeatherCard({ center }: { center: Center | null }) {
     <div className="wb-sec-head">
       <h2 className="wb-h">天气</h2>
       <span className="wb-weather-tag" data-tone={state.status === 'ready' ? 'ready' : 'muted'}>
-        {state.status === 'ready' ? '体检中心实况' : state.status === 'loading' ? '获取中'
-          : state.status === 'unavailable' ? '暂不可用' : '待选点'}</span>
+        {state.status === 'ready' ? '实况' : state.status === 'loading' ? '更新中'
+          : state.status === 'unavailable' ? '不可用' : '待选点'}</span>
     </div>
     {state.status === 'ready' ? <>
       <p className="wb-weather" data-temperature={state.reading.temperatureC}>
@@ -56,9 +56,6 @@ export function WeatherCard({ center }: { center: Center | null }) {
       </ul>
       <p className="wb-hint">Open-Meteo{state.reading.observedAt
         ? ` · ${state.reading.observedAt}` : ''}</p>
-    </> : <p className="wb-hint">{state.status === 'loading' ? '正在获取天气…'
-      : state.status === 'unavailable'
-        ? '天气暂不可用（需可访问 api.open-meteo.com）。'
-        : '选定体检中心后显示实况。'}</p>}
+    </> : null}
   </section>;
 }
