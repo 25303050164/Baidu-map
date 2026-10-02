@@ -33,6 +33,33 @@ def cutoff_dijkstra(graph, seeds, budget, weight=TIME_WEIGHT):
     return {node: cost for node, (cost, _) in owned.items()}
 
 
+def cutoff_dijkstra_tree(graph, seeds, budget, weight=TIME_WEIGHT):
+    """Same search, keeping the shortest-path tree: ``{node: (cost, previous node, edge key)}``.
+
+    Seeds have no previous node. Relaxation, tie-breaking and the costs are exactly
+    those of ``cutoff_dijkstra``; only the tree is extra, so a route can be read back.
+    """
+    sequence = itertools.count()
+    available = [(cost, node) for node, cost in seeds.items() if cost <= budget and node in graph]
+    queue = [(cost, next(sequence), node, None, None) for cost, node in available]
+    heapq.heapify(queue)
+    best = {node: cost for cost, node in available}
+    settled = {}
+    while queue:
+        cost, _, node, previous, key = heapq.heappop(queue)
+        if node in settled:
+            continue
+        settled[node] = (cost, previous, key)
+        for neighbor, edges in graph.adj[node].items():
+            for edge_key, data in edges.items():
+                candidate = cost + data[weight]
+                current = best.get(neighbor)
+                if candidate <= budget and (current is None or candidate < current):
+                    best[neighbor] = candidate
+                    heapq.heappush(queue, (candidate, next(sequence), neighbor, node, edge_key))
+    return settled
+
+
 def cutoff_dijkstra_owners(graph, seeds, budget, weight=TIME_WEIGHT):
     """Same search, but every settled node also carries **which** source reached it.
 

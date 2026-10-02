@@ -44,6 +44,34 @@ def test_it01_request_order_units_and_minimum():
     asyncio.run(run())
 
 
+def stepped_route(durations=(100, 200)):
+    """Two steps, ORIGIN -> MID -> DEST, each a two-vertex polyline."""
+    mid = (116.4005, 39.9)
+    legs = [(ORIGIN, mid), (mid, DEST)]
+    steps = []
+    for (a, b), seconds in zip(legs, durations):
+        step = {"start_location": {"lng": a[0], "lat": a[1]}, "end_location": {"lng": b[0], "lat": b[1]},
+                "path": f"{a[0]},{a[1]};{(a[0] + b[0]) / 2},{(a[1] + b[1]) / 2};{b[0]},{b[1]}"}
+        if seconds is not None:
+            step["duration"] = seconds
+        steps.append(step)
+    return {"duration": sum(s for s in durations if s is not None), "steps": steps}
+
+
+def test_per_step_durations_become_cumulative_vertex_seconds():
+    observation = query(response([stepped_route()]))
+    seconds = observation.route_path_seconds
+    assert len(seconds) == len(observation.route_path) == 5  # the shared joint vertex appears once
+    assert seconds == sorted(seconds) and seconds[0] == 0
+    assert seconds[2] == pytest.approx(100) and seconds[-1] == pytest.approx(300)
+    assert seconds[1] == pytest.approx(50)  # halfway along the first step's own polyline
+
+
+def test_a_step_without_its_duration_leaves_the_path_untimed():
+    observation = query(response([stepped_route((100, None))]))
+    assert len(observation.route_path) == 5 and observation.route_path_seconds == []
+
+
 @pytest.mark.parametrize("payload,reason", [
     ({"status": 1}, "temporary"), ({"status": 2}, "invalid_parameter"),
     ({"status": 7}, "no_result"), ({"status": 240}, "permission"),

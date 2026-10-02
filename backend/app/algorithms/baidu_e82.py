@@ -9,12 +9,20 @@ from life_circle.models import IsochroneResult, Statistics
 from life_circle.providers import AnalyticProvider
 from tools.endpoint_geometry import business_geometry
 from tools.endpoint_multicross_boundary import compute_multicross_boundary
+from tools.endpoint_refinement_loop import DEFAULT_CONFIG
 
 ALGORITHM = 'local-multicross-e82'
 # The algorithm identity stays the same; the refinement is versioned in the
-# request's config_version. E8.2.1 is the closed-loop refinement.
-REFINEMENT_VERSIONS = {'legacy': ALGORITHM, 'loop': 'local-multicross-e82.1'}
+# request's config_version. E8.2.1 is the closed-loop refinement; E8.2.2 is the
+# same loop with the switches the 2026-10-01 experiments kept.
+REFINEMENT_VERSIONS = {'legacy': ALGORITHM, 'loop': 'local-multicross-e82.1', 'loop2': 'local-multicross-e82.2'}
 DEFAULT_REFINEMENT = 'loop'
+# E8.2.2: gap probes taking turns with golden-angle ones, no stop on a batch that
+# only hit the cache, route-prefix evidence with a 90 s margin (the live check saw
+# a direct query up to 84 s slower than the time along the route), batched scans.
+LOOP_CONFIGS = {'loop2': replace(DEFAULT_CONFIG, gap_explore=True, stall_continue=True, route_prefix=True,
+                                 prefix_max_seconds=810, scan_batch=True)}
+_BY_VERSION = {version: name for name, version in REFINEMENT_VERSIONS.items()}
 
 
 class EndpointAnalyticProvider(AnalyticProvider):
@@ -25,12 +33,17 @@ class EndpointAnalyticProvider(AnalyticProvider):
                        route_destination=destination, origin_offset_m=0, destination_offset_m=0)
 
 
-async def compute_e82(request, provider, token, *, on_progress=None, refinement=None):
+async def compute_e82(request, provider, token, *, on_progress=None, refinement=None, loop_config=None):
     if refinement is None:
-        # The request names its refinement; an older version string means legacy.
-        refinement = 'loop' if request.config_version == REFINEMENT_VERSIONS['loop'] else 'legacy'
+        # The request names its refinement; an unknown version string means legacy.
+        refinement = _BY_VERSION.get(request.config_version, 'legacy')
+    # A versioned refinement brings its own switches; ``loop_config`` is for offline
+    # experiments only, and never overrides what a request's version names.
+    if refinement in LOOP_CONFIGS:
+        refinement, loop_config = 'loop', LOOP_CONFIGS[refinement]
     raw = await compute_multicross_boundary(request, provider, token,
-        allow_network=provider.network, on_progress=on_progress, refinement=refinement)
+        allow_network=provider.network, on_progress=on_progress, refinement=refinement,
+        loop_config=loop_config)
     projection = LocalProjection(request.origin)
     domain = box(-request.extent, -request.extent, request.extent, request.extent)
     empty = business_geometry(MultiPolygon(), projection)

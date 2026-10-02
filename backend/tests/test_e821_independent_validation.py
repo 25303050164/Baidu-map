@@ -52,6 +52,17 @@ def _sample(i, duration, reason=None, verified=True):
     return dict(id=f'p{i:03d}', observed_duration=duration, reason=reason, endpoint_verified=verified)
 
 
+def test_another_pair_splits_the_disagreement_points_by_area_with_a_floor():
+    from shapely.geometry import box
+    from tools.e821_independent_validation import ALLOCATION, proportional_allocation
+    lopsided = proportional_allocation(dict(new_only=box(0, 0, 9, 1), old_only=box(0, 0, 1, 1)))
+    assert (lopsided['new_only'], lopsided['old_only']) == (34, 6)  # 36 would leave old_only below its floor
+    even = proportional_allocation(dict(new_only=box(0, 0, 1, 1), old_only=box(0, 0, 3, 1)))
+    assert (even['new_only'], even['old_only']) == (10, 30)
+    assert {k: v for k, v in even.items() if k not in ('new_only', 'old_only')} == \
+        {k: v for k, v in ALLOCATION.items() if k not in ('new_only', 'old_only')}
+
+
 def test_metrics_scores_both_polygons_on_the_same_points():
     cases = [_case(1, 'new_only', False, True), _case(2, 'new_only', False, True),
              _case(3, 'old_only', True, False), _case(4, 'boundary', True, True),
