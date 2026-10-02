@@ -75,6 +75,59 @@ def test_shared_gate_holds_slot_until_response_and_cancels_waiter():
     asyncio.run(run())
 
 
+def test_two_slots_overlap_attempts_and_still_space_their_sends():
+    async def run():
+        clock, entered, release = FakeClock(), [], asyncio.Event()
+
+        class Slow:
+            identity = ('slow',)
+
+            async def query_walking_time(self, origin, destination, deadline):
+                entered.append(clock.time())
+                await release.wait()
+                return RouteObservation(destination, 10)
+
+        provider = LimitedProvider(Slow(), RateGate(3, max_inflight=2, clock=clock.time, sleep=clock.sleep))
+        tasks = [asyncio.create_task(provider.query_walking_time((0, 0), (i, i), 1000)) for i in range(1, 4)]
+        for _ in range(10):
+            await asyncio.sleep(0)
+        # Two in flight at once, a third waiting for a slot, sends a full interval apart.
+        assert len(entered) == 2
+        assert entered[1] - entered[0] >= 1 / 3 - 1e-9
+        release.set()
+        await asyncio.gather(*tasks)
+        assert len(entered) == 3
+    asyncio.run(run())
+
+
+def test_a_sleeping_waiter_rereads_a_cooldown_another_attempt_just_set():
+    async def run():
+        clock, sends, answered = FakeClock(), [], []
+
+        async def sleep(delay):
+            clock.now += delay
+            await asyncio.sleep(0)  # the attempt in flight answers while this one sleeps
+
+        class Upstream:
+            identity = ('two',)
+
+            async def query_walking_time(self, origin, destination, deadline):
+                sends.append(clock.time())
+                if len(sends) == 1:
+                    await asyncio.sleep(0)
+                    answered.append(clock.time())
+                    return RouteObservation(destination, reason='rate_limit')
+                return RouteObservation(destination, 10)
+
+        provider = LimitedProvider(Upstream(), RateGate(3, max_inflight=2, clock=clock.time, sleep=sleep))
+        await asyncio.gather(provider.query_walking_time((0, 0), (1, 1), 1000),
+                             provider.query_walking_time((0, 0), (2, 2), 1000))
+        # The second send waited a full rate-limit cooldown after the first response,
+        # although it was already sleeping toward the plain interval when that came.
+        assert sends[1] - answered[0] >= 1
+    asyncio.run(run())
+
+
 def test_rate_limit_cools_down_shared_gate_before_retry_or_next_job():
     async def run():
         clock, calls = FakeClock(), []

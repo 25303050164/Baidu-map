@@ -41,7 +41,9 @@ class Settings(BaseSettings):
     # draw from these; nothing allocates quota outside this entry.
     baidu_direction_qps: float = Field(default=16, gt=0, allow_inf_nan=False)
     baidu_place_qps: float = Field(default=8, gt=0, allow_inf_nan=False)
-    baidu_direction_max_inflight: int = Field(default=1, ge=1, le=1)
+    # More than one walking route in flight needs a live rate-limit check first
+    # (tools.inflight_review --round inflight-N); one stays the default.
+    baidu_direction_max_inflight: int = Field(default=1, ge=1, le=3)
     baidu_place_max_inflight: int = Field(default=1, ge=1, le=1)
     baidu_place_daily_budget: int = Field(default=1600, ge=0)
     baidu_matrix_enabled: Literal[False] = False

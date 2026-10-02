@@ -88,13 +88,21 @@ class Job:
 
 
 class RateGate:
-    """Shared across jobs, including retries; space attempts after completion."""
-    def __init__(self, qps, *, clock=time.monotonic, sleep=asyncio.sleep, spacing_clock=None):
+    """Shared across jobs, including retries; space attempts after completion.
+
+    ``max_inflight`` attempts may hold a slot at once, each from its pacing wait to
+    its response. Sends stay at least one interval apart, and every response
+    (a rate limit: one second) still pushes the next send back, also for a waiter
+    that is already sleeping. One slot is the default: QPS-002 saw Baidu answer
+    401 when connection delays compressed arrivals.
+    """
+    def __init__(self, qps, *, max_inflight=1, clock=time.monotonic, sleep=asyncio.sleep, spacing_clock=None):
         self.qps = qps
         self.interval = 1 / qps if qps else 0
         self.next_send = 0
         self.lock = asyncio.Lock()
-        self.attempt_lock = asyncio.Lock()
+        self.max_inflight = max_inflight
+        self.attempt_lock = asyncio.Lock() if max_inflight == 1 else asyncio.BoundedSemaphore(max_inflight)
         self.clock, self.sleep = clock, sleep
         # On Python 3.11/Windows monotonic can be quantized to 15.625 ms.
         # Deadlines keep their original epoch; pacing uses the precise counter.
@@ -110,16 +118,23 @@ class RateGate:
                 return False
             await self.sleep(max(0, when - now))
             # asyncio timers can wake before their requested time. Recheck the
-            # clock under the lock rather than treating sleep as a permit.
-            while self.spacing_clock() < when:
-                if self.clock() >= deadline:
+            # clock under the lock rather than treating sleep as a permit. With
+            # more than one slot, another attempt's response can push the next
+            # send back while this one sleeps: read it again every time.
+            while True:
+                pushed = self.next_send > when
+                when = max(when, self.next_send)
+                now = self.spacing_clock()
+                if now >= when:
+                    break
+                if self.clock() >= deadline or (pushed and self.clock() + when - now >= deadline):
                     return False
-                await self.sleep(max(when - self.spacing_clock(), time.get_clock_info('monotonic').resolution))
+                await self.sleep(max(when - now, time.get_clock_info('monotonic').resolution))
             if self.clock() >= deadline:
                 return False
             # Round the deadline outward: repeated 1/3-second additions can
             # otherwise admit four requests into a strict rolling second.
-            self.next_send = self.after(self.spacing_clock(), self.interval * cost)
+            self.next_send = max(self.next_send, self.after(self.spacing_clock(), self.interval * cost))
             return True
 
     def completed(self, reason, *, cost=1):

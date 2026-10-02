@@ -32,17 +32,19 @@ SYNTHETIC_NOTES = [
 
 
 def e82_request(origin, budget: int, *, qps: float | None = None,
-                refinement: str = DEFAULT_REFINEMENT) -> IsochroneRequest:
+                refinement: str = DEFAULT_REFINEMENT, concurrency: int = 2) -> IsochroneRequest:
     """The one request shape production uses; offline benchmarks build it here too.
 
     ``config_version`` names the refinement, so a result says which one drew it and
     enters the result hash with it. The 800 tier gets a longer deadline: at a
-    conservative 2 QPS its attempts alone take about seven minutes.
+    conservative 2 QPS its attempts alone take about seven minutes. ``concurrency``
+    is how many points of one batch the scheduler sends at once; the route gate's
+    slots, not this number, bound what is really in flight.
     """
     return IsochroneRequest(
         origin, "bd09ll", budget=budget, max_extent=MAX_EXTENT_M, expand=False,
         time_bands=(15,), config_version=REFINEMENT_VERSIONS[refinement], qps=qps,
-        deadline_seconds=600 if budget <= 400 else 1200)
+        concurrency=concurrency, deadline_seconds=600 if budget <= 400 else 1200)
 
 
 class BaiduE82Engine:
@@ -97,8 +99,10 @@ class BaiduE82Engine:
     async def compute(self, ask: IsochroneAsk, context: EngineContext) -> IsochroneSnapshot:
         async with AsyncExitStack() as stack:
             provider = await self._provider(stack, ask.origin)
+            # The default 2 keeps today's request (and hash) unless the gate holds three.
             request = e82_request(ask.origin, ask.budget,
-                                 qps=effective_qps(self.settings, self.gate) if provider.network else None)
+                                 qps=effective_qps(self.settings, self.gate) if provider.network else None,
+                                 concurrency=max(2, self.settings.baidu_direction_max_inflight))
             result = await compute_e82(request, provider, context.token,
                                        on_progress=context.progress)
         payload = result.to_dict()
