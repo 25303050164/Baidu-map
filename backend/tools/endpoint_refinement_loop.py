@@ -12,7 +12,12 @@ The budget is a ceiling, not a target: the loop stops when no action is worth a
 query. Priorities are fixed tiers -- evidence conflicts, then unlocalized
 boundary, then wide angular gaps -- rather than an information-gain model.
 Geometry only ever uses actual route endpoints; requested angles steer queries.
+
+Rebuilding and planning are pure CPU over this task's own state, so they run on a
+worker thread: the event loop stays free for status polls and other tasks while
+the loop awaits them, and nothing else touches the state meanwhile.
 """
+import asyncio
 import math
 
 import numpy as np
@@ -61,32 +66,74 @@ class Mesh:
         # GEOS returns the input coordinates unchanged, so they key straight back to records.
         corners = shapely.get_coordinates(self.triangles).reshape(-1, 4, 2)[:, :3] if polygons else []
         self.vertices = [[lookup[(float(x), float(y))] for x, y in triangle] for triangle in corners]
+        # A face is its corners: the same three records always span the same triangle.
+        self.keys = [tuple(r['id'] for r in triangle) for triangle in self.vertices]
 
-    def overlapping(self, region, *, clip=True):
-        """Triangles overlapping ``region`` with positive area, and that overlap.
+    def overlapping(self, region, *, clip=True, subset=None):
+        """Triangles overlapping ``region`` with positive area: (index, overlap, whole).
 
-        Triangles strictly inside the region are their own overlap; only the ones
-        crossing its boundary are intersected.
+        A triangle strictly inside the region is ``whole``: it is its own overlap and
+        carries none. Only the ones crossing the region's boundary are intersected.
+        ``subset`` restricts the test to those triangle indices.
         """
         if not len(self.triangles) or region.is_empty:
             return []
         shapely.prepare(region)
-        index = np.nonzero(shapely.intersects(region, self.triangles))[0]
+        candidates = np.arange(len(self.triangles)) if subset is None else np.asarray(subset, dtype=int)
+        if not len(candidates):
+            return []
+        index = candidates[shapely.intersects(region, self.triangles[candidates])]
         if not len(index):
             return []
         inside = shapely.contains_properly(region, self.triangles[index])
-        found = [(int(i), multipolygon(self.triangles[i]) if clip else None) for i in index[inside]]
+        found = [(int(i), None, True) for i in index[inside]]
         edge = index[~inside]
         if len(edge):
             clipped = shapely.intersection(self.triangles[edge], region, grid_size=OVERLAY_GRID_M)
-            found += [(int(i), multipolygon(c) if clip else None)
+            found += [(int(i), multipolygon(c) if clip else None, False)
                       for i, c in zip(edge, clipped) if shapely.area(c) > 0]
         return sorted(found, key=lambda item: item[0])
 
 
+def _coverage(faces):
+    """Whole Delaunay faces share exact edges, so they merge as a coverage in one
+    linear pass instead of a full overlay; the overlay that follows still snaps
+    everything to the overlay grid.
+
+    GEOS does not check its input: overlapping faces (near-degenerate slivers can
+    look so) either raise or come back as an invalid result. Then, or whenever the
+    merged area is not the faces' total, the faces go to the overlay as they are.
+    """
+    if len(faces) < 2:
+        return list(faces)
+    try:
+        merged = shapely.coverage_union_all(faces)
+    except shapely.errors.GEOSException:
+        return list(faces)
+    total = float(shapely.area(faces).sum())
+    if not merged.is_valid or abs(merged.area - total) > 1e-6 * max(1.0, total):
+        return list(faces)
+    return [merged]
+
+
+def _covered(region, records):
+    """``region.covers`` for many records at once: a point is covered iff it intersects."""
+    if not records:
+        return np.zeros(0, dtype=bool)
+    xy = np.array([r['xy'] for r in records], dtype=float)
+    return shapely.intersects_xy(region, xy[:, 0], xy[:, 1])
+
+
+def _long_mixed_edge(vertices, target):
+    return any((a['duration'] <= 900) != (b['duration'] <= 900) and math.dist(a['xy'], b['xy']) > target
+               for a, b in zip(vertices, vertices[1:] + vertices[:1]))
+
+
 def mesh_mixed_edges(mesh, patch, target):
     edges = {}
-    for i, _ in mesh.overlapping(patch, clip=False):
+    # Only a face with a long mixed edge can contribute: test the patch on those alone.
+    wanted = [i for i, vertices in enumerate(mesh.vertices) if _long_mixed_edge(vertices, target)]
+    for i, _, _ in mesh.overlapping(patch, clip=False, subset=wanted):
         vertices = mesh.vertices[i]
         for j, a in enumerate(vertices):
             b = vertices[(j + 1) % 3]
@@ -96,60 +143,88 @@ def mesh_mixed_edges(mesh, patch, target):
     return edges
 
 
-def mesh_connect_patch(mesh, domain, blocked=(), *, target=25):
-    """No time interpolation. Unlocalized mixed triangles remain unknown."""
+def _mixed_pieces(mesh, i, domain, target):
+    """A mixed face's reachable estimate, and its unreachable rest once localized."""
+    vertices = mesh.vertices[i]
+    crossings, widths = [], []
+    for j, a in enumerate(vertices):
+        b = vertices[(j + 1) % 3]
+        if (a['duration'] <= 900) != (b['duration'] <= 900):
+            crossings.append([(x + y) / 2 for x, y in zip(a['xy'], b['xy'])])
+            widths.append(math.dist(a['xy'], b['xy']))
+    estimate = MultiPoint([p['xy'] for p in vertices if p['duration'] <= 900] + crossings).convex_hull
+    reach = polygon_intersection(estimate, domain)
+    if max(widths) > target:
+        return reach, None
+    return reach, polygon_intersection(polygon_difference(mesh.triangles[i], estimate), domain)
+
+
+def mesh_connect_patch(mesh, domain, blocked=(), *, target=25, faces=None):
+    """No time interpolation. Unlocalized mixed triangles remain unknown.
+
+    ``faces`` caches each mixed face that lies wholly inside the patch: there its
+    pieces do not depend on the patch, and its corners never change, so a later
+    rebuild reuses them instead of overlaying the face again.
+    """
     inside, outside, candidates = [], [], []
+    whole_in, whole_out = [], []
     overlap = mesh.overlapping(domain)
     blocked_hits = set()
     if blocked and overlap:
         tree = shapely.STRtree([Point(p) for p in blocked])
-        subset = np.array([mesh.triangles[i] for i, _ in overlap], dtype=object)
+        subset = np.array([mesh.triangles[i] for i, _, _ in overlap], dtype=object)
         pairs = tree.query(subset, predicate='covers')
         blocked_hits = {overlap[k][0] for k in pairs[0]}
-    for i, clipped in overlap:
+    for i, clipped, whole in overlap:
         if i in blocked_hits:
             continue
-        vertices = mesh.vertices[i]
-        labels = [p['duration'] <= 900 for p in vertices]
+        labels = [p['duration'] <= 900 for p in mesh.vertices[i]]
         if all(labels):
-            inside.append(clipped)
-            candidates.append(clipped)
+            if whole:
+                whole_in.append(i)
+            else:
+                inside.append(clipped)
+                candidates.append(clipped)
             continue
         if not any(labels):
-            outside.append(clipped)
+            if whole:
+                whole_out.append(i)
+            else:
+                outside.append(clipped)
             continue
-        crossings, widths = [], []
-        for j, a in enumerate(vertices):
-            b = vertices[(j + 1) % 3]
-            if (a['duration'] <= 900) != (b['duration'] <= 900):
-                crossings.append([(x + y) / 2 for x, y in zip(a['xy'], b['xy'])])
-                widths.append(math.dist(a['xy'], b['xy']))
-        estimate = MultiPoint([p['xy'] for p in vertices if p['duration'] <= 900] + crossings).convex_hull
-        candidates.append(polygon_intersection(estimate, domain))
-        if max(widths) <= target:
-            inside.append(polygon_intersection(estimate, domain))
-            outside.append(polygon_intersection(polygon_difference(mesh.triangles[i], estimate), domain))
-    reachable, unreachable = polygon_union(inside), polygon_union(outside)
+        cached = faces is not None and whole
+        pieces = faces.get(mesh.keys[i]) if cached else None
+        if pieces is None:
+            pieces = _mixed_pieces(mesh, i, domain, target)
+            if cached:
+                faces[mesh.keys[i]] = pieces
+        reach, rest = pieces
+        candidates.append(reach)
+        if rest is not None:
+            inside.append(reach)
+            outside.append(rest)
+    merged_in = _coverage(mesh.triangles[whole_in])
+    reachable = polygon_union([*merged_in, *inside])
+    unreachable = polygon_union([*_coverage(mesh.triangles[whole_out]), *outside])
     return dict(reachable=reachable, unreachable=unreachable,
                 unknown=polygon_difference(domain, polygon_union([reachable, unreachable])),
-                candidate=polygon_union(candidates))
+                candidate=polygon_union([*merged_in, *candidates]))
 
 
-def mesh_close_patch_evidence(mesh, records, patch, base, blocked, *, target=25, domain=None):
+def mesh_close_patch_evidence(mesh, records, patch, base, blocked, *, target=25, domain=None, faces=None):
     """Revoke stale faces around observed negatives at the repair seam."""
     original_area = patch.area
     negatives = [r for r in records if r['duration'] > 900]
-    ids = {r['id'] for r in negatives if base.covers(Point(r['xy']))}
-    incident = [mesh.triangles[i] for i, vertices in enumerate(mesh.vertices)
-                if any(r['id'] in ids for r in vertices)]
-    patch = unary_union([patch, *incident])
+    ids = {r['id'] for r, covered in zip(negatives, _covered(base, negatives)) if covered}
+    incident = [i for i, vertices in enumerate(mesh.vertices) if any(r['id'] in ids for r in vertices)]
+    patch = unary_union([patch, *_coverage(mesh.triangles[incident])])
     if domain is not None:
         patch = patch.intersection(domain)
-    connected = mesh_connect_patch(mesh, patch, blocked, target=target)
+    connected = mesh_connect_patch(mesh, patch, blocked, target=target, faces=faces)
     remainder = polygon_difference(base, patch)
     estimate = polygon_union([remainder, connected['reachable']])
     candidate = polygon_union([remainder, connected['candidate']])
-    conflicts = [r['id'] for r in negatives if estimate.covers(Point(r['xy']))]
+    conflicts = [r['id'] for r, covered in zip(negatives, _covered(estimate, negatives)) if covered]
     return dict(**connected, patch=patch, estimate=estimate, combined_candidate=candidate,
                 conflicts=conflicts, expanded_area_m2=patch.area - original_area)
 
@@ -172,6 +247,8 @@ class LoopState:
         self.counts = dict(batches=0, directions_added=0, directions_failed=0, repeated_endpoints=0,
                            scan_rays=0, edge_brackets=0, explore_probes=0, explore_contradictions=0,
                            conflict_patches=0, outside_positive_patches=0)
+        # Pieces of mixed faces wholly inside the patch, kept across rebuilds.
+        self.faces = {}
         self.version = None
         self.stop_reason = None
 
@@ -241,7 +318,7 @@ def rebuild(state):
         # Each point opens at most once, so this terminates.
         while True:
             connected = mesh_close_patch_evidence(mesh, records, state.patch, base['candidate'], blocked,
-                                                  target=state.target, domain=domain)
+                                                  target=state.target, domain=domain, faces=state.faces)
             state.patch = connected['patch'].intersection(domain)
             estimate = connected['estimate'].intersection(domain)
             if not _open_contradictions(state, records, by_id, connected, estimate):
@@ -367,15 +444,17 @@ def _explore_candidates(state):
         return []
     mesh = state.version['mesh']
     candidates = []
-    for triangle, vertices in zip(mesh.triangles, mesh.vertices):
+    if len(mesh.triangles):
         # Faces filled only because all three corners are reachable: nobody checked inside.
-        if triangle.area < EXPLORE_MIN_FACE_M2 or not all(v['duration'] <= 900 for v in vertices):
-            continue
-        centroid = triangle.centroid
-        key = ('face', _key((centroid.x, centroid.y)))
-        if key in state.explored or not estimate.covers(centroid):
-            continue
-        candidates.append((triangle.area, key, (centroid.x, centroid.y)))
+        areas = shapely.area(mesh.triangles)
+        reachable = np.array([all(v['duration'] <= 900 for v in vertices) for vertices in mesh.vertices])
+        chosen = np.nonzero((areas >= EXPLORE_MIN_FACE_M2) & reachable)[0]
+        centroids = shapely.get_coordinates(shapely.centroid(mesh.triangles[chosen]))
+        covered = shapely.intersects_xy(estimate, centroids[:, 0], centroids[:, 1])
+        for i, (x, y), inside in zip(chosen, centroids.tolist(), covered):
+            key = ('face', _key((x, y)))
+            if inside and key not in state.explored:
+                candidates.append((float(areas[i]), key, (x, y)))
     candidates.sort(reverse=True)
     interior = [(key, xy) for _, key, xy in candidates[:1]]
     origin = state.version['origin']
@@ -539,11 +618,19 @@ async def _run_action(state, kind, spec):
     return spent
 
 
+def _plan(state):
+    """Every action the current evidence version proposes, best first."""
+    actions = sorted(_direction_actions(state) + _patch_actions(state),
+                     key=lambda a: (a[0], a[1]), reverse=True)
+    explore = _explore_candidates(state) if state.reserve_left() > 0 else []
+    return actions, explore
+
+
 async def refinement_loop(session, rows, *, target=25, radial_step=50, coarse_chord=COARSE_CHORD_M,
                           explore_share=EXPLORE_SHARE, token=None):
     state = LoopState(session, rows, target=target, radial_step=radial_step,
                       coarse_chord=coarse_chord, explore_share=explore_share)
-    rebuild(state)
+    await asyncio.to_thread(rebuild, state)
     while True:
         if token is not None and token.cancelled:
             state.stop_reason = 'cancelled'
@@ -551,9 +638,7 @@ async def refinement_loop(session, rows, *, target=25, radial_step=50, coarse_ch
         if state.stopped():
             state.stop_reason = state.scheduler.stop_reason or 'budget'
             break
-        actions = sorted(_direction_actions(state) + _patch_actions(state),
-                         key=lambda a: (a[0], a[1]), reverse=True)
-        explore = _explore_candidates(state) if state.reserve_left() > 0 else []
+        actions, explore = await asyncio.to_thread(_plan, state)
         if not explore:
             # Nothing left to explore: its reserve returns to the other actions.
             state.explore_reserve = state.explore_spent
@@ -578,9 +663,9 @@ async def refinement_loop(session, rows, *, target=25, radial_step=50, coarse_ch
         if state.scheduler.stats.requests == batch_start:
             # Every candidate was cached or rejected before a send: nothing more to learn.
             state.stop_reason = 'no_ambiguity_left'
-            rebuild(state)
+            await asyncio.to_thread(rebuild, state)
             break
-        rebuild(state)
+        await asyncio.to_thread(rebuild, state)
     return state
 
 
