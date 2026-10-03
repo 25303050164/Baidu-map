@@ -62,3 +62,7 @@ data/osm/*.poly
 data/osm/*.md5
 data/osm/*.geojson
 data/osm/graph_metadata.json
+data/osm/LICENSE-OSM.txt
+data/osm/README.txt
+data/osm/manifest.json
+data/osm/SHA256SUMS.txt
