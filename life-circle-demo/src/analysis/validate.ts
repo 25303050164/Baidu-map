@@ -1,5 +1,6 @@
 import type { RouteEvidence, PoiEvidence } from '../api-contract';
 import type { AnalysisResult, BusinessStatus, TaskStatus } from './types';
+import { majorCategories } from '../taxonomy';
 
 type RecordValue = Record<string, unknown>;
 const object = (v: unknown): v is RecordValue => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -77,8 +78,15 @@ export function validResult(v: unknown): v is AnalysisResult {
     && [200, 400, 800].includes(r.config.budget as number) && count(r.config.seed);
 }
 
-const group = (v: unknown) => ['shopping', 'medical', 'education'].includes(v as string);
-const minor = (v: unknown) => ['market', 'supermarket', 'pharmacy', 'hospital_pharmacy', 'school'].includes(v as string);
+const group = (v: unknown) => majorCategories.includes(v as typeof majorCategories[number]);
+const minorKeys = new Set([
+  'market', 'pharmacy', 'hospital_pharmacy', 'hospital', 'clinic', 'checkup', 'fresh_store',
+  'supermarket', 'school', 'combined_school', 'middle_school', 'college', 'preschool',
+  'training', 'nursing_home', 'rehab', 'restaurant', 'cafe', 'bank', 'finance_service',
+  'government', 'post', 'library', 'park', 'sports', 'entertainment', 'bus', 'parking', 'fuel',
+  'repair', 'beauty',
+]);
+const minor = (v: unknown) => minorKeys.has(v as string);
 const nullableNonnegative = (v: unknown) => v === null || (finite(v) && v >= 0);
 // Contract consistency only: this never creates or upgrades a POI status.
 function matchingEndpoints(actual: number[], requested: number[]) {

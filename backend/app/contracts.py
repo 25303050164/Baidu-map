@@ -6,19 +6,18 @@ from uuid import uuid4
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .rules import DistanceRule
+from .catalog import keys as catalog_keys, majors as catalog_majors, major_of
 
-MajorCategory = Literal["shopping", "medical", "education"]
-MinorCategory = Literal["market", "supermarket", "pharmacy", "hospital_pharmacy", "school"]
+# The JSON catalogue is the only category list.  Constructing the Literal at
+# import time keeps the strict wire contract aligned with additions to it.
+MajorCategory = Literal.__getitem__(catalog_majors())
+MinorCategory = Literal.__getitem__(catalog_keys())
 # Kept as a public alias for older N04/N05 callers.
 Category = MinorCategory
 Status = Literal["complete", "partial", "failed", "empty"]
 AsyncStatus = Literal["running", "cancelling", "completed", "cancelled", "failed"]
 
-MINOR_TO_MAJOR: dict[str, str] = {
-    "market": "shopping", "supermarket": "shopping",
-    "pharmacy": "medical", "hospital_pharmacy": "medical",
-    "school": "education",
-}
+MINOR_TO_MAJOR: dict[str, str] = {key: major_of(key) for key in catalog_keys()}
 
 
 def map_business_status(*, quality: str, facilities_status: str,
@@ -261,7 +260,7 @@ class Data(WireModel):
     categories: list[CategoryResult] = Field(default_factory=lambda: [
         CategoryResult(category=c, major_category=MINOR_TO_MAJOR[c], minor_category=c,
                        query_status="unknown", count_in_circle=None, service_status="unknown")
-        for c in ("market", "pharmacy", "school")
+        for c in catalog_keys()
     ])
     blind_points: list[BlindPoint] | None = None
     blind_region: Geometry | None = None

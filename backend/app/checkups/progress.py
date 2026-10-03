@@ -8,7 +8,7 @@
 import threading
 import time
 
-MAJOR_LABELS = {"shopping": "购物", "medical": "医疗", "education": "教育"}
+from ..catalog import MAJOR_LABELS
 
 #: 步骤代码 -> （读者说法，计数单位）。成圈的前六个是 E8.2 引擎自报的子阶段名。
 STEPS: dict[str, tuple[str, str | None]] = {

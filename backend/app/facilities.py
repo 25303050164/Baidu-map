@@ -9,7 +9,7 @@ from life_circle.providers import BaiduProvider
 from life_circle.field import business_geometry
 
 from . import service_rules
-from .catalog import majors, minors_of
+from .catalog import major_label, majors, minors_of
 from .contracts import AssessmentPoint, CategoryResult, CoverageEvidence, FacilityAnalysis
 from .places import PlacesClient
 from .place_protocol import STOP_ERRORS
@@ -26,7 +26,7 @@ RULE = DistanceRule(metric="walking_route", threshold_m=int(service_rules.THRESH
 
 
 async def analyze_facilities(result, client, ak, gate, token, *, max_points=9, max_routes_per_group=8, deadline=None,
-                             on_progress=None, place_gate=None):
+                             on_progress=None, place_gate=None, selected_majors=None):
     if max_points < 1 or max_routes_per_group < 1:
         raise ValueError("positive sampling limits required")
     start = time.monotonic()
@@ -37,8 +37,11 @@ async def analyze_facilities(result, client, ak, gate, token, *, max_points=9, m
     extent = max(abs(v) for v in result.local_geometry.bounds) if result.local_geometry is not None and not result.local_geometry.is_empty else result.config.extent
     radius = math.ceil(math.sqrt(2) * extent + 1200)
     # Place searches pace on the place service's gate, routes on the direction gate.
+    selected = tuple(selected_majors or majors())
+    selected_groups = {major: minors_of(major) for major in selected}
+    requested_minors = tuple(minor for major in selected for minor in selected_groups[major])
     places = PlacesClient(client, ak, place_gate or gate, token)
-    facilities, queries = await places.search(origin, radius, deadline)
+    facilities, queries = await places.search(origin, radius, deadline, categories=requested_minors)
     geometry = shape(result.geometry) if result.geometry else None
     for item in facilities:
         item.in_circle = geometry.covers(Point(item.location.lng, item.location.lat)) if geometry else None
@@ -91,7 +94,7 @@ async def analyze_facilities(result, client, ak, gate, token, *, max_points=9, m
 
     async def assess(sample):
         evidence = []
-        for major, minors in GROUPS.items():
+        for major, minors in selected_groups.items():
             items = sorted((f for f in facilities if f.major_category == major),
                            key=lambda f: (math.dist(projection.to_local(sample.destination), projection.to_local((f.location.lng, f.location.lat))), f.id))
             # Geographic separation only prefilters obviously remote candidates;
@@ -121,23 +124,24 @@ async def analyze_facilities(result, client, ak, gate, token, *, max_points=9, m
     for sample in selected:
         evidence = await assess(sample)
         assessments.append(AssessmentPoint(location={"lng": sample.destination[0], "lat": sample.destination[1]}, duration_s=sample.duration, categories=evidence))
-    groups = []
-    for major, minors in GROUPS.items():
+    category_results = []
+    for major, minors in selected_groups.items():
         for minor in minors:
-            groups.append(CategoryResult(category=minor, query_status="complete" if by_query[minor]["status"] == "complete" else "failed" if by_query[minor]["status"] == "failed" else "unknown",
+            category_results.append(CategoryResult(category=minor, query_status="complete" if by_query[minor]["status"] == "complete" else "failed" if by_query[minor]["status"] == "failed" else "unknown",
                 count_in_circle=sum(f.in_circle is True and f.category == minor for f in facilities) if geometry else None,
                 service_status="unknown"))
     status = "failed" if all(q["status"] == "failed" for q in queries) else "partial" if not assessments or len(candidates) > len(selected) or any(q["status"] != "complete" for q in queries) or any(c.status == "unknown" for p in assessments for c in p.categories) else "complete"
     # A measured point cannot establish an area of missing services.
-    service_blind_regions = {major: business_geometry(Point(0, 0).buffer(0), projection) for major in GROUPS}
+    service_blind_regions = {major: business_geometry(Point(0, 0).buffer(0), projection) for major in selected_groups}
     summary = FacilityAnalysis(status=status, queries=queries, assessments=assessments, candidate_points=len(candidates),
         assessed_points=len(assessments), unassessed_points=len(candidates)-len(assessments), network_requests=requests,
         elapsed_seconds=time.monotonic()-start, search_radius_m=radius, routes=routes,
         service_blind_regions=service_blind_regions, warnings=warnings)
-    counts = {major: sum(f.major_category == major and f.in_circle is True for f in facilities) for major in GROUPS}
-    report = f"本次检索在估算15分钟圈内记录购物{counts['shopping']}处、医疗{counts['medical']}处、教育{counts['education']}处。评估{len(assessments)}/{len(candidates)}个实测可达点。"
-    for major, label in [("shopping", "购物"), ("medical", "医疗"), ("education", "教育")]:
+    counts = {major: sum(f.major_category == major and f.in_circle is True for f in facilities) for major in selected_groups}
+    report = "本次检索在估算15分钟圈内记录" + "、".join(f"{major_label(major)}{count}处" for major, count in counts.items()) + f"。评估{len(assessments)}/{len(candidates)}个实测可达点。"
+    for major in selected_groups:
+        label = major_label(major)
         states = [c.status for p in assessments for c in p.categories if c.category == major]
         report += f"{label}：有设施{states.count('covered')}点、无法判断{states.count('unknown')}点。"
     report += "未评估点不计入盲区；不生成覆盖率、评分或规划等级。"
-    return facilities, groups, summary, report
+    return facilities, category_results, summary, report

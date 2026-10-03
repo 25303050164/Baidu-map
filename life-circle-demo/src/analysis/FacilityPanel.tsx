@@ -5,8 +5,12 @@ import type { RouteEvidence } from '../api-contract';
 import './facilities.css';
 import { withFacilityRoute } from './adapter';
 import { poiStatusLabel, presentRoute, requestFacilityRoute } from './routes';
+import { majorMeta } from '../taxonomy';
 
-export const groupNames: Record<string,string> = { shopping:'购物', medical:'医疗服务', education:'教育' };
+export const groupNames: Record<string,string> = Object.fromEntries(
+  Object.entries(majorMeta).sort(([, left], [, right]) => left.order - right.order)
+    .map(([key, value]) => [key, value.label]),
+);
 const statusNames: Record<string,string> = {covered:'有设施',blind:'查询范围内盲区',unknown:'无法判断'};
 
 export function FacilityPanel({result, group, onGroup, selected, onSelect, onRoute}: {result:AnalysisResult; group:string; onGroup:(g:string)=>void; selected:string|null; onSelect:(id:string)=>void; onRoute:(route:[number,number][], evidence?:RouteEvidence)=>void}) {

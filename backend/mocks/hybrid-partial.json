@@ -154,14 +154,6 @@
     "facilities": null,
     "categories": [
       {
-        "category": "market",
-        "major_category": "shopping",
-        "minor_category": "market",
-        "query_status": "unknown",
-        "count_in_circle": null,
-        "service_status": "unknown"
-      },
-      {
         "category": "pharmacy",
         "major_category": "medical",
         "minor_category": "pharmacy",
@@ -170,9 +162,241 @@
         "service_status": "unknown"
       },
       {
+        "category": "hospital_pharmacy",
+        "major_category": "medical",
+        "minor_category": "hospital_pharmacy",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "hospital",
+        "major_category": "medical",
+        "minor_category": "hospital",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "clinic",
+        "major_category": "medical",
+        "minor_category": "clinic",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "checkup",
+        "major_category": "medical",
+        "minor_category": "checkup",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "market",
+        "major_category": "shopping",
+        "minor_category": "market",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "fresh_store",
+        "major_category": "shopping",
+        "minor_category": "fresh_store",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "supermarket",
+        "major_category": "shopping",
+        "minor_category": "supermarket",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
         "category": "school",
         "major_category": "education",
         "minor_category": "school",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "combined_school",
+        "major_category": "education",
+        "minor_category": "combined_school",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "middle_school",
+        "major_category": "education",
+        "minor_category": "middle_school",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "college",
+        "major_category": "education",
+        "minor_category": "college",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "preschool",
+        "major_category": "education",
+        "minor_category": "preschool",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "training",
+        "major_category": "education",
+        "minor_category": "training",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "nursing_home",
+        "major_category": "care",
+        "minor_category": "nursing_home",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "rehab",
+        "major_category": "care",
+        "minor_category": "rehab",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "restaurant",
+        "major_category": "dining",
+        "minor_category": "restaurant",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "cafe",
+        "major_category": "dining",
+        "minor_category": "cafe",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "bank",
+        "major_category": "finance",
+        "minor_category": "bank",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "finance_service",
+        "major_category": "finance",
+        "minor_category": "finance_service",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "government",
+        "major_category": "public",
+        "minor_category": "government",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "post",
+        "major_category": "public",
+        "minor_category": "post",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "library",
+        "major_category": "public",
+        "minor_category": "library",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "park",
+        "major_category": "leisure",
+        "minor_category": "park",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "sports",
+        "major_category": "leisure",
+        "minor_category": "sports",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "entertainment",
+        "major_category": "leisure",
+        "minor_category": "entertainment",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "bus",
+        "major_category": "transport",
+        "minor_category": "bus",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "parking",
+        "major_category": "transport",
+        "minor_category": "parking",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "fuel",
+        "major_category": "transport",
+        "minor_category": "fuel",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "repair",
+        "major_category": "life",
+        "minor_category": "repair",
+        "query_status": "unknown",
+        "count_in_circle": null,
+        "service_status": "unknown"
+      },
+      {
+        "category": "beauty",
+        "major_category": "life",
+        "minor_category": "beauty",
         "query_status": "unknown",
         "count_in_circle": null,
         "service_status": "unknown"

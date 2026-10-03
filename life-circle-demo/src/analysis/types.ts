@@ -1,10 +1,10 @@
 import type { Center } from '../types';
 import { isLegacyBusy, type LegacyState } from '../legacyController';
-import type { TaskResultResponse as ContractTaskResult, TaskStatusResponse as ContractTaskStatus } from '../api-contract';
+import type { MajorCategory, TaskResultResponse as ContractTaskResult, TaskStatusResponse as ContractTaskStatus } from '../api-contract';
 
 export type Budget = 200 | 400 | 800;
 export type BusinessStatus = 'complete' | 'partial' | 'failed' | 'empty';
-export type AnalysisInput = { center: Center; budget: Budget; clientRequestId: string };
+export type AnalysisInput = { center: Center; budget: Budget; clientRequestId: string; facilityCategories?: MajorCategory[] };
 export type DataSource = 'synthetic' | 'baidu_walking';
 export type BusinessGeometry = {
   type: 'MultiPolygon'; coordinateSystem: 'bd09ll'; coordinates: [number, number][][][];

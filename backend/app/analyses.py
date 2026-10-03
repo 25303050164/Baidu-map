@@ -18,7 +18,8 @@ from life_circle.models import CancelToken, IsochroneRequest, ProgressSnapshot, 
 from life_circle.providers import BaiduProvider
 
 from .baidu import silence_transport_logs
-from .contracts import Data, Issue, Rules, TaskResultResponse, TaskStatusResponse, RouteEvidence, map_business_status
+from .contracts import Data, Issue, MajorCategory, Rules, TaskResultResponse, TaskStatusResponse, RouteEvidence, map_business_status
+from . import catalog
 from .request_control import RequestStopped, request_slot
 from .rules import DistanceRule
 from .facilities import analyze_facilities
@@ -36,6 +37,7 @@ class AnalysisInput(BaseModel):
     coordinateSystem: Literal["bd09ll"]
     budget: int = 400
     clientRequestId: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
+    facilityCategories: tuple[MajorCategory, ...] = tuple(catalog.majors())
 
     @field_validator("budget")
     @classmethod
@@ -44,8 +46,15 @@ class AnalysisInput(BaseModel):
             raise ValueError("budget must be 200, 400 or 800")
         return value
 
+    @field_validator("facilityCategories")
+    @classmethod
+    def distinct_facility_categories(cls, value):
+        if not value or len(value) != len(set(value)):
+            raise ValueError("facilityCategories must contain distinct categories")
+        return value
+
     def fingerprint(self):
-        return normalize((self.center.lng, self.center.lat)), self.budget
+        return normalize((self.center.lng, self.center.lat)), self.budget, self.facilityCategories
 
 
 TERMINAL = {"completed", "cancelled", "failed"}
@@ -235,7 +244,7 @@ class AnalysisManager:
         try:
             business = None
             async with AsyncExitStack() as stack:
-                origin, budget = job.payload.fingerprint()
+                origin, budget, _facility_categories = job.payload.fingerprint()
                 if self.provider_factory:
                     provider = self.provider_factory(origin)
                     if hasattr(provider, "__aenter__"):
@@ -260,7 +269,8 @@ class AnalysisManager:
                         result.statistics.network_requests, budget, time.monotonic() - job.started))
                     business = await analyze_facilities(result, client,
                         self.settings.baidu_map_ak.get_secret_value(), self.gate, job.token,
-                        deadline=job.started + 600, place_gate=self.place_gate)
+                        deadline=job.started + 600, place_gate=self.place_gate,
+                        selected_majors=job.payload.facilityCategories)
             # Commit only after transport cleanup; cancellation during cleanup wins.
             if job.token.cancelled:
                 job.status = "cancelled"

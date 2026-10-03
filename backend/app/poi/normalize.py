@@ -50,12 +50,26 @@ def classify(name, tags):
     # category, and §4.3 wants one table per question.
     names = {c for c, words in RULES['nameHints'].items() if any(w in name for w in words)}
     tagged = {c for c, words in RULES['supportedTags'].items() if tag_parts.intersection(words)}
+    for category, words in RULES.get('excludeHints', {}).items():
+        if category in names | tagged and any(word in name or word in business_tags for word in words):
+            names.discard(category)
+            tagged.discard(category)
+            evidence.append('excluded:' + category)
+    negative = {c for c in names | tagged if RULES.get('negative', {}).get(c)}
+    if negative:
+        return None, 'excluded', evidence + ['negative:' + c for c in sorted(negative)]
     evidence.extend('name:' + c for c in sorted(names))
     evidence.extend('tag:' + c for c in sorted(tagged))
     if tag_parts.intersection(RULES['conflictingTags']):
         return None, 'needs_review', evidence + ['conflicting_non_target_tags']
-    if len(names | tagged) > 1:
-        return None, 'needs_review', evidence + ['conflicting_categories']
+    matches = names | tagged
+    if len(matches) > 1:
+        ranked = sorted(matches, key=lambda c: RULES.get('priorities', {}).get(c, 0), reverse=True)
+        top = RULES.get('priorities', {}).get(ranked[0], 0)
+        if sum(RULES.get('priorities', {}).get(c, 0) == top for c in matches) > 1:
+            return None, 'needs_review', evidence + ['conflicting_categories']
+        names = {ranked[0]} if ranked[0] in names else set()
+        tagged = {ranked[0]} if ranked[0] in tagged else set()
     if len(tagged) == 1:
         return next(iter(tagged)), 'accepted', evidence
     return None, 'needs_review', evidence + ['insufficient_category_evidence']
