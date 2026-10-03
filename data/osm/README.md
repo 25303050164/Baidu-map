@@ -4,10 +4,10 @@ Map data © OpenStreetMap contributors. 数据按 [Open Database License (ODbL)]
 
 OSM 是独立算法基线，**不是 ground truth**。可能缺道路、门禁、校园出口、小区内部连接。原始可达结果是一维道路片段；buffer 面仅用于显示，不能解释为额外离路步行权限。
 
-数据源：[Geofabrik Shanghai](https://download.geofabrik.de/asia/china/shanghai.html)。本次固定快照为 `shanghai-260912.osm.pbf`，下载日期 2026-09-14；不要每日自动更新。PBF SHA256：
+数据源：[Geofabrik Shanghai](https://download.geofabrik.de/asia/china/shanghai.html)。本项目当前固定快照为 `geofabrik-shanghai-260913`（源文件 `shanghai-latest.osm.pbf`），下载日期 2026-09-14；不要每日自动更新。PBF SHA256：
 
 ```text
-0490e886ef41881928c1b10500ee280ef009a892ac43d8a476fc082894064b82
+11e420b2fe24176856b31c26da308e3ec41a9a7f5a2b849d91c34f7069837c12
 ```
 
 覆盖范围使用同次下载的 Geofabrik `shanghai.poly`（extract 范围，不是从路网死端推断）。SHA256：
@@ -18,7 +18,13 @@ c34d551f02a2d42f327e2f123fd2f28399fd914b36ab46f0c099e15b68ae0f59
 
 `.poly` 链接会更新；复现实验应保存本地原件并核对上述哈希。使用其他快照时必须一起归档其边界和来源，并重新构图。构图将 coverage SHA256 写入 cache，启动时校验匹配。不匹配时不声称有覆盖完整性检查，quality 降为 partial。
 
-文件均保存在本目录并被 Git 忽略：PBF、`.poly`、GeoJSON、`*.osm-cache`、`graph_metadata.json`。不要提交大数据。项目保留此 README 和 `.gitkeep`。
+普通用户无需安装 Pyrosm、OSMnx、MSVC 或 conda，运行 `python dev.py osm` 即可从固定地址下载并校验预构建运行包：
+
+<https://github.com/PennEwan/Baidu-map/raw/refs/heads/osm-runtime-data/osm-shanghai-geofabrik-260913-runtime.zip>
+
+运行包 SHA256：`51b45539592de54ae9d78d5c7e556140711af3a7fd5f004fc83263b15f898d94`。数据来自 OpenStreetMap contributors，按 [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) 提供；再分发时请保留署名与许可证链接。
+
+文件均保存在本目录并被 Git 忽略：PBF、`.poly`、GeoJSON、`*.osm-cache`、`graph_metadata.json`。不要提交大数据。项目保留此 README 和 `.gitkeep`；需要复现或自定义区域时再按下文构图。
 
 ## 1. 安装
 
@@ -29,7 +35,7 @@ $osmPython = (Resolve-Path .venv/Scripts/python.exe).Path
 & $osmPython -m pip install -r requirements.lock.txt -e ../life-circle-algorithm
 ```
 
-运行阶段只需要上述依赖（新增 NetworkX 3.6.1、PyProj 3.7.2；Shapely 2.1.2 已存在）。准备阶段额外需要 Pyrosm 0.13.1、OSMnx 2.0.7、GeoPandas，版本见 `backend/requirements-osm-build.txt`：
+运行阶段只需要上述依赖（新增 NetworkX 3.6.1、PyProj 3.8.0；Shapely 2.1.2 已存在）。准备阶段额外需要 Pyrosm 0.13.1、OSMnx 2.0.7、GeoPandas，版本见 `backend/requirements-osm-build.txt`：
 
 ```powershell
 & $osmPython -m pip install -r requirements-osm-build.txt
@@ -51,9 +57,9 @@ python -m pip install -r requirements-osm-build.txt -e ../life-circle-algorithm
 
 ```powershell
 New-Item -ItemType Directory -Force ../data/osm | Out-Null
-Invoke-WebRequest 'https://download.geofabrik.de/asia/china/shanghai-260912.osm.pbf' -OutFile '../data/osm/shanghai-260912.osm.pbf'
+Invoke-WebRequest 'https://download.geofabrik.de/asia/china/shanghai-latest.osm.pbf' -OutFile '../data/osm/shanghai-latest.osm.pbf'
 Invoke-WebRequest 'https://download.geofabrik.de/asia/china/shanghai.poly' -OutFile '../data/osm/shanghai.poly'
-Get-FileHash ../data/osm/shanghai-260912.osm.pbf -Algorithm SHA256
+Get-FileHash ../data/osm/shanghai-latest.osm.pbf -Algorithm SHA256
 Get-FileHash ../data/osm/shanghai.poly -Algorithm SHA256
 ```
 
@@ -64,16 +70,16 @@ Get-FileHash ../data/osm/shanghai.poly -Algorithm SHA256
 Settings 从 `backend/.env` 读取；环境变量优先。相对文件路径统一相对 `backend` 解析，不依赖运行目录。不要改动已有百度密钥。可在当前 PowerShell 仅设置 OSM 项：
 
 ```powershell
-$env:OSM_PBF_PATH='../data/osm/shanghai-260912.osm.pbf'
+$env:OSM_PBF_PATH='../data/osm/shanghai-latest.osm.pbf'
 $env:OSM_GRAPH_CACHE_PATH='../data/osm/shanghai.osm-cache'
-$env:OSM_DATA_VERSION='geofabrik-shanghai-20260912'
+$env:OSM_DATA_VERSION='geofabrik-shanghai-260913'
 $env:OSM_METRIC_CRS='EPSG:32651'
 $env:WALK_SPEED_MPS='1.3'
 $env:SNAP_MAX_DISTANCE_M='200'
 $env:ISOCHRONE_BUFFER_M='25'
 $env:OSM_COVERAGE_BOUNDARY_PATH='../data/osm/shanghai.poly'
 $env:OSM_COVERAGE_MARGIN_M='100'
-& $osmPython scripts/prepare_osm_graph.py --source 'https://download.geofabrik.de/asia/china/shanghai-260912.osm.pbf' --downloaded-at '2026-09-14'
+& $osmPython scripts/prepare_osm_graph.py --source 'https://download.geofabrik.de/asia/china/shanghai-latest.osm.pbf' --downloaded-at '2026-09-14'
 ```
 
 `prepare_osm_graph.py` **不会下载**。读取本地 PBF，通过 Pyrosm `get_network(network_type="walking", nodes=True)`，投影 GeoDataFrames 到米制 CRS，构造保留全部组件的 MultiDiGraph。一般步行道路双向；显式 `oneway:foot`、`foot:forward=no`、`foot:backward=no` 限制方向，汽车 oneway 不自动限制行人。

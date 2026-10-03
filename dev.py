@@ -4,6 +4,9 @@
     python dev.py                 # full guided flow (this is what start.bat runs)
     python dev.py setup           # environment only, no servers
     python dev.py doctor          # report what is missing, change nothing
+    python dev.py osm             # install/check the pre-built OSM runtime data
+    python dev.py osm --check     # check OSM data without network access
+    python dev.py osm --repair    # download the OSM runtime again
     python dev.py backend         # backend only
     python dev.py frontend        # frontend only
 """
@@ -20,18 +23,40 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
 import webbrowser
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PurePosixPath
 
 ROOT = Path(__file__).resolve().parent
 BACKEND = ROOT / "backend"
 FRONTEND = ROOT / "life-circle-demo"
 ALGORITHM = ROOT / "life-circle-algorithm"
+OSM_DATA_DIR = ROOT / "data" / "osm"
+OSM_RUNTIME_VERSION = "geofabrik-shanghai-260913"
+OSM_RUNTIME_ARCHIVE = "osm-shanghai-geofabrik-260913-runtime.zip"
+OSM_RUNTIME_URL = (
+    "https://github.com/PennEwan/Baidu-map/raw/refs/heads/"
+    f"osm-runtime-data/{OSM_RUNTIME_ARCHIVE}"
+)
+# The archive is pinned so a changed download cannot silently replace the
+# reproducible runtime data package.
+OSM_RUNTIME_SHA256 = "51b45539592de54ae9d78d5c7e556140711af3a7fd5f004fc83263b15f898d94"
+OSM_REQUIRED_FILES = ("shanghai.osm-cache", "shanghai.poly", "graph_metadata.json")
+OSM_OPTIONAL_FILES = (
+    "shanghai.risks.geojson",
+    "shanghai.obstacles.geojson",
+    "LICENSE-OSM.txt",
+    "README.txt",
+    "manifest.json",
+    "SHA256SUMS.txt",
+)
 
 DEFAULT_BACKEND_PORT = 8000
 DEFAULT_FRONTEND_PORT = 5173
@@ -136,6 +161,213 @@ def step(number: int, total: int, title: str) -> None:
 
 def interactive() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+# ---------------------------------------------------------------- OSM runtime data
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _runtime_file(data_dir: Path, name: str) -> Path:
+    return data_dir / name
+
+
+def _manifest_entries(path: Path) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    if not path.is_file():
+        return entries
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.match(r"^([0-9a-fA-F]{64})\s+(?:\*?)(.+?)\s*$", line)
+        if match:
+            entries[match.group(2).replace("\\", "/")] = match.group(1).lower()
+    return entries
+
+
+def _metadata_version(data_dir: Path) -> str | None:
+    metadata = _runtime_file(data_dir, "graph_metadata.json")
+    if not metadata.is_file():
+        return None
+    try:
+        import json
+
+        value = json.loads(metadata.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+    version = value.get("osm_data_version") if isinstance(value, dict) else None
+    return version if isinstance(version, str) else None
+
+
+def check_osm_runtime(data_dir: Path = OSM_DATA_DIR) -> tuple[bool, list[str]]:
+    """Return whether the installed runtime package is complete and consistent."""
+    problems: list[str] = []
+    for name in OSM_REQUIRED_FILES:
+        if not _runtime_file(data_dir, name).is_file():
+            problems.append(f"missing {name}")
+    if problems:
+        return False, problems
+
+    version = _metadata_version(data_dir)
+    if version != OSM_RUNTIME_VERSION:
+        problems.append(f"metadata version is {version or 'missing'}, expected {OSM_RUNTIME_VERSION}")
+
+    manifest = _manifest_entries(_runtime_file(data_dir, "SHA256SUMS.txt"))
+    for name, expected in manifest.items():
+        path = _runtime_file(data_dir, name)
+        if not path.is_file():
+            # A manifest generated with paths such as data/osm/foo is also
+            # accepted when its final component identifies an installed file.
+            path = _runtime_file(data_dir, Path(name).name)
+        if not path.is_file():
+            problems.append(f"manifest file missing: {Path(name).name}")
+        elif sha256_file(path) != expected:
+            problems.append(f"SHA256 mismatch for {path.name}")
+    return not problems, problems
+
+
+def _safe_zip_name(name: str) -> PurePosixPath:
+    normalized = name.replace("\\", "/")
+    path = PurePosixPath(normalized)
+    if path.is_absolute() or (path.parts and ":" in path.parts[0]) or any(part in ("", ".", "..") for part in path.parts):
+        raise ValueError(f"unsafe archive path: {name}")
+    if len(path.parts) > 16:
+        raise ValueError(f"archive path is too deep: {name}")
+    return path
+
+
+def _find_staged_file(stage: Path, name: str) -> Path | None:
+    direct = stage / name
+    if direct.is_file():
+        return direct
+    matches = [path for path in stage.rglob(name) if path.is_file()]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _validate_staged_runtime(stage: Path) -> tuple[bool, list[str]]:
+    """Validate required files and the optional package checksum manifest."""
+    problems: list[str] = []
+    for name in OSM_REQUIRED_FILES:
+        if _find_staged_file(stage, name) is None:
+            problems.append(f"archive does not contain {name}")
+    metadata = _find_staged_file(stage, "graph_metadata.json")
+    if metadata is not None:
+        try:
+            import json
+
+            value = json.loads(metadata.read_text(encoding="utf-8-sig"))
+            version = value.get("osm_data_version") if isinstance(value, dict) else None
+        except (OSError, ValueError):
+            version = None
+        if version != OSM_RUNTIME_VERSION:
+            problems.append(f"archive metadata version is {version or 'missing'}, expected {OSM_RUNTIME_VERSION}")
+
+    manifest = _find_staged_file(stage, "SHA256SUMS.txt")
+    for name, expected in _manifest_entries(manifest).items() if manifest else {}:
+        candidate = stage / Path(name)
+        if not candidate.is_file():
+            candidate = _find_staged_file(stage, Path(name).name) or candidate
+        if not candidate.is_file():
+            problems.append(f"manifest file missing in archive: {Path(name).name}")
+        elif sha256_file(candidate) != expected:
+            problems.append(f"SHA256 mismatch for archive member {Path(name).name}")
+    return not problems, problems
+
+
+def _download_runtime(url: str, destination: Path) -> None:
+    request = urllib.request.Request(url, headers={"User-Agent": "Baidu-map OSM installer"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response, destination.open("wb") as output:
+            total = int(response.headers.get("Content-Length") or 0)
+            received = 0
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk)
+                received += len(chunk)
+                if total:
+                    log("dev", f"downloading OSM runtime: {received / total:.0%}")
+    except (urllib.error.URLError, OSError, TimeoutError) as error:
+        raise RuntimeError(str(error)) from error
+
+
+def _install_runtime_archive(archive: Path, data_dir: Path) -> None:
+    parent = data_dir.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".osm-runtime-", dir=str(parent)))
+    try:
+        with zipfile.ZipFile(archive) as package:
+            for member in package.infolist():
+                _safe_zip_name(member.filename)
+                if member.is_dir():
+                    continue
+                # Refuse symlink entries; extraction must only create regular files.
+                if (member.external_attr >> 16) & 0o170000 == 0o120000:
+                    raise ValueError(f"archive contains a symlink: {member.filename}")
+            package.extractall(stage)
+
+        valid, problems = _validate_staged_runtime(stage)
+        if not valid:
+            raise ValueError("; ".join(problems))
+
+        files: list[tuple[Path, Path]] = []
+        names = set(OSM_REQUIRED_FILES + OSM_OPTIONAL_FILES)
+        for name in names:
+            source = _find_staged_file(stage, name)
+            if source is not None:
+                files.append((source, data_dir / name))
+        data_dir.mkdir(parents=True, exist_ok=True)
+        for source, target in files:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source, target)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
+def install_osm_runtime(*, check_only: bool = False, repair: bool = False,
+                        url: str = OSM_RUNTIME_URL, expected_sha256: str = OSM_RUNTIME_SHA256) -> int:
+    """Check or install the pre-built OSM runtime package without extra tools."""
+    data_dir = OSM_DATA_DIR
+    valid, problems = check_osm_runtime(data_dir)
+    if valid and not repair:
+        log("ok", f"OSM runtime ready: {OSM_RUNTIME_VERSION}")
+        return 0
+    if check_only:
+        log("warn", "OSM runtime is not ready: " + "; ".join(problems))
+        return 1
+
+    log("dev", f"OSM runtime is missing or incomplete; downloading {OSM_RUNTIME_ARCHIVE}")
+    archive: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix="osm-runtime-", suffix=".zip", delete=False) as handle:
+            archive = Path(handle.name)
+        _download_runtime(url, archive)
+        if expected_sha256 and sha256_file(archive) != expected_sha256.lower():
+            raise ValueError("downloaded archive SHA256 does not match the expected value")
+        _install_runtime_archive(archive, data_dir)
+    except (RuntimeError, ValueError, OSError, zipfile.BadZipFile) as error:
+        log("err", f"OSM runtime download/install failed: {error}")
+        log("dev", f"Check your network, then retry: python dev.py osm --repair")
+        log("dev", f"Manual source: {url}")
+        return 1
+    finally:
+        if archive is not None:
+            archive.unlink(missing_ok=True)
+
+    valid, problems = check_osm_runtime(data_dir)
+    if not valid:
+        log("err", "OSM runtime was installed but verification failed: " + "; ".join(problems))
+        return 1
+    log("ok", f"OSM runtime installed: {OSM_RUNTIME_VERSION}")
+    return 0
 
 
 # ---------------------------------------------------------------- environment variables
@@ -670,7 +902,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", nargs="?", default="start",
-                        choices=["start", "setup", "backend", "frontend", "doctor"])
+                        choices=["start", "setup", "backend", "frontend", "doctor", "osm"])
     parser.add_argument("--backend-port", type=int, default=DEFAULT_BACKEND_PORT)
     parser.add_argument("--frontend-port", type=int, default=DEFAULT_FRONTEND_PORT)
     parser.add_argument("--provider", choices=["synthetic", "baidu"], help="临时覆盖 .env 里的 ANALYSIS_PROVIDER")
@@ -678,11 +910,22 @@ def main() -> int:
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     parser.add_argument("--index-url", metavar="URL", help="pip 换源，例如 https://pypi.tuna.tsinghua.edu.cn/simple")
     parser.add_argument("--no-fallback-index", action="store_true", help="只用 --index-url 指定的源，不自动换源")
+    parser.add_argument("--check", action="store_true", help="OSM: check local runtime data without network")
+    parser.add_argument("--repair", action="store_true", help="OSM: force a fresh runtime download")
+    parser.add_argument("--osm-url", default=OSM_RUNTIME_URL, help=argparse.SUPPRESS)
+    parser.add_argument("--osm-sha256", default=OSM_RUNTIME_SHA256, help=argparse.SUPPRESS)
     args = parser.parse_args()
     options = Options(index_url=args.index_url, no_fallback_index=args.no_fallback_index)
 
     if args.command == "doctor":
         return doctor(args.backend_port, args.frontend_port)
+    if args.command == "osm":
+        return install_osm_runtime(
+            check_only=args.check,
+            repair=args.repair,
+            url=args.osm_url,
+            expected_sha256=args.osm_sha256,
+        )
 
     if not args.no_setup:
         try:
@@ -711,6 +954,15 @@ def main() -> int:
             return 0
     elif args.command == "start":
         log("warn", "已跳过准备步骤，直接启动")
+
+    if args.command == "start":
+        osm_status = install_osm_runtime(
+            repair=args.repair,
+            url=args.osm_url,
+            expected_sha256=args.osm_sha256,
+        )
+        if osm_status:
+            log("warn", "OSM 路网数据暂不可用，基础功能仍会继续启动；联网后可运行 python dev.py osm --repair")
 
     processes: dict[str, subprocess.Popen] = {}
     open_url: str | None = None

@@ -19,6 +19,9 @@ Thumbs.db
 .tmp/
 .pip-cache/
 
+# Standalone introductory sites (maintained outside this repository)
+intro-page/
+
 # Backend secrets, dependencies and local evidence
 **/.env
 **/.env.*
