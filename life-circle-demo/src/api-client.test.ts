@@ -10,7 +10,7 @@ describe('N05 geographic contract client', () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(fixture(scenario))));
     const body = await createAnalysisClient('http://localhost:8000/', fetcher).mock(scenario);
     expect(body.status).toBe(scenario);
-    expect(body.data.categories).toHaveLength(3);
+    expect(body.data.categories).toHaveLength(31);
     expect(body.data.categories.every(c => c.major_category && c.minor_category === c.category)).toBe(true);
     expect(fetcher.mock.calls[0][0]).toBe(`http://localhost:8000/api/v1/analysis/mock/${scenario}`);
   });

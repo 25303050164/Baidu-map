@@ -16,9 +16,10 @@
 """
 from dataclasses import dataclass
 
+from .catalog import majors
 from .contracts import MajorCategory
 
-MAJOR_CATEGORIES: tuple[MajorCategory, ...] = ("shopping", "medical", "education")
+MAJOR_CATEGORIES: tuple[MajorCategory, ...] = tuple(majors())
 
 # §7.1：三大类各占 1/3；只有三大类齐备时才有总体分。
 CATEGORY_WEIGHT = 1.0 / len(MAJOR_CATEGORIES)

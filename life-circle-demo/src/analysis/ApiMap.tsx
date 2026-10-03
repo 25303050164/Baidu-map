@@ -10,6 +10,7 @@ import {
 import { aggregateByCell, FACILITY_CLUSTER_CELL_PX } from '../map/layers/aggregate';
 import { createDensityOverlay, type DensityOverlay } from '../map/layers/heatmapOverlay';
 import type { Facility, AssessmentPoint } from '../api-contract';
+import { majorMeta } from '../taxonomy';
 
 export type Layers = { reachable: boolean; unreachable: boolean; unknown: boolean; uncertain: boolean; extent: boolean; serviceBlind: boolean; heatmap: boolean };
 
@@ -25,9 +26,26 @@ export type MapResult = {
 };
 
 /** 设施大类颜色（与图例、FacilityPanel 分组一致）；符号取小类首字。 */
-const majorColors: Record<string, string> = { shopping: '#168875', medical: '#397ac6', education: '#c78b36' };
-const majorNames: Record<string, string> = { shopping: '购物', medical: '医疗', education: '教育' };
-const minorSymbols: Record<string, string> = { market: '菜', supermarket: '超', pharmacy: '药', hospital_pharmacy: '医', school: '学' };
+const majorColors: Record<string, string> = {
+  medical: '#397ac6', shopping: '#168875', education: '#c78b36', care: '#8b5cf6', dining: '#e06b3c',
+  finance: '#0f766e', public: '#64748b', leisure: '#2f855a', transport: '#2563eb', life: '#a16207',
+};
+const majorNames: Record<string, string> = Object.fromEntries(Object.entries(majorMeta).map(([key, value]) => [key, value.label]));
+const minorSymbols: Record<string, string> = {
+  market: '菜', supermarket: '超', pharmacy: '药', hospital_pharmacy: '医', school: '学', primary_school: '学',
+  hospital: '院', clinic: '诊', checkup: '检', wet_market: '市', fresh_store: '鲜', combined_school: '学',
+  middle_school: '中', college: '大', preschool: '幼', training: '培', nursing_home: '养', rehab: '康',
+  restaurant: '餐', cafe: '饮', bank: '银', finance_service: '金', government: '政', post: '邮', library: '文',
+  park: '园', sports: '体', entertainment: '娱', bus: '交', parking: '停', fuel: '能', repair: '修', beauty: '美',
+};
+const minorMajor: Record<string, string> = {
+  pharmacy: 'medical', hospital_pharmacy: 'medical', hospital: 'medical', clinic: 'medical', checkup: 'medical',
+  market: 'shopping', wet_market: 'shopping', fresh_store: 'shopping', supermarket: 'shopping',
+  school: 'education', primary_school: 'education', combined_school: 'education', middle_school: 'education', college: 'education', preschool: 'education', training: 'education',
+  nursing_home: 'care', rehab: 'care', restaurant: 'dining', cafe: 'dining', bank: 'finance', finance_service: 'finance',
+  government: 'public', post: 'public', library: 'public', park: 'leisure', sports: 'leisure', entertainment: 'leisure',
+  bus: 'transport', parking: 'transport', fuel: 'transport', repair: 'life', beauty: 'life',
+};
 const VIEW_EVENTS: BMapViewEventType[] = ['moveend', 'zoomend', 'resize'];
 
 /** 覆盖物按图层组记账：每组只摘自己上一次加进去的那批。 */
@@ -72,9 +90,8 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
   const icons = useMemo(() => {
     if (!api) return null;
     const build = (filled: boolean) => Object.fromEntries(Object.entries(minorSymbols).map(([minor, symbol]) => {
-      const major = minor === 'market' || minor === 'supermarket' ? 'shopping'
-        : minor === 'school' ? 'education' : 'medical';
-      return [minor, createDotIcon(api, { color: majorColors[major], text: symbol, filled })];
+      const major = minorMajor[minor] ?? 'life';
+      return [minor, createDotIcon(api, { color: majorColors[major] ?? '#64748b', text: symbol, filled })];
     })) as Record<string, BMapIcon | undefined>;
     return { normal: build(false), selected: build(true) };
   }, [api]);
@@ -257,9 +274,9 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
       </div>}
     </div>
     {facilities.length > 0 && <div className="api-map-legend" data-testid="map-legend" aria-label="地图图例">
-      <span className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors.shopping }} />{majorNames.shopping}（菜/超）</span>
-      <span className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors.medical }} />{majorNames.medical}（药/医）</span>
-      <span className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors.education }} />{majorNames.education}（学）</span>
+      {Object.entries(majorMeta).sort(([, left], [, right]) => left.order - right.order).map(([key, value]) => (
+        <span key={key} className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors[key] }} />{majorNames[key]}</span>
+      ))}
       {facilities.length > 1 && <span className="api-legend-item">共 {facilities.length} 处设施，同格合并显示，数据不截断</span>}
       {route.length > 1 && <span className="api-legend-item"><i className="api-legend-line" />步行路线</span>}
     </div>}

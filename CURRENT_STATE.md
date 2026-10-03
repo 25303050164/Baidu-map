@@ -20,4 +20,4 @@
 - 默认百度模式（`ANALYSIS_PROVIDER` 不写即为 `baidu`）。离线合成模式只用于测试：E8.2 的替身按直线距离回答，任何点都画出半径约 1080 米的正圆，设施、覆盖与核验不运行；此时能力表把引擎标为“合成替身”并在说明里写明，后端启动时打印警告（2026-09-29）。
 - 本地数据：Geofabrik 已清理 2026-09-12 日快照，本机改用 `shanghai-260928.osm.pbf`（数据版本 `geofabrik-shanghai-20260928`）构图并导出障碍层；国定一水系复核仍绑定 20260912 版本，因此在本机会以版本不符告警、不被采用。
 
-[Hybrid 设计](docs/architecture/HYBRID_ISOCHRONE_DESIGN.md) · [后端说明](backend/README.md) · [本地启动与前后端联调](backend/docs/本地启动与前后端联调.md)
+[Hybrid 设计](HYBRID_ISOCHRONE_DESIGN.md) · [后端说明](backend/README.md) · [本地启动与前后端联调](backend/docs/本地启动与前后端联调.md)

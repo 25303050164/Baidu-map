@@ -45,6 +45,9 @@ class Category:
     extra_queries: tuple[str, ...] = ()
     name_hints: tuple[str, ...] = ()
     tag_hints: tuple[str, ...] = ()
+    exclude_hints: tuple[str, ...] = ()
+    priority: int = 0
+    negative: bool = False
 
     def queries(self) -> tuple[str, ...]:
         """Every request type for this category, primary one first."""
@@ -58,12 +61,21 @@ def _read() -> dict:
 DATA = _read()
 VERSION: str = DATA["version"]
 
+MAJOR_LABELS: dict[str, str] = {
+    "medical": "医疗健康", "shopping": "购物消费", "education": "教育",
+    "care": "疗养康养", "dining": "餐饮", "finance": "金融",
+    "public": "政务公共服务", "leisure": "文体休闲",
+    "transport": "交通出行", "life": "生活服务",
+}
+
 CATEGORIES: tuple[Category, ...] = tuple(
     Category(
         key=item["key"], major=item["major"], label=item["label"], query=item["query"],
         poi_runtime=item.get("poiRuntime", False), poi_name=item.get("poiName"),
         extra_queries=tuple(item.get("extraQueries", ())),
         name_hints=tuple(item["nameHints"]), tag_hints=tuple(item["tagHints"]),
+        exclude_hints=tuple(item.get("excludeHints", ())), priority=int(item.get("priority", 0)),
+        negative=bool(item.get("negative", False)),
     ) for item in DATA["categories"])
 
 BY_KEY: dict[str, Category] = {category.key: category for category in CATEGORIES}
@@ -90,6 +102,10 @@ def queries(key: str) -> tuple[str, ...]:
 def majors() -> tuple[str, ...]:
     """Major categories in the order their first minor category appears."""
     return tuple(dict.fromkeys(category.major for category in CATEGORIES))
+
+
+def major_label(major: str) -> str:
+    return MAJOR_LABELS.get(major, major)
 
 
 def minors_of(major: str) -> tuple[str, ...]:
@@ -140,6 +156,9 @@ POI_RULES: dict = {
     "queries": _mapping(lambda c: list(c.queries())),
     "supportedTags": _mapping(lambda c: list(c.tag_hints)),
     "nameHints": _mapping(lambda c: list(c.name_hints)),
+    "excludeHints": _mapping(lambda c: list(c.exclude_hints)),
+    "priorities": _mapping(lambda c: c.priority),
+    "negative": _mapping(lambda c: c.negative),
     "excluded": list(EXCLUSIONS),
     "nonBusinessParentTags": sorted(NON_BUSINESS_PARENT_TAGS),
     "conflictingTags": sorted(CONFLICTING_TAGS),

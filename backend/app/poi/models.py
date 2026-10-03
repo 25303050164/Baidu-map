@@ -6,7 +6,7 @@ from pydantic.alias_generators import to_camel
 from app.catalog import POI_RUNTIME, poi_key
 from app.test_origin import TEST_ORIGIN
 
-Category = Literal['market', 'pharmacy', 'primary_school']
+Category = Literal.__getitem__(tuple(poi_key(key) for key in POI_RUNTIME))
 # Derived from the one dictionary under the names this runtime reports. The
 # literal above is what the wire contract can express; the two are kept equal by
 # a test rather than by a second hand-maintained list.
@@ -29,7 +29,7 @@ class PoiCollectRequest(WireModel):
     coordinate_system: Literal['bd09ll']  # Caller must declare the coordinate system.
     analysis_half_width_meters: float = Field(default=1600, gt=0, le=1600, strict=True)
     search_margin_meters: float = Field(default=1000, ge=0, le=1000, strict=True)
-    categories: list[Category] = Field(default_factory=lambda: list(CATEGORIES), min_length=1, max_length=3)
+    categories: list[Category] = Field(default_factory=lambda: list(CATEGORIES), min_length=1, max_length=len(CATEGORIES))
     query_profile_version: Literal['guodingyi-poi-v1'] = 'guodingyi-poi-v1'
 
     @field_validator('categories')

@@ -356,7 +356,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity",
+            "description": "Unprocessable Content",
             "content": {
               "application/json": {
                 "schema": {
@@ -435,7 +435,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -507,7 +507,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -579,7 +579,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -651,7 +651,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -723,7 +723,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -1222,7 +1222,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity",
+            "description": "Unprocessable Content",
             "content": {
               "application/json": {
                 "schema": {
@@ -1377,6 +1377,37 @@
             "minLength": 1,
             "pattern": "^[a-zA-Z0-9_-]+$",
             "title": "Clientrequestid"
+          },
+          "facilityCategories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "medical",
+                "shopping",
+                "education",
+                "care",
+                "dining",
+                "finance",
+                "public",
+                "leisure",
+                "transport",
+                "life"
+              ]
+            },
+            "type": "array",
+            "title": "Facilitycategories",
+            "default": [
+              "medical",
+              "shopping",
+              "education",
+              "care",
+              "dining",
+              "finance",
+              "public",
+              "leisure",
+              "transport",
+              "life"
+            ]
           }
         },
         "additionalProperties": false,
@@ -1548,31 +1579,90 @@
           "category": {
             "type": "string",
             "enum": [
-              "market",
-              "supermarket",
               "pharmacy",
               "hospital_pharmacy",
-              "school"
+              "hospital",
+              "clinic",
+              "checkup",
+              "market",
+              "fresh_store",
+              "supermarket",
+              "school",
+              "combined_school",
+              "middle_school",
+              "college",
+              "preschool",
+              "training",
+              "nursing_home",
+              "rehab",
+              "restaurant",
+              "cafe",
+              "bank",
+              "finance_service",
+              "government",
+              "post",
+              "library",
+              "park",
+              "sports",
+              "entertainment",
+              "bus",
+              "parking",
+              "fuel",
+              "repair",
+              "beauty"
             ],
             "title": "Category"
           },
           "major_category": {
             "type": "string",
             "enum": [
-              "shopping",
               "medical",
-              "education"
+              "shopping",
+              "education",
+              "care",
+              "dining",
+              "finance",
+              "public",
+              "leisure",
+              "transport",
+              "life"
             ],
             "title": "Major Category"
           },
           "minor_category": {
             "type": "string",
             "enum": [
-              "market",
-              "supermarket",
               "pharmacy",
               "hospital_pharmacy",
-              "school"
+              "hospital",
+              "clinic",
+              "checkup",
+              "market",
+              "fresh_store",
+              "supermarket",
+              "school",
+              "combined_school",
+              "middle_school",
+              "college",
+              "preschool",
+              "training",
+              "nursing_home",
+              "rehab",
+              "restaurant",
+              "cafe",
+              "bank",
+              "finance_service",
+              "government",
+              "post",
+              "library",
+              "park",
+              "sports",
+              "entertainment",
+              "bus",
+              "parking",
+              "fuel",
+              "repair",
+              "beauty"
             ],
             "title": "Minor Category"
           },
@@ -1689,31 +1779,90 @@
           "category": {
             "type": "string",
             "enum": [
-              "market",
-              "supermarket",
               "pharmacy",
               "hospital_pharmacy",
-              "school"
+              "hospital",
+              "clinic",
+              "checkup",
+              "market",
+              "fresh_store",
+              "supermarket",
+              "school",
+              "combined_school",
+              "middle_school",
+              "college",
+              "preschool",
+              "training",
+              "nursing_home",
+              "rehab",
+              "restaurant",
+              "cafe",
+              "bank",
+              "finance_service",
+              "government",
+              "post",
+              "library",
+              "park",
+              "sports",
+              "entertainment",
+              "bus",
+              "parking",
+              "fuel",
+              "repair",
+              "beauty"
             ],
             "title": "Category"
           },
           "major_category": {
             "type": "string",
             "enum": [
-              "shopping",
               "medical",
-              "education"
+              "shopping",
+              "education",
+              "care",
+              "dining",
+              "finance",
+              "public",
+              "leisure",
+              "transport",
+              "life"
             ],
             "title": "Major Category"
           },
           "minor_category": {
             "type": "string",
             "enum": [
-              "market",
-              "supermarket",
               "pharmacy",
               "hospital_pharmacy",
-              "school"
+              "hospital",
+              "clinic",
+              "checkup",
+              "market",
+              "fresh_store",
+              "supermarket",
+              "school",
+              "combined_school",
+              "middle_school",
+              "college",
+              "preschool",
+              "training",
+              "nursing_home",
+              "rehab",
+              "restaurant",
+              "cafe",
+              "bank",
+              "finance_service",
+              "government",
+              "post",
+              "library",
+              "park",
+              "sports",
+              "entertainment",
+              "bus",
+              "parking",
+              "fuel",
+              "repair",
+              "beauty"
             ],
             "title": "Minor Category"
           },
@@ -1850,17 +1999,31 @@
             "items": {
               "type": "string",
               "enum": [
-                "shopping",
                 "medical",
-                "education"
+                "shopping",
+                "education",
+                "care",
+                "dining",
+                "finance",
+                "public",
+                "leisure",
+                "transport",
+                "life"
               ]
             },
             "type": "array",
             "title": "Categories",
             "default": [
-              "shopping",
               "medical",
-              "education"
+              "shopping",
+              "education",
+              "care",
+              "dining",
+              "finance",
+              "public",
+              "leisure",
+              "transport",
+              "life"
             ]
           },
           "maxPoiRequests": {
@@ -2328,9 +2491,16 @@
           "category": {
             "type": "string",
             "enum": [
-              "shopping",
               "medical",
-              "education"
+              "shopping",
+              "education",
+              "care",
+              "dining",
+              "finance",
+              "public",
+              "leisure",
+              "transport",
+              "life"
             ],
             "title": "Category"
           },
@@ -2749,31 +2919,90 @@
           "category": {
             "type": "string",
             "enum": [
-              "market",
-              "supermarket",
               "pharmacy",
               "hospital_pharmacy",
-              "school"
+              "hospital",
+              "clinic",
+              "checkup",
+              "market",
+              "fresh_store",
+              "supermarket",
+              "school",
+              "combined_school",
+              "middle_school",
+              "college",
+              "preschool",
+              "training",
+              "nursing_home",
+              "rehab",
+              "restaurant",
+              "cafe",
+              "bank",
+              "finance_service",
+              "government",
+              "post",
+              "library",
+              "park",
+              "sports",
+              "entertainment",
+              "bus",
+              "parking",
+              "fuel",
+              "repair",
+              "beauty"
             ],
             "title": "Category"
           },
           "major_category": {
             "type": "string",
             "enum": [
-              "shopping",
               "medical",
-              "education"
+              "shopping",
+              "education",
+              "care",
+              "dining",
+              "finance",
+              "public",
+              "leisure",
+              "transport",
+              "life"
             ],
             "title": "Major Category"
           },
           "minor_category": {
             "type": "string",
             "enum": [
-              "market",
-              "supermarket",
               "pharmacy",
               "hospital_pharmacy",
-              "school"
+              "hospital",
+              "clinic",
+              "checkup",
+              "market",
+              "fresh_store",
+              "supermarket",
+              "school",
+              "combined_school",
+              "middle_school",
+              "college",
+              "preschool",
+              "training",
+              "nursing_home",
+              "rehab",
+              "restaurant",
+              "cafe",
+              "bank",
+              "finance_service",
+              "government",
+              "post",
+              "library",
+              "park",
+              "sports",
+              "entertainment",
+              "bus",
+              "parking",
+              "fuel",
+              "repair",
+              "beauty"
             ],
             "title": "Minor Category"
           },
@@ -2886,9 +3115,16 @@
             },
             "propertyNames": {
               "enum": [
-                "shopping",
                 "medical",
-                "education"
+                "shopping",
+                "education",
+                "care",
+                "dining",
+                "finance",
+                "public",
+                "leisure",
+                "transport",
+                "life"
               ]
             },
             "type": "object",
@@ -3101,9 +3337,16 @@
               {
                 "type": "string",
                 "enum": [
-                  "shopping",
                   "medical",
-                  "education"
+                  "shopping",
+                  "education",
+                  "care",
+                  "dining",
+                  "finance",
+                  "public",
+                  "leisure",
+                  "transport",
+                  "life"
                 ]
               },
               {
@@ -4459,11 +4702,37 @@
           "category": {
             "type": "string",
             "enum": [
-              "market",
-              "supermarket",
               "pharmacy",
               "hospital_pharmacy",
-              "school"
+              "hospital",
+              "clinic",
+              "checkup",
+              "market",
+              "fresh_store",
+              "supermarket",
+              "school",
+              "combined_school",
+              "middle_school",
+              "college",
+              "preschool",
+              "training",
+              "nursing_home",
+              "rehab",
+              "restaurant",
+              "cafe",
+              "bank",
+              "finance_service",
+              "government",
+              "post",
+              "library",
+              "park",
+              "sports",
+              "entertainment",
+              "bus",
+              "parking",
+              "fuel",
+              "repair",
+              "beauty"
             ],
             "title": "Category"
           },

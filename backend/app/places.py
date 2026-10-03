@@ -21,12 +21,21 @@ def classify(name, tag=""):
     text = name + " " + tag
     if any(word in text for word in EXCLUSIONS):
         return None
-    matches = {category.key for category in CATEGORIES
-               if any(word in text for word in category.name_hints)}
+    matches = set()
+    for category in CATEGORIES:
+        if category.negative and any(word in text for word in (*category.name_hints, *category.tag_hints)):
+            return None
+        if any(word in text for word in (*category.name_hints, *category.tag_hints)) \
+                and not any(word in text for word in category.exclude_hints):
+            matches.add(category.key)
     for shadowed, winner in SHADOWED.items():
         if winner in matches:
             matches.discard(shadowed)
-    return next(iter(matches)) if len(matches) == 1 else None
+    if not matches:
+        return None
+    ranked = sorted(matches, key=lambda key: next(c.priority for c in CATEGORIES if c.key == key), reverse=True)
+    top = next(c.priority for c in CATEGORIES if c.key == ranked[0])
+    return ranked[0] if sum(next(c.priority for c in CATEGORIES if c.key == key) == top for key in matches) == 1 else None
 
 
 def parse_facility(row):
@@ -114,9 +123,11 @@ class PlacesClient:
             else:
                 by_uid[item.id] = item
 
-    async def search(self, origin, radius, deadline, max_pages=2):
+    async def search(self, origin, radius, deadline, max_pages=2, categories=None):
         by_uid, metadata, conflicts = {}, [], set()
-        for requested, query in QUERIES.items():
+        selected = tuple(categories) if categories is not None else tuple(QUERIES)
+        for requested in selected:
+            query = QUERIES[requested]
             meta = {"category": requested, "query": query, "status": "complete", "pages": 0,
                     "returned": 0, "excluded": 0, "invalid": 0, "total": None, "reason": None}
             pagination = Pagination()

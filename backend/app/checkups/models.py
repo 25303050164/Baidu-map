@@ -13,7 +13,7 @@ from pydantic.alias_generators import to_camel
 from ..accessibility.grid import GRID_STEP_M, MAX_LEAF_CELLS, REFINED_STEP_M
 from ..accessibility.service_graph import SEARCH_CUTOFF_M
 from ..accessibility.zones import COMPOSITE_MIN_CATEGORIES, MIN_LABEL_AREA_M2
-from .. import service_rules
+from .. import service_rules, catalog
 from ..contracts import Issue, MajorCategory, Origin
 from ..facilities import RULE as DISTANCE_RULE
 from ..rules import DistanceRule
@@ -52,7 +52,7 @@ class CheckupIsochrone(CheckupModel):
 
 
 class CheckupFacilities(CheckupModel):
-    categories: tuple[MajorCategory, ...] = ("shopping", "medical", "education")
+    categories: tuple[MajorCategory, ...] = tuple(catalog.majors())
     max_poi_requests: int = Field(default=DEFAULT_POI_REQUESTS, ge=1, le=MAX_POI_REQUESTS)
     max_route_requests: int = Field(default=DEFAULT_ROUTE_REQUESTS, ge=1, le=MAX_ROUTE_REQUESTS)
 

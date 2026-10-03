@@ -109,7 +109,6 @@ python dev.py frontend        # 只启动前端
 | `backend/` | FastAPI 服务，算法编排、百度与 OSM 访问、配额账本 |
 | `life-circle-algorithm/` | 可复用的步行等时圈算法包（`pip install -e` 装进后端） |
 | `life-circle-demo/` | React + Vite 前端 |
-| `docs/` | 架构、需求、接口和运行文档索引 |
 | `data/osm/` | OSM 数据与图缓存，需自行下载，见 [数据说明](data/osm/README.md) |
 | `dev.py` | 一键启动器，零依赖，仅用标准库 |
 

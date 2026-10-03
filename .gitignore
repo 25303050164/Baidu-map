@@ -23,17 +23,10 @@ Thumbs.db
 **/.env
 **/.env.*
 !**/.env.example
-.venv/
-**/venv/
-**/venv-*/
 backend/.venv/
 **/__pycache__/
 **/.pytest_cache/
-**/dist/
-**/output/
-**/playwright-report/
 backend/logs/
-backend/data/
 backend/.poi-ledgers/
 backend/.hybrid-ledgers/
 backend/.checkups/
