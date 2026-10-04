@@ -102,6 +102,53 @@
       "coordinate_system": "bd09ll"
     },
     "facilities": [],
+    "facility_display_groups": [
+      {
+        "key": "healthcare",
+        "label": "健康照护",
+        "order": 1,
+        "majors": [
+          "medical",
+          "care"
+        ]
+      },
+      {
+        "key": "education",
+        "label": "教育成长",
+        "order": 2,
+        "majors": [
+          "education"
+        ]
+      },
+      {
+        "key": "daily_life",
+        "label": "生活消费",
+        "order": 3,
+        "majors": [
+          "shopping",
+          "dining",
+          "finance",
+          "life"
+        ]
+      },
+      {
+        "key": "public_mobility",
+        "label": "公共出行",
+        "order": 4,
+        "majors": [
+          "public",
+          "transport"
+        ]
+      },
+      {
+        "key": "leisure",
+        "label": "文体休闲",
+        "order": 5,
+        "majors": [
+          "leisure"
+        ]
+      }
+    ],
     "categories": [
       {
         "category": "pharmacy",
@@ -109,7 +156,8 @@
         "minor_category": "pharmacy",
         "query_status": "complete",
         "count_in_circle": 0,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "healthcare"
       },
       {
         "category": "hospital_pharmacy",
@@ -117,7 +165,8 @@
         "minor_category": "hospital_pharmacy",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "healthcare"
       },
       {
         "category": "hospital",
@@ -125,7 +174,8 @@
         "minor_category": "hospital",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "healthcare"
       },
       {
         "category": "clinic",
@@ -133,7 +183,8 @@
         "minor_category": "clinic",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "healthcare"
       },
       {
         "category": "checkup",
@@ -141,7 +192,8 @@
         "minor_category": "checkup",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "healthcare"
       },
       {
         "category": "market",
@@ -149,7 +201,8 @@
         "minor_category": "market",
         "query_status": "complete",
         "count_in_circle": 0,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       },
       {
         "category": "fresh_store",
@@ -157,7 +210,8 @@
         "minor_category": "fresh_store",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       },
       {
         "category": "supermarket",
@@ -165,7 +219,8 @@
         "minor_category": "supermarket",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       },
       {
         "category": "school",
@@ -173,7 +228,8 @@
         "minor_category": "school",
         "query_status": "complete",
         "count_in_circle": 0,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "education"
       },
       {
         "category": "combined_school",
@@ -181,7 +237,8 @@
         "minor_category": "combined_school",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "education"
       },
       {
         "category": "middle_school",
@@ -189,7 +246,8 @@
         "minor_category": "middle_school",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "education"
       },
       {
         "category": "college",
@@ -197,7 +255,8 @@
         "minor_category": "college",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "education"
       },
       {
         "category": "preschool",
@@ -205,7 +264,8 @@
         "minor_category": "preschool",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "education"
       },
       {
         "category": "training",
@@ -213,7 +273,8 @@
         "minor_category": "training",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "education"
       },
       {
         "category": "nursing_home",
@@ -221,7 +282,8 @@
         "minor_category": "nursing_home",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "healthcare"
       },
       {
         "category": "rehab",
@@ -229,7 +291,8 @@
         "minor_category": "rehab",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "healthcare"
       },
       {
         "category": "restaurant",
@@ -237,7 +300,8 @@
         "minor_category": "restaurant",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       },
       {
         "category": "cafe",
@@ -245,7 +309,8 @@
         "minor_category": "cafe",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       },
       {
         "category": "bank",
@@ -253,7 +318,8 @@
         "minor_category": "bank",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       },
       {
         "category": "finance_service",
@@ -261,7 +327,8 @@
         "minor_category": "finance_service",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       },
       {
         "category": "government",
@@ -269,7 +336,8 @@
         "minor_category": "government",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "public_mobility"
       },
       {
         "category": "post",
@@ -277,7 +345,8 @@
         "minor_category": "post",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "public_mobility"
       },
       {
         "category": "library",
@@ -285,7 +354,8 @@
         "minor_category": "library",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "public_mobility"
       },
       {
         "category": "park",
@@ -293,7 +363,8 @@
         "minor_category": "park",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "leisure"
       },
       {
         "category": "sports",
@@ -301,7 +372,8 @@
         "minor_category": "sports",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "leisure"
       },
       {
         "category": "entertainment",
@@ -309,7 +381,8 @@
         "minor_category": "entertainment",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "leisure"
       },
       {
         "category": "bus",
@@ -317,7 +390,8 @@
         "minor_category": "bus",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "public_mobility"
       },
       {
         "category": "parking",
@@ -325,7 +399,8 @@
         "minor_category": "parking",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "public_mobility"
       },
       {
         "category": "fuel",
@@ -333,7 +408,8 @@
         "minor_category": "fuel",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "public_mobility"
       },
       {
         "category": "repair",
@@ -341,7 +417,8 @@
         "minor_category": "repair",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       },
       {
         "category": "beauty",
@@ -349,7 +426,8 @@
         "minor_category": "beauty",
         "query_status": "unknown",
         "count_in_circle": null,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       }
     ],
     "blind_points": [],

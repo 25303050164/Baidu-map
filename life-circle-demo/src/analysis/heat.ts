@@ -10,10 +10,12 @@
  * * **不参与的也要有个数。** 图例给出未判定条数，读者才知道图上少的那部分有多大。
  */
 import type { Facility, FacilityAnalysis } from '../api-contract';
+import { displayGroupForMajor } from '../taxonomy';
 
 /** 该设施是否参与本层密度：大类和圈内状态都要过。 */
 function participates(facility: Facility, group: string): boolean {
-  return (group === 'all' || facility.major_category === group) && facility.in_circle === true;
+  const displayGroup = facility.displayGroup ?? displayGroupForMajor(facility.major_category);
+  return (group === 'all' || displayGroup === group || facility.major_category === group) && facility.in_circle === true;
 }
 
 /** 参与密度层的设施：按大类和圈内状态筛选，去重在着色前由密度层完成。 */
@@ -24,7 +26,8 @@ export function heatPointsOf(facilities: readonly Facility[] | null | undefined,
 /** 因"尚未判定是否在圈内"而不参与密度层的设施数量；图例必须说出来。 */
 export function undeterminedInCircleOf(facilities: readonly Facility[] | null | undefined, group = 'all'): number {
   return (facilities ?? []).filter(item =>
-    (group === 'all' || item.major_category === group) && item.in_circle === null).length;
+    (group === 'all' || item.displayGroup === group || displayGroupForMajor(item.major_category) === group
+      || item.major_category === group) && item.in_circle === null).length;
 }
 
 /** 查询不完整时的数据范围提示；完整查询返回 null，不制造无谓的警告。 */
