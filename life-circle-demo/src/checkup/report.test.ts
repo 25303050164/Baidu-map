@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   area, coverageBars, coverageItems, dataSourcesView, evidenceNotes, gapSummary, overallView, percent,
-  radarView, reasonLabel, verificationView, zoneItems, categoryLabel,
+  radarView, reasonLabel, unavailableLabel, verificationView, zoneItems, categoryLabel,
 } from './report';
 import { AREA, CATEGORIES, report, snapshot, water, zone } from './fixtures';
 import type { CheckupSnapshot } from './contract';
@@ -38,6 +38,12 @@ describe('formatting', () => {
     expect(categoryLabel('public')).toBe('政务与公共服务');
     expect(categoryLabel('bank')).toBe('银行');
     expect(categoryLabel('new_category')).toBe('new_category');
+  });
+
+  it('translates unavailable coverage reasons instead of exposing backend codes', () => {
+    expect(unavailableLabel('facility_query_incomplete'))
+      .toBe('设施检索未完成，证据不足以评估覆盖率');
+    expect(unavailableLabel(null)).toBe('本类别没有空间支持，未给出百分比');
   });
 });
 

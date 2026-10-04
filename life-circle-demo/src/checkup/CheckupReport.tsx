@@ -20,6 +20,7 @@ import type { CheckupSnapshot } from './contract';
 import { Fold } from './Fold';
 import {
   area, coverageItems, dataSourcesView, evidenceNotes, gapSummary, overallView, percent,
+  unavailableLabel,
   verificationView, type CoverageItem, type DataSourcesView, type GapSummary,
 } from './report';
 import { outdatedText, recomputedText, versionView, type WaterReviewRef } from './water';
@@ -103,8 +104,7 @@ function CoverageRow({ item }: { item: CoverageItem }) {
     {item.evidenceGrade && <small>{item.evidenceGrade === 'verified' ? '已核验' : '模型推定'}</small>}</span>;
   if (!item.supported) return <li className="rp-cat-row" data-testid={`coverage-${item.category}`}>
     <div className="rp-cat-head">{name}</div>
-    <p className="rp-unsupported">无法给出覆盖率：{item.unavailableReason
-      ? `${item.unavailableReason}` : '缺少空间支持'}。未知不等于"没有设施"。</p>
+    <p className="rp-unsupported">无法给出覆盖率：{unavailableLabel(item.unavailableReason)}。未知不等于"没有设施"。</p>
   </li>;
   return <li className="rp-cat-row" data-testid={`coverage-${item.category}`}>
     <div className="rp-cat-head">{name}
