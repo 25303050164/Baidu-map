@@ -555,6 +555,12 @@ def assess_accessibility(*, geometry, facilities, query_status: str, majors, sto
         return _refusal(NO_GRAPH, requested, "OSM 步行路网不可用，服务覆盖与灰区无法评估。")
     if facilities is None:
         return _refusal(NO_FACILITIES, requested, "设施检索没有建立结果，服务覆盖无从评估。")
+    # A failed retrieval may still publish an empty group so its query evidence
+    # and stop reason remain inspectable. It is not partial evidence, though:
+    # no category was actually established and the failure should not be
+    # reported as an ordinary incomplete search.
+    if query_status == "failed":
+        return _refusal(NO_FACILITIES, requested, "设施检索阶段未产出可用结果，服务覆盖无从评估。")
     majors_used = evaluated_majors(requested, facilities, query_complete=query_complete)
     if not majors_used:
         return _refusal(QUERY_INCOMPLETE, requested,

@@ -210,6 +210,14 @@ def test_missing_facility_stage_refuses():
         == {stage.NO_FACILITIES}
 
 
+def test_failed_facility_query_is_not_reported_as_incomplete_evidence():
+    outcome = run(query_status="failed", facilities=[])
+    assert outcome.service_gaps is None and outcome.heatmap is None
+    assert outcome.accessibility.status == "failed"
+    assert {item.unavailable_reason for item in outcome.accessibility.categories} \
+        == {stage.NO_FACILITIES}
+
+
 def test_no_boundary_refuses():
     outcome = run(geometry=None)
     assert outcome.scores is None
