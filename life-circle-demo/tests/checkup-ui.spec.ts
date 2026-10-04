@@ -195,7 +195,11 @@ function counted(markers: { options: { title: string } }[]): number {
 const openTab = (page: Page, tab: '我的位置' | '采样与引擎' | '图层备注') =>
   page.getByRole('tab', { name: tab }).click();
 
-const pickAndStart = async (page: Page) => {
+const pickAndStart = async (page: Page, options: { serviceGaps?: boolean } = {}) => {
+  if (options.serviceGaps) {
+    await openTab(page, '图层备注');
+    await page.getByRole('checkbox', { name: '服务灰区', exact: true }).check();
+  }
   await page.getByTestId('checkup-map').click();
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
   await expect(page.getByTestId('checkup-report')).toBeVisible();
@@ -302,6 +306,7 @@ test('服务覆盖热力默认打开：评估格连成渐变面，圈外与孔�
   await openTab(page, '图层备注');
   // 模型网格采样点位本身不勾：热力仍须取到模型网格（与密度热力取设施同理）。
   await expect(page.getByRole('checkbox', { name: '模型网格采样', exact: true })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: '服务灰区', exact: true })).not.toBeChecked();
   await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).toBeChecked();
   await pickAndStart(page);
   const canvas = page.getByTestId('service-heat-canvas');
@@ -363,7 +368,7 @@ test('a published revision draws its layers, opens the report and keeps the view
   await expect(page.getByTestId('quota-label'))
     .toHaveText('本应用预算余额（不含浏览器 SDK、其他应用及旧接口流量）');
   // 选点：只会平移这一次；后面取图层、画标记都不再动视角。
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   const report = page.getByTestId('checkup-report');
   await expect(report).toContainText('15 分钟生活圈体检报告');
   await expect(report).toContainText('task-1 · 第 5 版');
@@ -385,7 +390,7 @@ test('layers are independent: unchecking one leaves the others on the map', asyn
   await setup(page, { facilityCount: 3 });
   await page.goto('/');
   await openTab(page, '图层备注');
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   await pathsAre(page, 3);
   // 3 处设施合成 1 枚 + 2 处核验 + 1 枚中心标记。
   await markersAre(page, 4);
@@ -415,7 +420,7 @@ test('hundreds of facilities are merged by cell, never truncated', async ({ page
 test('a grey zone keeps its hole, and the partial one is drawn as a different conclusion', async ({ page }) => {
   await setup(page, { holedGaps: true });
   await page.goto('/');
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   // 等时圈 1 + 评估域 1 + 两个灰区 = 4 个覆盖物，其中带洞的那个有两圈。
   await pathsAre(page, 4);
   const drawn = await audit(page);
@@ -426,7 +431,7 @@ test('a grey zone keeps its hole, and the partial one is drawn as a different co
 test('zoom and pan end re-project the points without moving the view or dropping layers', async ({ page }) => {
   await setup(page, { facilityCount: 40 });
   await page.goto('/');
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   await pathsAre(page, 3);
   // 等到全部点都画上：40 处设施 + 2 处核验 + 1 枚中心标记。按点数等而不按标记枚数等 ——
   // 这一簇合成几枚取决于格线落在哪，而格线随地图容器的宽度移动，与这里要测的事无关。
@@ -578,7 +583,7 @@ test('左右面板可拖动和缩放，且保持在地图范围内', async ({ pa
 test('a layer that is not ready says so by name, and the rest still draw', async ({ page }) => {
   await setup(page, { gapsNotReady: true });
   await page.goto('/');
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   await openTab(page, '图层备注');
   // 后端的原话照登：把 409 说成"这一层是空的"，读者会以为灰区已经查过了。
   await expect(page.getByText('服务灰区图层尚未生成，请等待该阶段完成', { exact: true })).toBeVisible();
@@ -599,12 +604,12 @@ test('stages advance as the backend reports them, and the engines come from the 
   }
   // 档位是引擎自己带来的，不是界面写死的三档。
   // antd 的下拉项由虚拟列表渲染，可见性判定不稳，这里断言挂载与文本 —— 那才是"能选什么"。
-  await expect(page.getByTestId('checkup-time-estimate')).toHaveAttribute('data-budget', '400');
-  await expect(page.getByTestId('checkup-time-estimate')).toContainText('全程约 3–14 分钟');
+  await expect(page.getByTestId('checkup-time-estimate')).toHaveCount(0);
+  await expect(page.getByText('实际用时受网络影响', { exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: '调用预算' }).click();
-  await expect(page.getByRole('option', { name: /200 次.*2–7 分钟/ })).toBeAttached();
-  await expect(page.getByRole('option', { name: /400 次.*3–14 分钟/ })).toBeAttached();
-  await expect(page.getByRole('option', { name: /800 次.*6–28 分钟/ })).toBeAttached();
+  await expect(page.getByRole('option', { name: '200 次', exact: true })).toBeAttached();
+  await expect(page.getByRole('option', { name: '400 次', exact: true })).toBeAttached();
+  await expect(page.getByRole('option', { name: '800 次', exact: true })).toBeAttached();
   await page.keyboard.press('Escape');
   // 两个引擎都列着：路网没配好只影响后端的取舍，界面不替它隐藏其中一个。
   // 引擎名取自能力表，不是界面写死的。

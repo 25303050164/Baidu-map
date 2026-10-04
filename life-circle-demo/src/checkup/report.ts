@@ -11,6 +11,7 @@
  */
 import type { CheckupSnapshot, CoverageRow, OverallScore, ReportVerification, ServiceZone,
   VerificationEvidence } from './contract';
+import { majorMeta, subCategoryByKey } from '../taxonomy';
 
 export const CATEGORY_ORDER = ['shopping', 'medical', 'education'] as const;
 
@@ -46,7 +47,10 @@ const UNAVAILABLE_LABELS: Record<string, string> = {
 };
 
 export function categoryLabel(category: string): string {
-  return CATEGORY_LABELS[category] ?? category;
+  return CATEGORY_LABELS[category]
+    ?? majorMeta[category as keyof typeof majorMeta]?.label
+    ?? subCategoryByKey[category]?.label
+    ?? category;
 }
 
 export function reasonLabel(reason: string | null): string | null {
@@ -227,6 +231,13 @@ export type ZoneItem = {
   labelled: boolean;
 };
 
+/** 灰区只存最近设施 ID；若本次快照带设施目录，报告优先给读者看名称。 */
+function facilityName(snapshot: CheckupSnapshot, id: string | null): string | null {
+  if (id === null) return null;
+  const record = (snapshot.facilities?.facilities ?? []).find(item => item.id === id);
+  return typeof record?.name === 'string' && record.name.length > 0 ? record.name : id;
+}
+
 export const ZONE_KIND_LABELS: Record<string, string> = {
   single: '单类灰区', composite: '综合灰区',
 };
@@ -243,7 +254,7 @@ export function zoneItems(snapshot: CheckupSnapshot): ZoneItem[] {
     areaM2: zone.areaM2, areaText: area(zone.areaM2), parts: zone.parts,
     evidenceGrade: zone.evidenceGrade, queryStatus: zone.queryStatus,
     reason: zone.reason, reasonLabel: reasonLabel(zone.reason),
-    nearestFacility: zone.nearestFacility, suggestion: zone.suggestion,
+    nearestFacility: facilityName(snapshot, zone.nearestFacility), suggestion: zone.suggestion,
     labelled: zone.labelVisible,
   }));
 }

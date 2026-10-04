@@ -71,6 +71,14 @@ describe('nearest facilities', () => {
     expect(groups[3]).toMatchObject({ label: 'other', total: 1 });
   });
 
+  it('uses translated labels for extension major categories', () => {
+    const groups = nearestFacilities(drawable([
+      facility(0, 100, { majorCategory: 'finance' }),
+      facility(1, 120, { majorCategory: 'public' }),
+    ]), center);
+    expect(groups.map(group => group.label)).toEqual(['金融', '政务与公共服务']);
+  });
+
   it('says nothing at all without a centre or without points', () => {
     expect(nearestFacilities(drawable([facility(0, 100)]), null)).toEqual([]);
     expect(nearestFacilities(undefined, center)).toEqual([]);

@@ -98,13 +98,15 @@ const PHASE_TONE: Partial<Record<CheckupState['phase'], string>> = {
 };
 
 /** 一条设施路线的读法：判定与距离同进同出，没有距离就不说"在不在标准内"。 */
-function RouteDetail({ route, error }: { route: CheckupState['route']; error?: string }) {
+function RouteDetail({ route, error, facilityName }: { route: CheckupState['route']; error?: string;
+  facilityName?: string | null }) {
   if (error) return <Alert type="warning" title={error} showIcon />;
   if (!route) return null;
   return <>
     <Descriptions className="wb-facts" size="small" column={1} items={[
-      { key: 'facility', label: '设施', children: route.facilityId },
-      { key: 'category', label: '类别', children: `${route.category}（${route.majorCategory}）` },
+      { key: 'facility', label: '设施', children: facilityName ?? route.facilityId },
+      { key: 'category', label: '类别', children: `${categoryLabel(route.category)}（${route.majorCategory
+        ? categoryLabel(route.majorCategory) : '未分类'}）` },
       { key: 'status', label: '检索状态', children: ROUTE_VERDICT[route.poiStatus] ?? route.poiStatus },
       { key: 'straight', label: '直线距离', children: route.straightLineM === null ? '无法确定' : `${route.straightLineM.toFixed(0)} 米` },
       // 判定跟着距离一起给；只有判定没有距离的响应在校验层就被拒了，这里不必兜底。
@@ -189,14 +191,6 @@ function initialPanelLayouts(): Record<PanelId, PanelLayout> {
     side: { x: 16, y: 16, width: 344, height: sideHeight },
     results: { x: Math.max(16, window.innerWidth - 376), y: 16, width: 360, height: resultsHeight },
   };
-}
-
-/** 400 次预算的历史完整任务耗时约 191–812 秒；缩放成范围提示，不当作完成承诺。 */
-function estimateTime(budget: number): string {
-  const scale = budget / 400;
-  const minimum = Math.max(1, Math.round((191.2 * scale) / 60));
-  const maximum = Math.max(minimum, Math.ceil((812.3 * scale) / 60));
-  return `${minimum}–${maximum} 分钟`;
 }
 
 const PHASE_LABELS: Partial<Record<CheckupState['phase'], string>> = {
@@ -537,10 +531,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             <label className="wb-field"><span>采样预算</span><Select aria-label="调用预算"
               value={budget ?? undefined} placeholder="—" onChange={setBudget}
               options={(selectedEngine?.budgets ?? []).map(value => ({
-                value, label: `${value} 次 · ${estimateTime(value)}`,
+                value, label: `${value} 次`,
               }))} /></label>
-            {budget !== null && <p className="wb-estimate" data-testid="checkup-time-estimate"
-              data-budget={budget}>全程约 {estimateTime(budget)}</p>}
             <p className="wb-hint">实际用时受网络影响</p>
             <p className="wb-hint">步行 900 秒 · 服务标准 1000 米</p>
             {selectedEngine?.alert && <Alert type="warning" showIcon title={selectedEngine.alert} />}
@@ -717,7 +709,9 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             <Button size="small" onClick={() => void controller.detail(selectedPoint.key)}
               disabled={busy}>查询步行路线</Button>
           </>}
-          <RouteDetail route={state.route} error={state.routeError} />
+          <RouteDetail route={state.route} error={state.routeError}
+            facilityName={selectedPoint && typeof selectedPoint.properties.name === 'string'
+              && selectedPoint.properties.name.length > 0 ? selectedPoint.properties.name : null} />
         </section>}
 
         {task && <Fold title="任务信息" className="wb-task">

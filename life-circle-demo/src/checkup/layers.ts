@@ -17,6 +17,7 @@ import type { CheckupLayer } from './contract';
 import { readLayerGeometry, type LayerId } from './validate';
 import type { DrawableGeometry } from '../analysis/geometry';
 import type { ServiceSample, ServiceStatus } from '../map/layers/serviceField';
+import { categoryLabel } from './report';
 
 export type LayerStyle = {
   label: string;
@@ -88,11 +89,17 @@ function pointView(layerId: LayerId, index: number, feature: Record<string, unkn
     return null;
   };
   const classification = pick('poiStatus', 'majorCategory', 'status');
+  // 设施点的 majorCategory 是机器键（例如 finance/public），标题给读者看中文标签，
+  // 但颜色仍按原始键取，避免把状态值（covered、verified_reachable）误当分类翻译。
+  const classificationLabel = classification !== null && properties.majorCategory === classification
+    ? categoryLabel(classification)
+    : classification;
   const name = pick('name', 'facilityId', 'cell');
   const detail = pick('category', 'distanceM');
+  const detailLabel = detail !== null && properties.category === detail ? categoryLabel(detail) : detail;
   const distance = properties.distanceM;
-  const title = [name ?? `第 ${index + 1} 个点`, classification ?? '未分类',
-    typeof distance === 'number' ? `${distance.toFixed(0)} 米` : detail].filter(Boolean).join(' · ');
+  const title = [name ?? `第 ${index + 1} 个点`, classificationLabel ?? '未分类',
+    typeof distance === 'number' ? `${distance.toFixed(0)} 米` : detailLabel].filter(Boolean).join(' · ');
   return {
     key: layerId === 'heatmap' ? `${layerId}:${properties.category}:${properties.cell ?? index}`
       : String(properties.id ?? properties.facilityId ?? `${layerId}-${index}`),
