@@ -1,6 +1,25 @@
 import type { Category } from './types';
 
 export type MajorCategory = 'medical' | 'shopping' | 'education' | 'care' | 'dining' | 'finance' | 'public' | 'leisure' | 'transport' | 'life';
+export type DisplayGroup = 'healthcare' | 'education' | 'daily_life' | 'public_mobility' | 'leisure';
+
+export const displayGroupMeta: Record<DisplayGroup, { label: string; order: number }> = {
+  healthcare: { label: '健康照护', order: 1 },
+  education: { label: '教育成长', order: 2 },
+  daily_life: { label: '生活消费', order: 3 },
+  public_mobility: { label: '公共出行', order: 4 },
+  leisure: { label: '文体休闲', order: 5 }
+};
+
+export const majorToDisplayGroup: Record<string, DisplayGroup> = {
+  medical: 'healthcare', care: 'healthcare', education: 'education',
+  shopping: 'daily_life', dining: 'daily_life', finance: 'daily_life', life: 'daily_life',
+  public: 'public_mobility', transport: 'public_mobility', leisure: 'leisure'
+};
+
+export function displayGroupForMajor(major: string): DisplayGroup | undefined {
+  return majorToDisplayGroup[major];
+}
 
 export type BoundaryFlags = {
   freshMarket: boolean;

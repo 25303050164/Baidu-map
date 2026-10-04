@@ -15,6 +15,7 @@ export type CategoryResult = {
   query_status: "complete" | "unknown" | "failed";
   count_in_circle: number | null;
   service_status: "covered" | "blind" | "unknown";
+  displayGroup?: "healthcare" | "education" | "daily_life" | "public_mobility" | "leisure" | null;
 };
 
 export type Data = {
@@ -25,10 +26,18 @@ export type Data = {
   unknown_region: Geometry | null;
   computation_extent: Geometry | null;
   facilities: Array<Facility> | null;
+  facilityDisplayGroups?: Array<DisplayGroupInfo>;
   categories: Array<CategoryResult>;
   blind_points: Array<BlindPoint> | null;
   blind_region: Geometry | null;
   report: string | null;
+};
+
+export type DisplayGroupInfo = {
+  key: "healthcare" | "education" | "daily_life" | "public_mobility" | "leisure";
+  label: string;
+  order: number;
+  majors: Array<string>;
 };
 
 export type DistanceRule = {
@@ -48,6 +57,9 @@ export type Facility = {
   name: string;
   location: Origin;
   in_circle: boolean | null;
+  displayGroup?: "healthcare" | "education" | "daily_life" | "public_mobility" | "leisure" | null;
+  secondaryCategories?: Array<"market" | "supermarket" | "pharmacy" | "hospital_pharmacy" | "school">;
+  capabilities?: Array<string>;
   poiEvidence?: PoiEvidence | null;
 };
 

@@ -9,7 +9,7 @@ from life_circle.providers import BaiduProvider
 from life_circle.field import business_geometry
 
 from . import service_rules
-from .catalog import majors, minors_of
+from .catalog import DISPLAY_GROUPS, display_group_for_major, majors, minors_of
 from .contracts import AssessmentPoint, CategoryResult, CoverageEvidence, FacilityAnalysis
 from .places import PlacesClient
 from .place_protocol import STOP_ERRORS
@@ -134,8 +134,18 @@ async def analyze_facilities(result, client, ak, gate, token, *, max_points=9, m
         assessed_points=len(assessments), unassessed_points=len(candidates)-len(assessments), network_requests=requests,
         elapsed_seconds=time.monotonic()-start, search_radius_m=radius, routes=routes,
         service_blind_regions=service_blind_regions, warnings=warnings)
-    counts = {major: sum(f.major_category == major and f.in_circle is True for f in facilities) for major in GROUPS}
-    report = f"本次检索在估算15分钟圈内记录购物{counts['shopping']}处、医疗{counts['medical']}处、教育{counts['education']}处。评估{len(assessments)}/{len(candidates)}个实测可达点。"
+    display_counts = {
+        group.key: sum(
+            f.in_circle is True and display_group_for_major(f.major_category) == group.key
+            for f in facilities
+        )
+        for group in DISPLAY_GROUPS
+    }
+    display_summary = "、".join(
+        f"{group.label}{display_counts[group.key]}处"
+        for group in sorted(DISPLAY_GROUPS, key=lambda item: item.order)
+    )
+    report = f"本次检索在估算15分钟圈内记录{display_summary}。评估{len(assessments)}/{len(candidates)}个实测可达点。"
     for major, label in [("shopping", "购物"), ("medical", "医疗"), ("education", "教育")]:
         states = [c.status for p in assessments for c in p.categories if c.category == major]
         report += f"{label}：有设施{states.count('covered')}点、无法判断{states.count('unknown')}点。"

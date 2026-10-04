@@ -356,7 +356,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity",
+            "description": "Unprocessable Content",
             "content": {
               "application/json": {
                 "schema": {
@@ -435,7 +435,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -507,7 +507,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -579,7 +579,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -651,7 +651,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -723,7 +723,7 @@
                 }
               }
             },
-            "description": "Unprocessable Entity"
+            "description": "Unprocessable Content"
           },
           "503": {
             "content": {
@@ -1222,7 +1222,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity",
+            "description": "Unprocessable Content",
             "content": {
               "application/json": {
                 "schema": {
@@ -1255,6 +1255,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/facility-catalog": {
+      "get": {
+        "summary": "Facility Catalog",
+        "description": "Return the versioned facility taxonomy used by search and responses.",
+        "operationId": "facility_catalog_api_facility_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Facility Catalog Api Facility Catalog Get"
                 }
               }
             }
@@ -1746,6 +1767,25 @@
               "unknown"
             ],
             "title": "Service Status"
+          },
+          "displayGroup": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "healthcare",
+                  "education",
+                  "daily_life",
+                  "public_mobility",
+                  "leisure"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displaygroup",
+            "x-legacy-optional": true
           }
         },
         "additionalProperties": false,
@@ -2606,6 +2646,14 @@
             ],
             "title": "Facilities"
           },
+          "facilityDisplayGroups": {
+            "items": {
+              "$ref": "#/components/schemas/DisplayGroupInfo"
+            },
+            "type": "array",
+            "title": "Facilitydisplaygroups",
+            "x-legacy-optional": true
+          },
           "categories": {
             "items": {
               "$ref": "#/components/schemas/CategoryResult"
@@ -2652,6 +2700,45 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Data"
+      },
+      "DisplayGroupInfo": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "healthcare",
+              "education",
+              "daily_life",
+              "public_mobility",
+              "leisure"
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
+          "majors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Majors"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "order",
+          "majors"
+        ],
+        "title": "DisplayGroupInfo"
       },
       "DistanceRule": {
         "properties": {
@@ -2798,6 +2885,48 @@
               }
             ],
             "title": "In Circle"
+          },
+          "displayGroup": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "healthcare",
+                  "education",
+                  "daily_life",
+                  "public_mobility",
+                  "leisure"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displaygroup",
+            "x-legacy-optional": true
+          },
+          "secondaryCategories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "market",
+                "supermarket",
+                "pharmacy",
+                "hospital_pharmacy",
+                "school"
+              ]
+            },
+            "type": "array",
+            "title": "Secondarycategories",
+            "x-legacy-optional": true
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities",
+            "x-legacy-optional": true
           },
           "poiEvidence": {
             "anyOf": [

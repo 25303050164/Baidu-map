@@ -125,6 +125,26 @@
           ],
           "title": "Service Status",
           "type": "string"
+        },
+        "displayGroup": {
+          "anyOf": [
+            {
+              "enum": [
+                "healthcare",
+                "education",
+                "daily_life",
+                "public_mobility",
+                "leisure"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displaygroup",
+          "x-legacy-optional": true
         }
       },
       "required": [
@@ -222,6 +242,14 @@
           "default": null,
           "title": "Facilities"
         },
+        "facilityDisplayGroups": {
+          "items": {
+            "$ref": "#/$defs/DisplayGroupInfo"
+          },
+          "title": "Facilitydisplaygroups",
+          "type": "array",
+          "x-legacy-optional": true
+        },
         "categories": {
           "items": {
             "$ref": "#/$defs/CategoryResult"
@@ -269,6 +297,45 @@
         }
       },
       "title": "Data",
+      "type": "object"
+    },
+    "DisplayGroupInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "enum": [
+            "healthcare",
+            "education",
+            "daily_life",
+            "public_mobility",
+            "leisure"
+          ],
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "order": {
+          "title": "Order",
+          "type": "integer"
+        },
+        "majors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Majors",
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "order",
+        "majors"
+      ],
+      "title": "DisplayGroupInfo",
       "type": "object"
     },
     "DistanceRule": {
@@ -395,6 +462,49 @@
             }
           ],
           "title": "In Circle"
+        },
+        "displayGroup": {
+          "anyOf": [
+            {
+              "enum": [
+                "healthcare",
+                "education",
+                "daily_life",
+                "public_mobility",
+                "leisure"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displaygroup",
+          "x-legacy-optional": true
+        },
+        "secondaryCategories": {
+          "items": {
+            "enum": [
+              "market",
+              "supermarket",
+              "pharmacy",
+              "hospital_pharmacy",
+              "school"
+            ],
+            "type": "string"
+          },
+          "title": "Secondarycategories",
+          "type": "array",
+          "x-legacy-optional": true
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array",
+          "x-legacy-optional": true
         },
         "poiEvidence": {
           "anyOf": [

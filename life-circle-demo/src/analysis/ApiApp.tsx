@@ -14,6 +14,7 @@ import './api.css';
 import { FacilityPanel } from './FacilityPanel';
 import { getBaiduSession, saveBaiduSession } from '../algorithmSessions';
 import { baiduTasks, useLegacyState } from '../legacyTasks';
+import { displayGroupForMajor } from '../taxonomy';
 
 const reasons: Record<string, string> = { budget: '达到调用预算', deadline: '达到截止时间', resolution_limit: '达到网格分辨率或完成边界检查', maximum_range: '达到最大范围', permission: '步行接口权限异常', quota: '服务配额不足', invalid_parameter: '上游参数被拒绝', upstream_failure: '连续上游故障', geometry_error: '几何重建失败' };
 const warnings: Record<string, string> = { range_unknown: '外缘存在未知样本，范围尚未核实', range_truncated: '可达边界可能被计算范围截断', unfinished_boundary: '部分边界尚未完成细化', endpoints_unverified: '部分路线端点尚未核验', geometry_error: '几何重建失败' };
@@ -78,7 +79,8 @@ export default function ApiApp() {
   // 传给地图的这几组数据必须按内容保持身份稳定：每次渲染都新建数组会让图层误以为
   // 数据变了，从而在整个地图上重建覆盖物（标记顺序、选中态、用户视角都会被重置）。
   const mapFacilities = useMemo(() =>
-    !showFacilities ? [] : (displayedResult?.data.facilities ?? []).filter(f => group === 'all' || f.major_category === group),
+    !showFacilities ? [] : (displayedResult?.data.facilities ?? []).filter(f => group === 'all'
+      || f.displayGroup === group || displayGroupForMajor(f.major_category) === group || f.major_category === group),
   [showFacilities, displayedResult, group]);
   const mapHeatPoints = useMemo(() => heatPointsOf(displayedResult?.data.facilities, group), [displayedResult, group]);
   const mapHeatUndetermined = useMemo(() => undeterminedInCircleOf(displayedResult?.data.facilities, group), [displayedResult, group]);

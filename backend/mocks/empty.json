@@ -102,6 +102,53 @@
       "coordinate_system": "bd09ll"
     },
     "facilities": [],
+    "facility_display_groups": [
+      {
+        "key": "healthcare",
+        "label": "健康照护",
+        "order": 1,
+        "majors": [
+          "medical",
+          "care"
+        ]
+      },
+      {
+        "key": "education",
+        "label": "教育成长",
+        "order": 2,
+        "majors": [
+          "education"
+        ]
+      },
+      {
+        "key": "daily_life",
+        "label": "生活消费",
+        "order": 3,
+        "majors": [
+          "shopping",
+          "dining",
+          "finance",
+          "life"
+        ]
+      },
+      {
+        "key": "public_mobility",
+        "label": "公共出行",
+        "order": 4,
+        "majors": [
+          "public",
+          "transport"
+        ]
+      },
+      {
+        "key": "leisure",
+        "label": "文体休闲",
+        "order": 5,
+        "majors": [
+          "leisure"
+        ]
+      }
+    ],
     "categories": [
       {
         "category": "market",
@@ -109,7 +156,8 @@
         "minor_category": "market",
         "query_status": "complete",
         "count_in_circle": 0,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "daily_life"
       },
       {
         "category": "pharmacy",
@@ -117,7 +165,8 @@
         "minor_category": "pharmacy",
         "query_status": "complete",
         "count_in_circle": 0,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "healthcare"
       },
       {
         "category": "school",
@@ -125,7 +174,8 @@
         "minor_category": "school",
         "query_status": "complete",
         "count_in_circle": 0,
-        "service_status": "unknown"
+        "service_status": "unknown",
+        "display_group": "education"
       }
     ],
     "blind_points": [],

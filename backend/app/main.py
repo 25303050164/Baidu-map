@@ -18,6 +18,7 @@ from .analyses import AnalysisManager, analysis_router
 from .hybrid_api import HybridManager, hybrid_router
 from .osm_api import router as osm_router
 from .quota import Quota
+from .catalog import catalog_payload
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,11 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
             default_analysis_engine="synthetic" if config.analysis_provider == "synthetic" else "baidu",
             osm_state=app.state.osm_offline.state,
         )
+
+    @app.get("/api/facility-catalog")
+    def facility_catalog() -> dict:
+        """Return the versioned facility taxonomy used by search and responses."""
+        return catalog_payload()
 
     return app
 

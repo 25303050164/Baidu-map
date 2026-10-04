@@ -32,7 +32,7 @@ def text(value):
     return value.strip() if isinstance(value, str) else ''
 
 
-def classify(name, tags):
+def classify_details(name, tags):
     evidence = []
     full = name + ' ' + ' '.join(tags)
     tag_parts = {part.strip() for tag in tags for part in re.split(r'[;；,，|>]', tag) if part.strip()}
@@ -41,10 +41,10 @@ def classify(name, tags):
     if re.search(r'\d+号门', name):
         excluded.append('numbered_gate')
     if excluded:
-        return None, 'excluded', ['excluded:' + w for w in excluded]
+        return None, 'excluded', ['excluded:' + w for w in excluded], (), ()
     disputed = [w for w in RULES['review'] if w in full]
     if disputed:
-        return None, 'needs_review', ['policy_unconfirmed:' + w for w in disputed]
+        return None, 'needs_review', ['policy_unconfirmed:' + w for w in disputed], (), ()
     # Names classify on the name vocabulary, not on the request types: the two
     # agree on the keywords actually sent but not on the words that identify a
     # category, and §4.3 wants one table per question.
@@ -53,12 +53,31 @@ def classify(name, tags):
     evidence.extend('name:' + c for c in sorted(names))
     evidence.extend('tag:' + c for c in sorted(tagged))
     if tag_parts.intersection(RULES['conflictingTags']):
-        return None, 'needs_review', evidence + ['conflicting_non_target_tags']
-    if len(names | tagged) > 1:
-        return None, 'needs_review', evidence + ['conflicting_categories']
+        return None, 'needs_review', evidence + ['conflicting_non_target_tags'], (), ()
+    matches = names | tagged
+    if not matches:
+        return None, 'needs_review', evidence + ['insufficient_category_evidence'], (), ()
+    priorities = RULES.get('priorities', {})
+    ordered = sorted(matches, key=lambda category: (-priorities.get(category, 0), category))
+    primary = ordered[0]
+    secondary = set(ordered[1:])
+    secondary.update(RULES.get('secondaryCategories', {}).get(primary, ()))
+    declared = set(RULES.get('secondaryCategories', {}).get(primary, ()))
+    if any(category not in declared for category in matches if category != primary):
+        return None, 'needs_review', evidence + ['conflicting_categories'], (), ()
+    secondary.discard(primary)
+    capabilities = set(RULES.get('capabilities', {}).get(primary, ()))
+    for category in secondary:
+        capabilities.update(RULES.get('capabilities', {}).get(category, ()))
     if len(tagged) == 1:
-        return next(iter(tagged)), 'accepted', evidence
-    return None, 'needs_review', evidence + ['insufficient_category_evidence']
+        return primary, 'accepted', evidence, tuple(sorted(secondary)), tuple(sorted(capabilities))
+    return primary, 'needs_review', evidence + ['insufficient_category_evidence'], tuple(sorted(secondary)), tuple(sorted(capabilities))
+
+
+def classify(name, tags):
+    """Compatibility view used by callers that only need the verdict."""
+    category, status, evidence, _, _ = classify_details(name, tags)
+    return category, status, evidence
 
 
 def normalize(row, provenance, source):
@@ -68,7 +87,7 @@ def normalize(row, provenance, source):
     point = location(row.get('location'))
     details = row.get('detail_info') or {}
     tags = [text(details.get('classified_poi_tag'))] if text(details.get('classified_poi_tag')) else []
-    category, status, evidence = classify(name, tags)
+    category, status, evidence, secondary, capabilities = classify_details(name, tags)
     # §4.3/§5.3: the raw point and the provider's navigation point are entrance
     # *candidates*. ``navi_location`` is guidance and may be a pickup point, so it
     # is never recorded as a walking entrance. No place query establishes an
@@ -82,6 +101,8 @@ def normalize(row, provenance, source):
             warnings.append('invalid_navigation_location')
     return {'id': f'{source}:{uid}', 'source': source, 'sourceUid': uid, 'name': name,
         'category': category, 'coordinateSystem': 'bd09ll', 'location': point,
+        'displayGroup': RULES.get('displayGroupByCategory', {}).get(category),
+        'secondaryCategories': list(secondary), 'capabilities': list(capabilities),
         'navigationLocation': navigation, 'confirmedEntrances': None,
         'parentUid': text(details.get('parent_id')) or None,
         'address': text(row.get('address')), 'sourceTags': tags, 'operatingStatus': 'unknown',
@@ -142,7 +163,7 @@ def merge_entities(records, request, plan=None, *, within=None, nearby=None):
             if nearby is None:
                 continue
         names = ' / '.join(sorted({r['name'] for r in values}))
-        category, status, evidence = classify(names, item['sourceTags'])
+        category, status, evidence, secondary, capabilities = classify_details(names, item['sourceTags'])
         conflicts = []
         if len({tuple(r['location'].values()) for r in values}) > 1:
             conflicts.append('uid_location_conflict')
@@ -157,7 +178,10 @@ def merge_entities(records, request, plan=None, *, within=None, nearby=None):
             category, status = None, 'needs_review'
         if status == 'accepted' and category not in request.categories:
             category, status, evidence = None, 'excluded', ['category_not_requested']
-        item.update(category=category, classificationStatus=status,
+        item.update(category=category,
+                    displayGroup=RULES.get('displayGroupByCategory', {}).get(category),
+                    secondaryCategories=list(secondary), capabilities=list(capabilities),
+                    classificationStatus=status,
                     classificationEvidence=sorted(set(evidence + conflicts)), conflicts=conflicts)
         if is_outside:
             if status == 'accepted':

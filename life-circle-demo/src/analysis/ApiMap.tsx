@@ -10,6 +10,7 @@ import {
 import { aggregateByCell, FACILITY_CLUSTER_CELL_PX } from '../map/layers/aggregate';
 import { createDensityOverlay, type DensityOverlay } from '../map/layers/heatmapOverlay';
 import type { Facility, AssessmentPoint } from '../api-contract';
+import { displayGroupForMajor, displayGroupMeta, type DisplayGroup } from '../taxonomy';
 
 export type Layers = { reachable: boolean; unreachable: boolean; unknown: boolean; uncertain: boolean; extent: boolean; serviceBlind: boolean; heatmap: boolean };
 
@@ -25,8 +26,13 @@ export type MapResult = {
 };
 
 /** 设施大类颜色（与图例、FacilityPanel 分组一致）；符号取小类首字。 */
-const majorColors: Record<string, string> = { shopping: '#168875', medical: '#397ac6', education: '#c78b36' };
-const majorNames: Record<string, string> = { shopping: '购物', medical: '医疗', education: '教育' };
+const displayGroupColors: Record<DisplayGroup, string> = {
+  healthcare: '#397ac6', education: '#c78b36', daily_life: '#168875',
+  public_mobility: '#8b5cf6', leisure: '#d45d4c',
+};
+const displayGroupNames: Record<DisplayGroup, string> = Object.fromEntries(
+  Object.entries(displayGroupMeta).map(([key, value]) => [key, value.label]),
+) as Record<DisplayGroup, string>;
 const minorSymbols: Record<string, string> = { market: '菜', supermarket: '超', pharmacy: '药', hospital_pharmacy: '医', school: '学' };
 const VIEW_EVENTS: BMapViewEventType[] = ['moveend', 'zoomend', 'resize'];
 
@@ -34,11 +40,18 @@ const VIEW_EVENTS: BMapViewEventType[] = ['moveend', 'zoomend', 'resize'];
 type OverlayGroup = 'vector' | 'facility' | 'label';
 
 /** 合并标记的主色取成员里最多数的大类，混合格不会因为第一条是药店就整格涂成医疗色。 */
-function dominantMajor(items: readonly Facility[]): string {
+function facilityDisplayGroup(item: Facility): DisplayGroup | undefined {
+  return item.displayGroup ?? displayGroupForMajor(item.major_category);
+}
+
+function dominantDisplayGroup(items: readonly Facility[]): DisplayGroup | undefined {
   const counts = new Map<string, number>();
-  for (const item of items) counts.set(item.major_category, (counts.get(item.major_category) ?? 0) + 1);
-  let best: string = items[0]?.major_category ?? '';
-  for (const [major, count] of counts) if (count > (counts.get(best) ?? 0)) best = major;
+  for (const item of items) {
+    const group = facilityDisplayGroup(item);
+    if (group) counts.set(group, (counts.get(group) ?? 0) + 1);
+  }
+  let best = facilityDisplayGroup(items[0]);
+  for (const [group, count] of counts) if (count > (counts.get(best ?? '') ?? 0)) best = group as DisplayGroup;
   return best;
 }
 
@@ -72,9 +85,9 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
   const icons = useMemo(() => {
     if (!api) return null;
     const build = (filled: boolean) => Object.fromEntries(Object.entries(minorSymbols).map(([minor, symbol]) => {
-      const major = minor === 'market' || minor === 'supermarket' ? 'shopping'
-        : minor === 'school' ? 'education' : 'medical';
-      return [minor, createDotIcon(api, { color: majorColors[major], text: symbol, filled })];
+      const group: DisplayGroup = minor === 'market' || minor === 'supermarket' ? 'daily_life'
+        : minor === 'school' ? 'education' : 'healthcare';
+      return [minor, createDotIcon(api, { color: displayGroupColors[group], text: symbol, filled })];
     })) as Record<string, BMapIcon | undefined>;
     return { normal: build(false), selected: build(true) };
   }, [api]);
@@ -177,7 +190,7 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
         for (const cell of aggregation.cells) {
           const primary = cell.items[0].facility;
           const icon = cell.count > 1
-            ? createDotIcon(api, { color: majorColors[dominantMajor(cell.items.map(item => item.facility))] ?? '#64748b', text: String(cell.count), filled: true })
+            ? createDotIcon(api, { color: displayGroupColors[dominantDisplayGroup(cell.items.map(item => item.facility)) ?? 'daily_life'] ?? '#64748b', text: String(cell.count), filled: true })
             : primary.id === selected ? icons?.selected[primary.category] : icons?.normal[primary.category];
           const marker = new api.Marker(new api.Point(cell.lng, cell.lat), {
             title: cell.count > 1 ? `${cell.count} 处设施聚合（点击查看其中一处）` : primary.name,
@@ -257,9 +270,7 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
       </div>}
     </div>
     {facilities.length > 0 && <div className="api-map-legend" data-testid="map-legend" aria-label="地图图例">
-      <span className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors.shopping }} />{majorNames.shopping}（菜/超）</span>
-      <span className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors.medical }} />{majorNames.medical}（药/医）</span>
-      <span className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors.education }} />{majorNames.education}（学）</span>
+      {Object.entries(displayGroupNames).map(([key, label]) => <span key={key} className="api-legend-item"><i className="api-legend-dot" style={{ background: displayGroupColors[key as DisplayGroup] }} />{label}</span>)}
       {facilities.length > 1 && <span className="api-legend-item">共 {facilities.length} 处设施，同格合并显示，数据不截断</span>}
       {route.length > 1 && <span className="api-legend-item"><i className="api-legend-line" />步行路线</span>}
     </div>}

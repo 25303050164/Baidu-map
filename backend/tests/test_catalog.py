@@ -100,4 +100,4 @@ def test_both_consumers_classify_the_same_vocabulary_the_same_way():
     for category in catalog.CATEGORIES:
         for name in category.name_hints:
             assert classify(f"合成{name}") == category.key
-    assert catalog.VERSION == "poi-categories-v1.3"
+    assert catalog.VERSION == "poi-categories-v1.4"

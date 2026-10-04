@@ -1,9 +1,18 @@
 {
-  "version": "poi-categories-v1.3",
+  "version": "poi-categories-v1.4",
+  "displayGroups": [
+    {"key": "healthcare", "label": "健康照护", "order": 1, "majors": ["medical", "care"]},
+    {"key": "education", "label": "教育成长", "order": 2, "majors": ["education"]},
+    {"key": "daily_life", "label": "生活消费", "order": 3, "majors": ["shopping", "dining", "finance", "life"]},
+    {"key": "public_mobility", "label": "公共出行", "order": 4, "majors": ["public", "transport"]},
+    {"key": "leisure", "label": "文体休闲", "order": 5, "majors": ["leisure"]}
+  ],
   "categories": [
     {
       "key": "market",
       "major": "shopping",
+      "displayGroup": "daily_life",
+      "priority": 20,
       "label": "菜市场",
       "poiRuntime": true,
       "query": "菜市场",
@@ -14,6 +23,8 @@
     {
       "key": "supermarket",
       "major": "shopping",
+      "displayGroup": "daily_life",
+      "priority": 10,
       "label": "超市",
       "poiRuntime": false,
       "query": "超市",
@@ -24,6 +35,8 @@
     {
       "key": "pharmacy",
       "major": "medical",
+      "displayGroup": "healthcare",
+      "priority": 20,
       "label": "药店",
       "poiRuntime": true,
       "query": "药店",
@@ -34,6 +47,10 @@
     {
       "key": "hospital_pharmacy",
       "major": "medical",
+      "displayGroup": "healthcare",
+      "priority": 30,
+      "secondaryCategories": ["pharmacy"],
+      "capabilities": ["pharmacy"],
       "label": "医院药房",
       "poiRuntime": false,
       "query": "医院药房",
@@ -44,6 +61,8 @@
     {
       "key": "school",
       "major": "education",
+      "displayGroup": "education",
+      "priority": 20,
       "label": "小学",
       "poiRuntime": true,
       "poiName": "primary_school",

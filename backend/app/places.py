@@ -4,7 +4,14 @@ import time
 
 import httpx
 
-from .catalog import CATEGORIES, EXCLUSIONS
+from .catalog import (
+    BY_KEY,
+    CATEGORIES,
+    EXCLUSIONS,
+    capabilities_for,
+    display_group_for_minor,
+    secondary_categories_for,
+)
 from .contracts import Facility
 from .place_protocol import Pagination, RETRY_ERRORS, STOP_ERRORS, response_error
 from .request_control import RequestStopped, request_slot
@@ -17,16 +24,36 @@ QUERIES = {category.key: category.query for category in CATEGORIES}
 SHADOWED = {"pharmacy": "hospital_pharmacy"}
 
 
-def classify(name, tag=""):
+def classify_details(name, tag=""):
     text = name + " " + tag
     if any(word in text for word in EXCLUSIONS):
-        return None
-    matches = {category.key for category in CATEGORIES
-               if any(word in text for word in category.name_hints)}
+        return None, (), ()
+    matches = {
+        category.key for category in CATEGORIES
+        if any(word in name for word in category.name_hints)
+        or any(word in tag for word in category.tag_hints)
+    }
     for shadowed, winner in SHADOWED.items():
         if winner in matches:
             matches.discard(shadowed)
-    return next(iter(matches)) if len(matches) == 1 else None
+    if not matches:
+        return None, (), ()
+    ordered = sorted(matches, key=lambda key: (-BY_KEY[key].priority, key))
+    primary = ordered[0]
+    secondary = set(ordered[1:])
+    secondary.update(secondary_categories_for(primary))
+    if any(key not in secondary_categories_for(primary) for key in matches if key != primary):
+        return None, (), ()
+    secondary.discard(primary)
+    capabilities = set(capabilities_for(primary))
+    for key in secondary:
+        capabilities.update(capabilities_for(key))
+    return primary, tuple(sorted(secondary)), tuple(sorted(capabilities))
+
+
+def classify(name, tag=""):
+    """Return the canonical primary category for legacy callers."""
+    return classify_details(name, tag)[0]
 
 
 def parse_facility(row):
@@ -37,11 +64,15 @@ def parse_facility(row):
         return None, "invalid"
     details = row.get("detail_info")
     tag = details.get("classified_poi_tag", "") if isinstance(details, dict) else ""
-    category = classify(name, tag if isinstance(tag, str) else "")
+    category, secondary_categories, capabilities = classify_details(name, tag if isinstance(tag, str) else "")
     if category is None:
         return None, "excluded"
     try:
-        return Facility(id=uid, name=name, category=category, location=row.get("location"), in_circle=None), None
+        return Facility(
+            id=uid, name=name, category=category, location=row.get("location"), in_circle=None,
+            display_group=display_group_for_minor(category),
+            secondary_categories=list(secondary_categories), capabilities=list(capabilities),
+        ), None
     except ValueError:
         return None, "invalid"
 

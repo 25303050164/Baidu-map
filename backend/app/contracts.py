@@ -6,19 +6,24 @@ from uuid import uuid4
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .rules import DistanceRule
+from .catalog import (
+    CATEGORIES,
+    DISPLAY_GROUPS,
+    display_group_for_minor,
+    display_group_keys,
+    secondary_categories_for,
+    capabilities_for,
+)
 
-MajorCategory = Literal["shopping", "medical", "education"]
-MinorCategory = Literal["market", "supermarket", "pharmacy", "hospital_pharmacy", "school"]
+MajorCategory = Literal.__getitem__(tuple(dict.fromkeys(category.major for category in CATEGORIES)))
+MinorCategory = Literal.__getitem__(tuple(category.key for category in CATEGORIES))
+DisplayGroup = Literal.__getitem__(display_group_keys())
 # Kept as a public alias for older N04/N05 callers.
 Category = MinorCategory
 Status = Literal["complete", "partial", "failed", "empty"]
 AsyncStatus = Literal["running", "cancelling", "completed", "cancelled", "failed"]
 
-MINOR_TO_MAJOR: dict[str, str] = {
-    "market": "shopping", "supermarket": "shopping",
-    "pharmacy": "medical", "hospital_pharmacy": "medical",
-    "school": "education",
-}
+MINOR_TO_MAJOR: dict[str, str] = {category.key: category.major for category in CATEGORIES}
 
 
 def map_business_status(*, quality: str, facilities_status: str,
@@ -125,11 +130,18 @@ class Facility(CategoryLevels):
     minor_category: MinorCategory
     location: Origin
     in_circle: bool | None
+    display_group: DisplayGroup | None = Field(default=None, alias="displayGroup", json_schema_extra={"x-legacy-optional": True})
+    secondary_categories: list[MinorCategory] = Field(default_factory=list, alias="secondaryCategories", json_schema_extra={"x-legacy-optional": True})
+    capabilities: list[str] = Field(default_factory=list, json_schema_extra={"x-legacy-optional": True})
     # Absent/null is an explicitly unsupported legacy contract, never pending.
     poi_evidence: PoiEvidence | None = Field(default=None, alias="poiEvidence", json_schema_extra={"x-legacy-optional": True})
 
     @model_validator(mode="after")
     def evidence_belongs_to_facility(self):
+        if self.minor_category in self.secondary_categories:
+            raise ValueError("A facility's secondary category cannot equal its primary category")
+        if len(self.secondary_categories) != len(set(self.secondary_categories)):
+            raise ValueError("Facility secondary categories must be distinct")
         if self.poi_evidence is not None:
             target = (round(self.location.lng, 6), round(self.location.lat, 6))
             if self.poi_evidence.facility_id != self.id or self.poi_evidence.destination != target:
@@ -146,7 +158,20 @@ class Facility(CategoryLevels):
                 value.setdefault("category", minor)
                 value.setdefault("minor_category", minor)
                 value.setdefault("major_category", MINOR_TO_MAJOR.get(minor))
+                if "displayGroup" not in value and "display_group" not in value:
+                    value["displayGroup"] = display_group_for_minor(minor)
+                if "secondaryCategories" not in value and "secondary_categories" not in value:
+                    value["secondaryCategories"] = list(secondary_categories_for(minor))
+                if "capabilities" not in value:
+                    value["capabilities"] = list(capabilities_for(minor))
         return value
+
+
+class DisplayGroupInfo(WireModel):
+    key: DisplayGroup
+    label: str
+    order: int
+    majors: list[str]
 
 
 class CategoryResult(CategoryLevels):
@@ -156,6 +181,7 @@ class CategoryResult(CategoryLevels):
     query_status: Literal["complete", "unknown", "failed"]
     count_in_circle: int | None = Field(ge=0)
     service_status: Literal["covered", "blind", "unknown"]
+    display_group: DisplayGroup | None = Field(default=None, alias="displayGroup", json_schema_extra={"x-legacy-optional": True})
 
     @model_validator(mode="before")
     @classmethod
@@ -167,6 +193,8 @@ class CategoryResult(CategoryLevels):
                 value.setdefault("category", minor)
                 value.setdefault("minor_category", minor)
                 value.setdefault("major_category", MINOR_TO_MAJOR.get(minor))
+                if "displayGroup" not in value and "display_group" not in value:
+                    value["displayGroup"] = display_group_for_minor(minor)
         return value
 
 
@@ -258,6 +286,11 @@ class Data(WireModel):
     unknown_region: Geometry | None = None
     computation_extent: Geometry | None = None
     facilities: list[Facility] | None = None
+    facility_display_groups: list[DisplayGroupInfo] = Field(
+        default_factory=lambda: [
+            DisplayGroupInfo(key=group.key, label=group.label, order=group.order, majors=list(group.majors))
+            for group in sorted(DISPLAY_GROUPS, key=lambda item: item.order)
+        ], alias="facilityDisplayGroups", json_schema_extra={"x-legacy-optional": True})
     categories: list[CategoryResult] = Field(default_factory=lambda: [
         CategoryResult(category=c, major_category=MINOR_TO_MAJOR[c], minor_category=c,
                        query_status="unknown", count_in_circle=None, service_status="unknown")

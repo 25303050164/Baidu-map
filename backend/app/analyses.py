@@ -297,7 +297,7 @@ class AnalysisManager:
                 ).model_dump(by_alias=True)
                 if business:
                     facilities, categories, evidence, report = business
-                    job.result["data"].update(facilities=[f.model_dump(by_alias=True) for f in facilities], categories=[c.model_dump() for c in categories], report=report)
+                    job.result["data"].update(facilities=[f.model_dump(by_alias=True) for f in facilities], categories=[c.model_dump(by_alias=True) for c in categories], report=report)
                     job.result["warnings"].extend(Issue(code="FACILITY_LIMITATION", message=message, scope="facilities").model_dump() for message in evidence.warnings)
                 job.status = "completed"
         except asyncio.CancelledError:
