@@ -98,7 +98,7 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
     app.include_router(analysis_router(manager))
     app.include_router(hybrid_router(hybrid))
     app.include_router(checkup_router(checkups))
-    app.include_router(capabilities_router(checkups, config))
+    app.include_router(capabilities_router(checkups, config, offline))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_origins,

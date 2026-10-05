@@ -20,7 +20,7 @@ import { Alert, Button, Checkbox, Descriptions, Drawer, InputNumber, Select } fr
 import type { Center } from '../types';
 import { LocationControls } from '../analysis/LocationControls';
 import { createCheckupService, CheckupError } from './client';
-import { budgetFor, capabilityView, type CapabilityView } from './capabilities';
+import { budgetFor, capabilityView, hybridTimeEstimate, type CapabilityView } from './capabilities';
 import { isCheckupBusy, STAGE_LABELS } from './types';
 import type { CheckupState } from './types';
 import { checkupSession, useCheckupState } from './sessions';
@@ -268,19 +268,27 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
 
   useEffect(() => {
     const abort = new AbortController();
-    service.capabilities(abort.signal).then(value => {
+    let retryTimer: number | undefined;
+    const loadCapabilities = () => service.capabilities(abort.signal).then(value => {
       const next = capabilityView(value);
       setView(next);
       // 档位是引擎自己的：存下来的档位不在这个引擎的档位表里，就换成它自己的默认档。
       const budgets = next.engines.find(item => item.engineId === engine)?.budgets ?? [];
       setBudget(current => current !== null && budgets.includes(current) ? current : budgetFor(next, engine));
+      if (engine === 'osm_hybrid' && (next.graphState === 'unloaded' || next.graphState === 'loading')) {
+        retryTimer = window.setTimeout(loadCapabilities, 1000);
+      }
     }).catch((error: unknown) => {
       // 取消不是故障：组件已经卸载或重新挂载，这一轮的结果不该再上屏。
       if (abort.signal.aborted) return;
       setCapabilityError(error instanceof CheckupError ? error.message
         : '未能读取体检服务能力表，请检查服务地址后刷新页面');
     });
-    return () => abort.abort();
+    void loadCapabilities();
+    return () => {
+      abort.abort();
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
   }, [service, engine]);
 
   const task = state.task;
@@ -341,6 +349,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     && lng >= -180 && lng <= 180 && lat > -85 && lat < 85;
   const engines = view?.engines ?? [];
   const selectedEngine = engines.find(item => item.engineId === engine) ?? null;
+  const hybridEstimate = engine === 'osm_hybrid'
+    ? hybridTimeEstimate(budget, view?.graphState ?? null) : null;
   const live = controller.hasLiveTask;
   /** 这一轮任务提交时的中心：结果、进行中的任务都按它画，不按选点草稿画。 */
   const taskCenter = snapshot?.center ?? state.input?.center;
@@ -534,6 +544,9 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
                 value, label: `${value} 次`,
               }))} /></label>
             <p className="wb-hint">实际用时受网络影响</p>
+            {hybridEstimate && <p className="wb-hint" data-testid="checkup-time-estimate">
+              图已就绪 · 全程约 {hybridEstimate}
+            </p>}
             <p className="wb-hint">步行 900 秒 · 服务标准 1000 米</p>
             {selectedEngine?.alert && <Alert type="warning" showIcon title={selectedEngine.alert} />}
             {selectedEngine?.caveat && selectedEngine.caveat !== selectedEngine.alert

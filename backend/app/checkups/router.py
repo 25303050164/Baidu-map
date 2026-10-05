@@ -257,13 +257,14 @@ def checkup_router(manager: CheckupManager):
     return router
 
 
-def capabilities_router(manager: CheckupManager, settings):
+def capabilities_router(manager: CheckupManager, settings, offline=None):
     router = APIRouter(prefix="/api/v2", tags=["checkups"])
 
     @router.get("/capabilities", response_model=CheckupCapabilities)
     async def capabilities():
         graph_configured = settings.osm_graph_cache_path is not None \
             and settings.osm_graph_cache_path.is_file()
+        graph_state = "unavailable" if not graph_configured else (None if offline is None else offline.state)
         return CheckupCapabilities(
             engines=[item.model_dump(mode="json", by_alias=True)
                      for item in manager.registry.capabilities()],
@@ -279,6 +280,7 @@ def capabilities_router(manager: CheckupManager, settings):
                            if item["osmDataVersion"] == settings.osm_data_version],
             coverage={"metricCrs": settings.osm_metric_crs, "queryPaddingM": QUERY_PADDING_M,
                       "graphConfigured": graph_configured,
+                      "graphState": graph_state,
                       "coverageBoundaryConfigured": settings.osm_coverage_boundary_path is not None,
                       "completeDirectory": False},
             budgets={"poiRequests": DEFAULT_POI_REQUESTS, "routeRequests": DEFAULT_ROUTE_REQUESTS,

@@ -36,6 +36,7 @@ type Options = {
   holedGaps?: boolean;
   gapsNotReady?: boolean;
   graphConfigured?: boolean;
+  graphState?: 'unloaded' | 'loading' | 'ready' | 'unavailable';
   runningFirst?: boolean;
 };
 
@@ -54,8 +55,10 @@ async function setup(page: Page, options: Options = {}) {
     if (!url.pathname.startsWith('/api/v2/')) return route.continue();
 
     if (url.pathname === '/api/v2/capabilities') {
-      return route.fulfill({ json: capabilities({
-        coverage: { graphConfigured: options.graphConfigured ?? true } }) });
+      return route.fulfill({ json: capabilities({ coverage: {
+        graphConfigured: options.graphConfigured ?? true,
+        graphState: options.graphState ?? (options.graphConfigured === false ? 'unavailable' : 'ready'),
+      } }) });
     }
     if (url.pathname === '/api/v2/checkups') {
       const body = route.request().postDataJSON() as { center: { lng: number; lat: number };
@@ -617,5 +620,24 @@ test('stages advance as the backend reports them, and the engines come from the 
   await page.getByTestId('algorithm-hybrid').click();
   await expect(page).toHaveURL(/#\/checkup\/hybrid$/);
   await expect(page.getByTestId('checkup-engine')).toContainText('引擎：OSM＋百度');
+  await expect(page.getByTestId('checkup-time-estimate')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '开始体检', exact: true })).toBeEnabled();
+});
+
+test('hybrid shows its historical runtime guide only when the graph is ready', async ({ page }) => {
+  await setup(page);
+  await page.goto('/');
+  await openTab(page, '采样与引擎');
+  await page.getByTestId('algorithm-hybrid').click();
+  await expect(page).toHaveURL(/#\/checkup\/hybrid$/);
+  await expect(page.getByTestId('checkup-time-estimate')).toHaveText(/3–7 分钟/);
+});
+
+test('hybrid hides the runtime guide while the graph is still loading', async ({ page }) => {
+  await setup(page, { graphState: 'loading' });
+  await page.goto('/');
+  await openTab(page, '采样与引擎');
+  await page.getByTestId('algorithm-hybrid').click();
+  await expect(page).toHaveURL(/#\/checkup\/hybrid$/);
+  await expect(page.getByTestId('checkup-time-estimate')).toHaveCount(0);
 });

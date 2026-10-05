@@ -5,7 +5,7 @@
  * 浏览器替它决定一次，就等于把"这个部署支持什么"写死在了一份前端构建里。
  */
 import { describe, expect, it } from 'vitest';
-import { budgetFor, capabilityView, quotaSummary } from './capabilities';
+import { budgetFor, capabilityView, hybridTimeEstimate, quotaSummary } from './capabilities';
 import { validCapabilities } from './validate';
 import { capabilities, engine } from './fixtures';
 
@@ -95,5 +95,14 @@ describe('quota line', () => {
       services: { place: { qps: 8, dailyBudget: null, remainingToday: null } } } }));
     expect(summary.lines).toContain('设施检索不设每日额度，仅按速率限制');
     expect(summary.lines.some(line => line.includes('0 /'))).toBe(false);
+  });
+});
+
+describe('hybrid runtime guide', () => {
+  it('only returns a budget guide after the OSM graph is ready', () => {
+    expect(hybridTimeEstimate(400, 'loading')).toBeNull();
+    expect(hybridTimeEstimate(400, null)).toBeNull();
+    expect(hybridTimeEstimate(200, 'ready')).toBe('2–4 分钟');
+    expect(hybridTimeEstimate(400, 'ready')).toBe('3–7 分钟');
   });
 });

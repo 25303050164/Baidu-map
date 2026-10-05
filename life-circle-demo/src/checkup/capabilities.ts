@@ -44,6 +44,8 @@ export type CapabilityView = {
   defaultEngine: string | null;
   defaultBudget: number | null;
   quota: QuotaSummary;
+  /** 当前 OSM 图状态；缺失表示旧版后端没有提供运行时状态。 */
+  graphState: 'unloaded' | 'loading' | 'ready' | 'unavailable' | null;
   /** 当前部署采用的水系复核（用来认出早于复核的旧版本）；旧后端不给时为空。 */
   waterReviews: WaterReviewRef[];
 };
@@ -90,6 +92,9 @@ function engineView(engine: EngineOption, graphConfigured: boolean | null): Engi
 export function capabilityView(value: Capabilities): CapabilityView {
   const graph = nested(value.coverage, 'graphConfigured');
   const graphConfigured = typeof graph === 'boolean' ? graph : null;
+  const graphStateValue = nested(value.coverage, 'graphState');
+  const graphState = graphStateValue === 'unloaded' || graphStateValue === 'loading'
+    || graphStateValue === 'ready' || graphStateValue === 'unavailable' ? graphStateValue : null;
   const engines = value.engines.map(engine => engineView(engine, graphConfigured));
   const first = engines[0] ?? null;
   return {
@@ -98,8 +103,18 @@ export function capabilityView(value: Capabilities): CapabilityView {
     // 默认预算由后端指定，且必须在这一档里：校验层已经查过，这里不再兜底。
     defaultBudget: first?.defaultBudget ?? null,
     quota: quotaSummary(value),
+    graphState,
     waterReviews: waterReviewRefs(value.waterReviews),
   };
+}
+
+/** Hybrid-only historical guide; it is hidden until the local graph is ready. */
+export function hybridTimeEstimate(budget: number | null, graphState: CapabilityView['graphState']): string | null {
+  if (budget === null || graphState !== 'ready') return null;
+  const scale = budget / 400;
+  const minimum = Math.max(1, Math.round((191.2 * scale) / 60));
+  const maximum = Math.max(minimum, Math.ceil((367.1 * scale) / 60));
+  return `${minimum}–${maximum} 分钟`;
 }
 
 /** 换引擎就要换预算：档位是引擎自己的，沿用上一个引擎的档会撞 422。 */

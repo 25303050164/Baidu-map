@@ -451,6 +451,7 @@ def test_capabilities_report_both_engines_and_the_fixed_distance_rule(tmp_path):
         assert document["budgets"]["poiRequests"] == 60
         assert document["budgets"]["routeRequests"] == 120
         assert document["coverage"]["queryPaddingM"] == 1300
+        assert document["coverage"]["graphState"] == "unavailable"
 
 
 def test_capabilities_report_the_application_budget_never_the_account_balance(tmp_path):
