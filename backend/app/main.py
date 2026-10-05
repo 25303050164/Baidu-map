@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import FastAPI
@@ -41,8 +42,9 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
     manager = AnalysisManager(config, provider_factory, gate=quota.direction.gate,
                               place_gate=quota.place.gate)
     hybrid = HybridManager(config, manager.gate, hybrid_provider_factory)
-    # The offline graph loads lazily, so the checkup registry can be built
-    # before it; both adapters resolve it on first use.
+    # The holder remains lazy for callers and tests, while configured deployments
+    # warm the graph during serving startup so the first estimate/task does not
+    # pay the 50+ second cache and spatial-index construction cost.
     from .algorithms.osm_offline.lazy import LazyOsmOfflineEngine
     offline = LazyOsmOfflineEngine(config)
     checkups = build_checkups(config, manager.gate, offline, quota=quota,
@@ -55,6 +57,14 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
         # 重启清点在**开始服务**时做，不在导入时：导入 app 对象（比如导出 OpenAPI）
         # 不该把别人正在跑的体检判成中断。清点只改状态，不重放任何已付费的请求。
         checkups.interrupt_unfinished()
+        if config.osm_data_version != "unconfigured" and config.osm_graph_cache_path is not None:
+            try:
+                await asyncio.to_thread(offline.get)
+                logger.info("OSM walking graph preloaded before serving requests: %s", offline.state)
+            except Exception:
+                # OSM is optional; a corrupt or incompatible package should not
+                # take the Baidu-only application offline.
+                logger.exception("OSM walking graph preload failed")
         if config.analysis_provider == "synthetic" and provider_factory is None:
             # 环境变量优先于 .env：终端里设过一次 synthetic，之后每次启动都是合成模式。
             logger.warning("ANALYSIS_PROVIDER=synthetic：离线合成模式，E8.2 只会画出半径约 1080 米的正圆，"

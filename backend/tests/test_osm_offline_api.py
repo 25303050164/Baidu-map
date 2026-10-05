@@ -123,6 +123,15 @@ def test_missing_cache_api_not_empty(tmp_path):
         assert response.json()["algorithm"]["stopReason"] == "graph_cache_missing"
 
 
+def test_configured_graph_is_preloaded_during_app_startup(tmp_path):
+    cfg, _, _ = fixture(tmp_path)
+    with TestClient(create_app(cfg)) as client:
+        offline = client.app.state.osm_offline
+        assert offline.state == "ready"
+        assert offline.loading is None
+        assert offline.store is not None
+
+
 def test_load_once_concurrent_graph_immutability(tmp_path, monkeypatch):
     cfg, store, coverage = fixture(tmp_path)
     import app.algorithms.osm_offline.engine as module
