@@ -9,7 +9,7 @@
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
 | Python | 3.11 或更新 | 装的时候勾选 **Add python.exe to PATH** |
-| Node.js | 18 或更新 | 只用来跑前端构建 |
+| Node.js | `^20.19.0` 或 `>=22.12.0` | 与前端锁定的 Vite 8 版本要求一致 |
 
 除此之外（虚拟环境、pip 依赖、npm 依赖、`backend/.env`）都由启动脚本自动准备，不需要手动执行任何 `pip install` 或 `npm install`。
 
@@ -60,21 +60,21 @@ cd Baidu-map
 
 | 跳过后果 | 影响 |
 | --- | --- |
-| 跳过 `BAIDU_MAP_AK` | 脚本会问你是否切到离线 `synthetic` 模式（只画半径约 1080 米的正圆，不调用百度） |
-| 跳过 `VITE_BAIDU_MAP_AK` | 前端地图回退到本地示意图，功能可跑但没有真实街道底图 |
+| 跳过 `BAIDU_MAP_AK` | 可将 E8.2 后端切到 `synthetic` 测试替身（约 1080 米正圆，不是实际分析结果）；此设置不覆盖独立的 Hybrid 路径 |
+| 跳过 `VITE_BAIDU_MAP_AK` | 默认 API 工作台显示“地图不可用”，仍可手动输入坐标；只有显式设置 `VITE_ANALYSIS_MODE=demo` 才回退到本地示意地图 |
 
 **第 4 步** 前后端就绪后，浏览器会自动打开 <http://127.0.0.1:5173>。后端在 <http://127.0.0.1:8000>，`/health` 可查状态。按 **Ctrl+C** 一次同时停止前后端。
 
 ## 关于百度地图 AK
 
-两个 AK 用途不同，缺一不可：
+两个 AK 用途不同，按需要分别配置：
 
-- **服务端 AK**（`backend/.env` 的 `BAIDU_MAP_AK`）：后端调用百度接口用，只放在后端，绝不能出现在前端代码或浏览器里。
-- **浏览器端 AK**（`life-circle-demo/.env.local` 的 `VITE_BAIDU_MAP_AK`）：前端渲染底图用，按域名做 Referer 限制。
+- **服务端 AK**（`backend/.env` 的 `BAIDU_MAP_AK`）：真实步行分析、Hybrid 核验和在线设施查询使用；只放在后端，绝不能出现在前端代码或浏览器里。
+- **浏览器端 AK**（`life-circle-demo/.env.local` 的 `VITE_BAIDU_MAP_AK`）：浏览器端底图、地点搜索与定位使用；按域名做 Referer 限制。
 
 两者都在[百度地图开放平台](https://lbsyun.baidu.com/apiconsole/key)申请，需要分别创建应用并勾选对应类型。
 
-不填也能跑：跳过服务端 AK 后用离线 `synthetic` 模式，跳过浏览器端 AK 后用本地示意图底图。
+E8.2 的 `synthetic` 仅替代后端步行 Provider，用于离线测试，不产生有意义的圈面；它不会把 Hybrid 切成离线模式。若设置了浏览器端 AK，地图 SDK、地点搜索和定位仍会访问百度服务。默认 API 工作台缺少浏览器端 AK 时可手动输入坐标；本地示意图仅属于显式启用的 `demo` 模式。
 
 ## 命令行用法
 

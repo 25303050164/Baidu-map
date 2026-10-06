@@ -37,6 +37,7 @@ DEFAULT_BACKEND_PORT = 8000
 DEFAULT_FRONTEND_PORT = 5173
 VENV = BACKEND / ".venv"
 MIN_PYTHON = (3, 11)
+NODE_ENGINE_RANGE = "^20.19.0 || >=22.12.0"
 
 IS_WINDOWS = os.name == "nt"
 COLORS = {"dev": "\033[32m", "warn": "\033[33m", "err": "\033[31m", "ok": "\033[32m", "ask": "\033[36m"}
@@ -50,15 +51,33 @@ def python_tag() -> str:
     return f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
-def node_major() -> int | None:
+def parse_node_version(value: str) -> tuple[int, int, int] | None:
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", value.strip())
+    if match is None:
+        return None
+    major, minor, patch = match.groups()
+    return int(major), int(minor), int(patch)
+
+
+def node_version() -> tuple[int, int, int] | None:
     if shutil.which("node") is None:
         return None
     try:
         result = subprocess.run(["node", "-v"], capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
-    match = re.search(r"v?(\d+)\.", result.stdout)
-    return int(match.group(1)) if match else None
+    if result.returncode != 0:
+        return None
+    return parse_node_version(result.stdout)
+
+
+def node_version_supported(version: tuple[int, int, int]) -> bool:
+    """Match the Node range declared by the locked Vite 8 toolchain."""
+    return (version[0] == 20 and version >= (20, 19, 0)) or version >= (22, 12, 0)
+
+
+def node_version_text(version: tuple[int, int, int]) -> str:
+    return ".".join(map(str, version))
 
 
 def preflight() -> None:
@@ -71,22 +90,23 @@ def preflight() -> None:
     if sys.version_info >= (3, 15):
         log("warn", f"Python {python_tag()} 较新，锁文件里的依赖可能还没适配；若安装失败可改用 3.12 或 3.13")
 
-    major = node_major()
-    if major is None:
+    version = node_version()
+    if version is None:
         raise InstallFailure("node", "没有找到 node，前端无法启动", [
-            "到 https://nodejs.org/ 下载 LTS 版本安装（需要 18 或更新）",
+            f"到 https://nodejs.org/ 安装符合 Vite 8 要求的 Node.js 版本（{NODE_ENGINE_RANGE}）",
             "装完重新打开终端，再运行本脚本",
         ])
-    if major < 18:
-        raise InstallFailure("node", f"Node.js 版本过低（当前 {major}），需要 18 或更新", [
-            "到 https://nodejs.org/ 下载 LTS 版本覆盖安装",
+    if not node_version_supported(version):
+        raise InstallFailure("node", f"Node.js 版本不兼容（当前 {node_version_text(version)}），Vite 8 要求 {NODE_ENGINE_RANGE}", [
+            "安装 Node.js 20.19.0 或更新的 20.x，或 22.12.0 及更新版本",
+            "装完重新打开终端，再运行本脚本",
         ])
     if shutil.which("npm") is None:
         raise InstallFailure("npm", "有 node 但没有 npm，前端依赖无法安装", [
             "到 https://nodejs.org/ 重新安装 LTS 版本（安装包内同时包含 node 和 npm）",
             "装完重新打开终端，再运行本脚本",
         ])
-    log("ok", f"环境预检通过：Python {python_tag()}，Node {major}")
+    log("ok", f"环境预检通过：Python {python_tag()}，Node {node_version_text(version)}")
 
 
 class InstallFailure(Exception):
@@ -164,7 +184,7 @@ ENV_VARS = (
         path=FRONTEND / ".env.local",
         key="VITE_BAIDU_MAP_AK",
         label="百度地图浏览器端 AK",
-        why="只影响地图底图。留空时前端自动回退到本地示意地图，功能能跑但没有真实街道。",
+        why="用于真实底图、地点搜索与定位。API 模式缺少时地图显示不可用提示但可手动输入坐标；只有显式 demo 模式才回退到本地示意图。",
         where="同一个控制台，再建一个应用，类型勾选“浏览器端”",
         secret=False,
     ),
@@ -539,11 +559,16 @@ def run_backend(port: int, provider: str | None) -> subprocess.Popen | None:
 def run_frontend(port: int, backend_port: int) -> subprocess.Popen | None:
     if not require_free_port("frontend", port):
         return None
-    node = shutil.which("node")
-    if node is None:
+    version = node_version()
+    if version is None:
         log("err", "没有找到 node，无法启动前端")
-        log("dev", "到 https://nodejs.org/ 安装 LTS 版本后重试；或先运行 python dev.py setup")
+        log("dev", f"安装符合 Vite 8 要求的 Node.js 版本（{NODE_ENGINE_RANGE}）后重试")
         return None
+    if not node_version_supported(version):
+        log("err", f"Node.js 版本不兼容（当前 {node_version_text(version)}），Vite 8 要求 {NODE_ENGINE_RANGE}")
+        return None
+    node = shutil.which("node")
+    assert node is not None
     vite = FRONTEND / "node_modules" / "vite" / "bin" / "vite.js"
     if not vite.exists():
         log("err", f"缺少 {vite.relative_to(ROOT)}，前端依赖尚未安装")
@@ -635,11 +660,14 @@ def doctor(backend_port: int, frontend_port: int) -> int:
     log("dev", f"Python {sys.version.split()[0]}" + ("" if sys.version_info >= MIN_PYTHON else "  ← 需要 3.11+"))
     if sys.version_info < MIN_PYTHON:
         problems.append(f"Python {sys.version.split()[0]} 太旧，需要 3.11 或更新")
-    if shutil.which("node") is None:
-        problems.append("PATH 里没有 node，请安装 Node.js 18 或更新")
+    version = node_version()
+    if version is None:
+        problems.append("PATH 里没有可运行的 node，请安装 Node.js")
     else:
-        node_version = subprocess.run(["node", "-v"], capture_output=True, text=True).stdout.strip()
-        log("dev", f"Node {node_version.lstrip('v')}")
+        version_text = node_version_text(version)
+        log("dev", f"Node {version_text}")
+        if not node_version_supported(version):
+            problems.append(f"Node {version_text} 不兼容，Vite 8 要求 {NODE_ENGINE_RANGE}")
     if not venv_python().exists():
         problems.append(f"缺少 {VENV.relative_to(ROOT)}，运行 python dev.py setup")
     if not (BACKEND / ".env").exists():
