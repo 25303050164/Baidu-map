@@ -12,6 +12,7 @@
 import pytest
 from shapely.geometry import MultiPolygon, box, shape
 
+from app import catalog
 from app.accessibility.service_graph import build_views
 from app.algorithms.hybrid_isochrone.hard_obstacles import LocalObstacles
 from app.algorithms.osm_offline.graph_store import PEDESTRIAN_ATTRS, GraphStore
@@ -185,6 +186,28 @@ def test_three_assessable_categories_give_one_overall_interval():
     assert overall.available is True
     assert 0 <= overall.coverage_lower_pct <= overall.coverage_upper_pct <= 100
     assert overall.weights == {name: pytest.approx(1 / 3) for name in MAJORS}
+
+
+def test_an_expanded_taxonomy_neither_dilutes_nor_hides_the_overall_score():
+    """请求的类别超出核心范围时，总体分仍然是三大类各 1/3。
+
+    这是"十大类"最容易出错的两种写法：把十类等权就把 1/3 的业务权重悄悄换成 1/10；
+    因为多查了几类就收起总体分，则让用户以为一次正常的扩展体检"没有结论"。
+    扩展类别照常出自己的一行，只是不进总体分。
+    """
+    requested = tuple(catalog.majors())
+    assert set(MAJORS) < set(requested)
+    outcome = run(majors=requested + ("dining", "leisure"))
+    overall = outcome.scores.overall
+    assert overall.available is True
+    assert overall.categories == list(MAJORS)
+    assert overall.weights == {name: pytest.approx(1 / 3) for name in MAJORS}
+    # 扩展类别确实被评估、也确实有自己的区间，只是没有进总体分。
+    scored = {item.category for item in outcome.scores.categories}
+    assert {"care", "dining", "finance", "public", "leisure", "transport", "life"} <= scored
+    assert set(overall.categories) < scored
+    assert outcome.scores.formula["categoryWeights"] == {
+        name: pytest.approx(1 / 3) for name in MAJORS}
 
 
 # ---------------------------------------------------------------- 拒绝与降级

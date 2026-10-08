@@ -3,13 +3,15 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 from ..algorithms.hybrid_isochrone.water_review import review_catalog
+from .. import catalog
 from ..catalog import major_of
 from ..engines import STATUS_THRESHOLD_S
 from .manager import CheckupError, CheckupManager
 from .models import (DEFAULT_POI_REQUESTS, DEFAULT_ROUTE_REQUESTS, DETAIL_ROUTE_REQUESTS,
                      DISTANCE_RULE, MAX_POI_REQUESTS, MAX_ROUTE_REQUESTS, QUERY_PADDING_M,
                      RULE_VERSION, CheckupCapabilities, CheckupLayer, CheckupRequest,
-                     CheckupSnapshot, CheckupTaskView, FacilityRoute)
+                     CheckupSnapshot, CheckupTaskView, FacilityExtensionDocument,
+                     FacilityExtensionRequest, FacilityExtensionView, FacilityRoute)
 
 # Layers this release can serve, one per published group. The boundary arrives
 # with the first stage, the retrieved facilities with the second, the assessment
@@ -246,6 +248,31 @@ def checkup_router(manager: CheckupManager):
     async def cancel(task_id: str):
         return manager.cancel(task_id)[0]
 
+    # 按需补查是独立资源，不是原任务的新修订：它自己的标识、自己的预算，
+    # 失败或被取消都不会改动已经发布的报告和评分。
+    @router.post("/{task_id}/facility-extensions", status_code=202,
+                 response_model=FacilityExtensionView)
+    async def create_extension(task_id: str, payload: FacilityExtensionRequest):
+        return manager.submit_extension(task_id, payload)
+
+    @router.get("/{task_id}/facility-extensions", response_model=list[FacilityExtensionView])
+    async def list_extensions(task_id: str):
+        return manager.extensions(task_id)
+
+    @router.get("/{task_id}/facility-extensions/{extension_id}", response_model=FacilityExtensionView)
+    async def extension_status(task_id: str, extension_id: str):
+        return manager.extension(task_id, extension_id)
+
+    @router.get("/{task_id}/facility-extensions/{extension_id}/result",
+                response_model=FacilityExtensionDocument)
+    async def extension_result(task_id: str, extension_id: str):
+        return manager.extension_document(task_id, extension_id)
+
+    @router.post("/{task_id}/facility-extensions/{extension_id}/cancel", status_code=202,
+                 response_model=FacilityExtensionView)
+    async def cancel_extension(task_id: str, extension_id: str):
+        return manager.cancel_extension(task_id, extension_id)
+
     @router.post("/{task_id}/routes/{facility_id}", response_model=FacilityRoute)
     async def facility_route(task_id: str, facility_id: str):
         # A route detail is only ever issued for an identifier this task itself
@@ -285,7 +312,22 @@ def capabilities_router(manager: CheckupManager, settings, offline=None):
                       "completeDirectory": False},
             budgets={"poiRequests": DEFAULT_POI_REQUESTS, "routeRequests": DEFAULT_ROUTE_REQUESTS,
                      "detailRouteRequests": DETAIL_ROUTE_REQUESTS,
-                     "maxPoiRequests": MAX_POI_REQUESTS, "maxRouteRequests": MAX_ROUTE_REQUESTS},
+                     "maxPoiRequests": MAX_POI_REQUESTS, "maxRouteRequests": MAX_ROUTE_REQUESTS,
+                     # 每块每小类先取主关键词一次，所以一次检索的下界是"分块数 × 小类数"。
+                     # 分块数由圈面包络决定（最多 4），请求体里算不出来，这里给出小类数，
+                     # 客户端据此在提交前判断预算够不够，而不是提交后拿到一个失败任务。
+                     "poiMinorCategories": {
+                         "default": len(catalog.poi_keys(catalog.default_analysis_majors())),
+                         "all": len(catalog.poi_keys(catalog.majors())),
+                     },
+                     "poiBlocksUpperBound": 4,
+                     "poiRequestsIsLowerBound": True},
+            # §3.4 的跨任务复用窗口。未配置时缓存只在同一个任务内复用，
+            # 所以重复体检同一片区域不会省下任何请求；这个值要能被客户端看到。
+            cache={"freshnessSeconds": settings.cache_freshness_seconds,
+                   "crossTaskReuse": settings.cache_freshness_seconds is not None},
+            # 类别选择器的唯一来源：展示组、十个大类、每类检索小类数、核心口径。
+            facility_categories=catalog.facility_categories(),
             # Reported per request rather than cached: the tier switches at a
             # wall-clock instant and the day turns at Shanghai midnight.
             quota={**manager.quota.balance(), "label": QUOTA_LABEL})

@@ -8,7 +8,8 @@
  * 所以这里刻意写得啰嗦：字段名、枚举、可空性全部照 `contract.ts` 写足，不用
  * `as unknown as` 蒙过去。夹具一旦靠断言绕过类型，它就再也证明不了契约本身。
  */
-import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, CoverageRow, FacilityRoute,
+import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, CoverageRow,
+  FacilityExtensionDocument, FacilityExtensionView, FacilityRoute,
   ReportEvidence, ServiceZone, WaterDataEvidence } from './contract';
 import type { Capabilities, EngineOption } from './validate';
 
@@ -185,12 +186,81 @@ export function capabilities(overrides: Partial<Capabilities> = {}): Capabilitie
         remainingToday: null },
       place: { qps: 8, maxInflight: 8, dailyBudget: 1600, spentToday: 150, remainingToday: 1450 } },
       matrixEnabled: false, claimsAccountBalance: false },
-    budgets: { poiRequests: 60, routeRequests: 120, detailRouteRequests: 20 },
+    budgets: { poiRequests: 60, routeRequests: 120, detailRouteRequests: 20,
+      poiMinorCategories: { default: 14, all: 31 }, poiBlocksUpperBound: 4,
+      poiRequestsIsLowerBound: true },
     coverage: { metricCrs: 'EPSG:3857', queryPaddingM: 50, graphConfigured: true,
       coverageBoundaryConfigured: true, completeDirectory: false },
     rules: { ruleVersion: 'walk-distance-1000-v1', statusThresholdSeconds: 900,
       assessmentScope: 'isochrone' },
     waterReviews: [],
+    cache: { freshnessSeconds: null, crossTaskReuse: false },
+    facilityCategories: facilityCatalogFixture(),
+    ...overrides,
+  };
+}
+
+/**
+ * 设施目录的 v2 视图：与后端 `catalog.facility_categories()` 同一个形状。
+ *
+ * 数字照当前目录写足（十类、31 个小类、核心三类 14 个），因为类别选择器的预算算术就是
+ * 拿这些数去比的：夹具里写一个整好的数，测试就再也发现不了"界面的算术和后端的分叉"。
+ */
+export function facilityCatalogFixture(): Record<string, unknown> {
+  return {
+    version: 'poi-categories-v2.1',
+    coreMajors: ['shopping', 'medical', 'education'],
+    displayGroups: [
+      { key: 'healthcare', label: '健康照护', order: 1, majors: ['medical', 'care'] },
+      { key: 'education', label: '教育成长', order: 2, majors: ['education'] },
+      { key: 'daily_life', label: '生活消费', order: 3, majors: ['shopping', 'dining', 'finance', 'life'] },
+      { key: 'public_mobility', label: '公共出行', order: 4, majors: ['public', 'transport'] },
+      { key: 'leisure', label: '文体休闲', order: 5, majors: ['leisure'] },
+    ],
+    majors: [
+      { key: 'medical', label: '医疗健康', displayGroup: 'healthcare', core: true, minorCategories: 5 },
+      { key: 'shopping', label: '购物消费', displayGroup: 'daily_life', core: true, minorCategories: 3 },
+      { key: 'education', label: '教育', displayGroup: 'education', core: true, minorCategories: 6 },
+      { key: 'care', label: '疗养康养', displayGroup: 'healthcare', core: false, minorCategories: 2 },
+      { key: 'dining', label: '餐饮', displayGroup: 'daily_life', core: false, minorCategories: 2 },
+      { key: 'finance', label: '金融', displayGroup: 'daily_life', core: false, minorCategories: 2 },
+      { key: 'public', label: '政务公共服务', displayGroup: 'public_mobility', core: false, minorCategories: 3 },
+      { key: 'leisure', label: '文体休闲', displayGroup: 'leisure', core: false, minorCategories: 3 },
+      { key: 'transport', label: '交通出行', displayGroup: 'public_mobility', core: false, minorCategories: 3 },
+      { key: 'life', label: '生活服务', displayGroup: 'daily_life', core: false, minorCategories: 2 },
+    ],
+  };
+}
+
+/** 一次按需补查的状态：默认是"查完了、五个小类里取到三家"。 */
+export function extensionView(overrides: Partial<FacilityExtensionView> = {}): FacilityExtensionView {
+  return {
+    extensionId: 'extension-1', taskId: 'task-1', baseRevision: 5, clientRequestId: 'ext-request-1',
+    status: 'completed', stage: 'ready', categories: ['dining', 'leisure'],
+    budget: { limit: 60, spent: 20, remaining: 40 }, requests: 20, networkRequests: 20,
+    facilitiesStatus: 'complete', countsByCategory: { dining: 1, leisure: 2 }, error: null,
+    createdAt: CREATED_AT, finishedAt: CREATED_AT + 3, ...overrides,
+  };
+}
+
+/** 一次补查的结果文档：``group`` 存在才叫"查到了"，为 null 时必须带具名原因。 */
+export function extensionDocument(
+  overrides: Partial<FacilityExtensionDocument> = {},
+): FacilityExtensionDocument {
+  return {
+    extensionId: 'extension-1', taskId: 'task-1', baseRevision: 5,
+    categories: ['dining', 'leisure'], status: 'completed', facilitiesStatus: 'complete',
+    group: { queryStatus: 'completed', catalogCompleteness: 'unverified',
+      provider: 'synthetic:checkup-tests', apiVersion: '3.0', dataSource: 'synthetic',
+      queryDomain: { coordinateSystem: 'bd09ll', origin: [116.404, 39.915], paddingMeters: 50,
+        widened: false, envelopeLocalMeters: [-1300, -1300, 1300, 1300],
+        polygonLocalMeters: [] },
+      dataObtainedAt: CREATED_AT + 2, countsByCategory: { dining: 1, leisure: 2 },
+      facilities: [], nearbyFacilities: [], reviewCandidates: [], excludedCandidates: [],
+      quarantine: [], queryCoverage: [], queryIncompleteRegions: {}, statistics: {},
+      warnings: [], stopReason: null },
+    requests: 20, networkRequests: 20, budget: { limit: 60, spent: 20, remaining: 40 },
+    issues: [], notes: ['扩展类别只做点位、数量和分类展示：不进入核心综合分。'],
     ...overrides,
   };
 }

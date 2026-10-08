@@ -31,7 +31,7 @@ from ..contracts import Issue
 from ..poi.cache import CachedPages
 from ..poi.models import PoiCollectRequest, Point as WirePoint
 from ..poi.normalize import merge_entities, normalize
-from ..poi.online import OnlinePlanner, clip_to_domain
+from ..poi.online import OnlinePlanner, clip_to_domain, coarse_blocks
 from ..quota import attach_token
 from .facility_stage import local_region, query_domain
 from .models import QUERY_PADDING_M, CheckupRequest, FacilityGroup
@@ -85,17 +85,26 @@ def stale_for(group: FacilityGroup, before: dict | None, after: dict | None, ori
     return None
 
 
-def _refusal(reason: str, major_categories, *, status: str = 'failed') -> FacilityOutcome:
+def _refusal(reason: str, major_categories, *, status: str = 'failed', detail: str | None = None) -> FacilityOutcome:
     """A stage that could not run: null group, a named reason, no counts."""
     messages = {
         'missing_ak': '未配置百度地图 AK，设施检索不可用。',
         'synthetic_mode_offline': '当前为离线合成模式，未接入真实检索服务，设施检索未运行。',
         'task_budget_exhausted': '本任务的 POI 预算已用尽，设施检索未开始。',
+        'budget_too_small': '本任务的 POI 预算不足以覆盖所选的设施类别，设施检索未开始。',
+        'daily_budget_exhausted': '今天的地点检索额度已用尽，设施检索未开始；额度在次日（北京时间）恢复。',
+        'rate_limit': '百度地点检索返回并发超限，有界重试后仍未通过；本轮已暂停并保留已取到的页面。',
+        'quota': '百度地点检索的配额已用尽，设施检索未完成。',
+        'permission': '百度地点检索的权限校验未通过，设施检索未完成；请核对服务权限与 AK 配置。',
+        'parameter_error': '百度地点检索拒绝了请求参数，设施检索未完成。',
+        'deadline_reached': '已到任务截止时间，设施检索未完成。',
         'no_boundary_geometry': '成圈结果没有几何，设施检索没有可确定的范围。',
         'empty_boundary_geometry': '成圈几何不是可用区域，设施检索没有可确定的范围。',
         'invalid_boundary_geometry': '成圈几何无法解析，设施检索没有可确定的范围。',
         'empty_query_domain': '查询范围为空，设施检索未开始。',
     }
+    if detail is not None:
+        messages[reason] = detail
     # A reason the engine sent up is reported as itself, not as a missing message.
     message = messages.get(reason, f'设施检索不可用：{reason}')
     return FacilityOutcome(group=None, status=status, issues=[
@@ -138,6 +147,17 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
         return _refusal(str(exc), majors)
     if budget.remaining(POI_POOL) <= 0:
         return _refusal('task_budget_exhausted', majors)
+    remaining = budget.remaining(POI_POOL)
+    blocks = len(coarse_blocks(domain))
+    minimum_requests = blocks * len(categories)
+    if minimum_requests > remaining:
+        return _refusal(
+            'budget_too_small', majors,
+            detail=(f'设施类别过多：本次检索至少需要 {minimum_requests} 次地点检索'
+                    f'（{blocks} 个查询分块 × {len(categories)} 个检索小类，每类先取主关键词一次），'
+                    f'但本任务预算只剩 {remaining} 次。请减少设施类别或提高本任务预算后重试；'
+                    f'这是下界，密集区域的翻页与细分还需要更多次数。'),
+        )
     started = time.time()
     # What this stage sends is what it reserves: the pool counts the attempt
     # before the request goes out, so a refused or unclear one is part of it.
@@ -156,8 +176,13 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
                                                 context.token),
                             provider=places, task_id=context.task_id)
         limit = budget.remaining(POI_POOL)
+        primary_queries = {
+            category: tuple(catalog.poi_rules()['queries'][category][:1])
+            for category in categories
+        }
         planner = OnlinePlanner(domain=domain, origin=origin, categories=list(categories),
-                                budget=limit, source=source, token=context.token)
+                                queries=primary_queries, budget=limit, source=source,
+                                token=context.token)
         pages = fetch
         if progress is not None:
             progress(0, limit)

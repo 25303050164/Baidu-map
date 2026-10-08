@@ -53,10 +53,24 @@ MAX_PAGE_ATTEMPTS = 2
 DENSITY_SIGNALS = frozenset({'possible_truncation', 'page_limit',
                              'pagination_anomaly', 'pagination_uncertain'})
 
-# A refusal from the scheduling layer. Stopping is the only correct response and
-# every remaining sequence keeps whatever it obtained.
-FATAL = frozenset(STOP_ERRORS | {'task_budget_exhausted', 'daily_budget_exhausted',
-                                 'deadline_reached', 'matrix_disabled'})
+# Throttling is the one refusal worth a bounded retry: the shared gate already
+# cools down after a ``rate_limit`` (``analyses.RateGate.completed``), so a
+# transient concurrency refusal recovers instead of ending the whole retrieval.
+# A second refusal means the service is still throttling, so the run pauses and
+# keeps what it obtained rather than paying for pages that would be refused too.
+THROTTLING = frozenset({'rate_limit'})
+#: Reasons this module retries once, inside the same budget.
+RETRYABLE = RETRY_ERRORS | THROTTLING
+
+# A refusal the scheduling layer will answer the same way for every remaining
+# sequence. Stopping is the only correct response and every sequence keeps
+# whatever it obtained. Throttling is excluded here and handled as a bounded
+# retry above; ``place_protocol.STOP_ERRORS`` itself stays untouched, because
+# the legacy ``/api/analyses`` place search and the command-line POI runtime
+# still read it as "stop now".
+FATAL = frozenset((STOP_ERRORS - THROTTLING)
+                  | {'task_budget_exhausted', 'daily_budget_exhausted',
+                     'deadline_reached', 'matrix_disabled'})
 
 # Only for floating-point inversion at exact edges, as in ``normalize.inside``.
 EDGE_TOLERANCE = 1e-6
@@ -274,7 +288,8 @@ class OnlinePlanner:
     """
 
     def __init__(self, *, domain: QueryDomain, origin, categories, budget: int, source: str,
-                 finest_edge: float = FINEST_BLOCK_METERS, max_pages: int = MAX_PAGES,
+                 queries=None, finest_edge: float = FINEST_BLOCK_METERS,
+                 max_pages: int = MAX_PAGES,
                  token=None):
         if type(budget) is not int or budget <= 0:
             raise ValueError('budget must be a positive integer')
@@ -284,6 +299,11 @@ class OnlinePlanner:
             if category not in RULES['queries']:
                 raise ValueError('unknown_category')
         self.domain, self.origin, self.categories, self.budget = domain, origin, tuple(categories), budget
+        self.queries = {category: tuple((queries or {}).get(category, RULES['queries'][category]))
+                        for category in self.categories}
+        if any(not values for values in self.queries.values()):
+            raise ValueError('at least one query required per category')
+        self.query_plan_limited = queries is not None
         self.source = source
         self.finest_edge, self.max_pages = finest_edge, max_pages
         self.token = token or CancelToken()
@@ -300,7 +320,7 @@ class OnlinePlanner:
         # rotation, so a category with more keywords cannot exhaust the budget
         # before the others have had their first turn.
         for block in self.coarse:
-            pending = [(category, deque(RULES['queries'][category])) for category in self.categories]
+            pending = [(category, deque(self.queries[category])) for category in self.categories]
             while any(queries for _, queries in pending):
                 for category, queries in pending:
                     if queries:
@@ -374,10 +394,23 @@ class OnlinePlanner:
         if payload is None:
             if reason in FATAL:
                 self.stopped = reason
-            if (reason in RETRY_ERRORS and state.page_attempts < MAX_PAGE_ATTEMPTS
+            if (reason in RETRYABLE and state.page_attempts < MAX_PAGE_ATTEMPTS
                     and self.attempts < self.budget and self.stopped is None):
-                self.queue.append(state)  # The same page, inside the same budget.
+                # The same page, inside the same budget. Throttling goes back to
+                # the front: its retry is the test of whether the shared cooldown
+                # was enough, so it must not queue behind every other page first —
+                # otherwise a service that is genuinely throttling would cost one
+                # attempt per sequence before the run pauses.
+                if reason in THROTTLING:
+                    self.queue.appendleft(state)
+                else:
+                    self.queue.append(state)
                 return
+            if reason in THROTTLING and self.stopped is None:
+                # The bounded retry is spent and the service is still refusing:
+                # pause here instead of spending the rest of the budget on pages
+                # that would meet the same refusal.
+                self.stopped = reason
             self._finish(state, reason)
             return
         before = len(state.pagination.warnings)
@@ -444,7 +477,7 @@ class OnlinePlanner:
     def incomplete_blocks(self) -> dict:
         """Per category, where any of its keywords did not finish: a place there may
         not have been found, so a gap can rest nowhere within reach of it."""
-        return {category: sorted({bounds for query in RULES['queries'][category]
+        return {category: sorted({bounds for query in self.queries[category]
                                   for block in self.coarse
                                   for bounds in self._uncovered(block, category, query)})
                 for category in self.categories}
@@ -457,7 +490,7 @@ class OnlinePlanner:
         coverage = [state.entry(self.source) for state in self.sequences.values()]
         covered = all(self._covered(block, category, query)
                       for block in self.coarse for category in self.categories
-                      for query in RULES['queries'][category])
+                      for query in self.queries[category])
         attempted = any(state.pagination.pages for state in self.sequences.values())
         if self.token.cancelled or self.stopped == 'cancelled':
             status = 'cancelled'
@@ -466,6 +499,7 @@ class OnlinePlanner:
         else:
             status = 'partial' if attempted else 'failed'
         warnings = sorted(set(self.warnings)
+                          | ({'primary_queries_only'} if self.query_plan_limited else set())
                           | {state.stop for state in self.sequences.values()
                              if state.stop not in (None, 'completed')}
                           | ({self.stopped} if self.stopped else set()))

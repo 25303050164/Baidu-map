@@ -106,3 +106,21 @@ describe('hybrid runtime guide', () => {
     expect(hybridTimeEstimate(400, 'ready')).toBe('3–7 分钟');
   });
 });
+
+describe('facility catalog on the capability view', () => {
+  it('translates the backend taxonomy once, for the selector to read', () => {
+    // 类别选择器不自己解析能力表：它读的是这一层翻译出来的目录，所以这里必须转出来。
+    const view = capabilityView(capabilities());
+    expect(view.facilityCatalog).not.toBeNull();
+    expect(view.facilityCatalog!.coreMajors).toEqual(['shopping', 'medical', 'education']);
+    expect(view.facilityCatalog!.majors).toHaveLength(10);
+    expect(view.facilityCatalog!.groups).toHaveLength(5);
+    expect(view.facilityCatalog!.blocksUpperBound).toBe(4);
+  });
+
+  it('says the backend offers no selector instead of showing an empty one', () => {
+    // 旧后端：给一个空目录会被读成"没有类别可选"，那是一个关于设施的结论。
+    const view = capabilityView(capabilities({ facilityCategories: undefined }));
+    expect(view.facilityCatalog).toBeNull();
+  });
+});

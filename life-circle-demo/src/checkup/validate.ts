@@ -16,8 +16,8 @@
  *
  * 它不推导任何结论：设施是否可达、面积属于哪一态，都由后端说，这里只核对它说清了没有。
  */
-import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityRoute, Origin,
-  ReportEvidence, ServiceZone, TaskProgress } from './contract';
+import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityExtensionDocument,
+  FacilityExtensionView, FacilityRoute, Origin, ReportEvidence, ServiceZone, TaskProgress } from './contract';
 
 type RecordValue = Record<string, unknown>;
 const object = (value: unknown): value is RecordValue =>
@@ -305,6 +305,10 @@ export type Capabilities = {
   rules: RecordValue;
   /** 当前部署采用的水系复核；旧后端不给这一项。条目由 water.ts 逐条认。 */
   waterReviews?: RecordValue[];
+  /** §3.4 的跨任务复用窗口；旧后端不给这一项。 */
+  cache?: RecordValue;
+  /** 设施目录的 v2 视图：类别选择器与预算算术的唯一来源；旧后端不给这一项。 */
+  facilityCategories?: RecordValue;
 };
 
 /** 能力表：界面靠它决定"能选什么"，所以引擎字段错一个就整份拒绝，不做部分接受。 */
@@ -320,6 +324,10 @@ export function validCapabilities(value: unknown): value is Capabilities {
       || typeof engine.requiresOsmGraph !== 'boolean') return false;
   }
   if (value.waterReviews !== undefined && !Array.isArray(value.waterReviews)) return false;
+  // 这两项是可选的，但给了就不能是别的形状：读成 undefined 由选择器说"后端没报这一项"，
+  // 读成一个数组则会静默变成"没有可选类别"。
+  if (value.cache !== undefined && !object(value.cache)) return false;
+  if (value.facilityCategories !== undefined && !object(value.facilityCategories)) return false;
   return object(value.quota) && object(value.budgets) && object(value.coverage)
     && object(value.rules);
 }
@@ -358,4 +366,47 @@ export function validFacilityRoute(value: unknown): value is FacilityRoute {
   if (value.withinRule === null) return true;
   // accessDistanceM 缺席（旧后端）可以；在场就必须是判定所依据的那个数。
   return value.routeDistanceM !== null && value.accessDistanceM !== null;
+}
+
+/** 一次按需补查的状态：它自己的标识、预算和终态，与原任务的修订互不影响。 */
+const EXTENSION_STATUS = ['queued', 'running', 'completed', 'partial', 'failed', 'cancelled'] as const;
+const EXTENSION_STAGES = ['poi', 'ready'] as const;
+
+export function validFacilityExtensionView(value: unknown): value is FacilityExtensionView {
+  return object(value)
+    && text(value.extensionId) && value.extensionId.length > 0
+    && text(value.taskId) && value.taskId.length > 0
+    && text(value.clientRequestId) && value.clientRequestId.length > 0
+    && count(value.baseRevision) && value.baseRevision >= 1
+    && oneOf(value.status, EXTENSION_STATUS)
+    // 排队时还没有阶段：null 是"还没有"，不是缺失。
+    && (value.stage === null || oneOf(value.stage, EXTENSION_STAGES))
+    && Array.isArray(value.categories) && value.categories.length > 0 && value.categories.every(text)
+    && object(value.budget) && count(value.requests) && count(value.networkRequests)
+    && nullableText(value.facilitiesStatus) && nullableText(value.error)
+    && object(value.countsByCategory) && finite(value.createdAt) && value.createdAt > 0
+    && nullableNumber(value.finishedAt)
+    // 失败必须有话说：只说 "failed" 的补查没法告诉人下一步做什么。
+    && (value.status !== 'failed' || text(value.error));
+}
+
+/**
+ * 一次补查的完整结果。``group`` 为 null 只有一个意思：这次检索没有产出可用结果，
+ * 原因写在 ``issues`` 里。它绝不是"这片区域没有这类设施"—— 空清单与空目录是两件事。
+ */
+export function validFacilityExtensionDocument(value: unknown): value is FacilityExtensionDocument {
+  if (!object(value) || !text(value.extensionId) || !text(value.taskId)) return false;
+  if (!count(value.baseRevision) || value.baseRevision < 1) return false;
+  if (!Array.isArray(value.categories) || value.categories.length === 0
+    || !value.categories.every(text)) return false;
+  if (!oneOf(value.status, EXTENSION_STATUS)) return false;
+  if (!nullableText(value.facilitiesStatus)) return false;
+  if (!count(value.requests) || !count(value.networkRequests) || !object(value.budget)) return false;
+  if (!Array.isArray(value.issues) || !Array.isArray(value.notes)) return false;
+  // group 只允许是对象或 null：一个空的 {} 会被读成"查到了东西"，别的形状会被读成设施清单。
+  if (value.group !== null && !object(value.group)) return false;
+  // 结果文档必须自洽：说"有结果"就要是一个真出过结果的终态，说"没有结果"就必须给得出原因，
+  // 否则界面只能显示一个既没设施也没解释的空面板。
+  if (value.group !== null) return oneOf(value.status, ['completed', 'partial', 'cancelled']);
+  return value.issues.length > 0;
 }

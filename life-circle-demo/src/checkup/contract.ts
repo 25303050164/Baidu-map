@@ -3,13 +3,13 @@ export type MajorCategory = "medical" | "shopping" | "education" | "care" | "din
 export type MinorCategory = "pharmacy" | "hospital_pharmacy" | "hospital" | "clinic" | "checkup" | "market" | "fresh_store" | "supermarket" | "school" | "combined_school" | "middle_school" | "college" | "preschool" | "training" | "nursing_home" | "rehab" | "restaurant" | "cafe" | "bank" | "finance_service" | "government" | "post" | "library" | "park" | "sports" | "entertainment" | "bus" | "parking" | "fuel" | "repair" | "beauty";
 export type DisplayGroup = "healthcare" | "education" | "daily_life" | "public_mobility" | "leisure";
 export type CheckupFacilities = {
-  categories: Array<MajorCategory>;
-  maxPoiRequests: number;
-  maxRouteRequests: number;
+  categories?: Array<MajorCategory>;
+  maxPoiRequests?: number;
+  maxRouteRequests?: number;
 };
 
 export type CheckupIsochrone = {
-  budget: number | null;
+  budget?: number | null;
 };
 
 export type Origin = {
@@ -400,6 +400,48 @@ export type CheckupCapabilities = {
   dataVersions: Record<string, unknown>;
   coverage: Record<string, unknown>;
   budgets: Record<string, unknown>;
+  cache: Record<string, unknown>;
+  facilityCategories: Record<string, unknown>;
   quota: Record<string, unknown>;
   waterReviews: Array<Record<string, unknown>>;
+};
+
+export type FacilityExtensionRequest = {
+  schemaVersion?: "checkup-v1";
+  clientRequestId: string;
+  categories: Array<MajorCategory>;
+  maxPoiRequests?: number | null;
+};
+
+export type FacilityExtensionView = {
+  extensionId: string;
+  taskId: string;
+  baseRevision: number;
+  clientRequestId: string;
+  status: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
+  stage: "poi" | "ready" | null;
+  categories: Array<MajorCategory>;
+  budget: Record<string, unknown>;
+  requests: number;
+  networkRequests: number;
+  facilitiesStatus: string | null;
+  countsByCategory: Record<string, number>;
+  error: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+};
+
+export type FacilityExtensionDocument = {
+  extensionId: string;
+  taskId: string;
+  baseRevision: number;
+  categories: Array<MajorCategory>;
+  status: "completed" | "partial" | "failed" | "cancelled";
+  facilitiesStatus: string | null;
+  group: FacilityGroup | null;
+  requests: number;
+  networkRequests: number;
+  budget: Record<string, unknown>;
+  issues: Array<Issue>;
+  notes: Array<string>;
 };

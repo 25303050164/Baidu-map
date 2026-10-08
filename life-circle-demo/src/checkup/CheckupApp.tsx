@@ -21,7 +21,7 @@ import type { Center } from '../types';
 import { LocationControls } from '../analysis/LocationControls';
 import { createCheckupService, CheckupError } from './client';
 import { budgetFor, capabilityView, hybridTimeEstimate, type CapabilityView } from './capabilities';
-import { isCheckupBusy, STAGE_LABELS } from './types';
+import { isCheckupBusy, isTerminal, STAGE_LABELS } from './types';
 import type { CheckupState } from './types';
 import { checkupSession, useCheckupState } from './sessions';
 import { LAYER_IDS, type LayerId, type Stage } from './validate';
@@ -30,6 +30,8 @@ import { CheckupMap, DEFAULT_CHECKUP_LAYERS, layerSwatch, type CheckupLayerToggl
 import { CheckupReport } from './CheckupReport';
 import { Fold } from './Fold';
 import { CATEGORY_ORDER, categoryLabel, coverageItems, percent } from './report';
+import { missingCoreMajors, requiredRequests, splitScope } from './categories';
+import type { MajorCategory } from './contract';
 import { nearestFacilities } from './nearest';
 import { WeatherCard } from './WeatherCard';
 import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
@@ -152,6 +154,17 @@ const TAB_LABELS: Record<TabKey, string> = {
 const isTabKey = (value: string | undefined): value is TabKey =>
   value !== undefined && (TAB_KEYS as readonly string[]).includes(value);
 let lastTab: TabKey = 'location';
+
+/** 两套类别集合是否是同一组：顺序不同不算变化，省掉一次多余的请求体差异。 */
+function sameScope(left: readonly MajorCategory[], right: readonly MajorCategory[]): boolean {
+  return left.length === right.length && left.every(key => right.includes(key));
+}
+
+const EXTENSION_STATUS_LABELS: Record<string, string> = {
+  queued: '排队中', running: '检索中', completed: '已完成', partial: '部分完成',
+  failed: '未完成', cancelled: '已取消',
+};
+const EXTENSION_DONE = new Set(['completed', 'partial', 'failed', 'cancelled']);
 
 type PanelId = 'side' | 'results';
 type PanelLayout = { x: number; y: number; width: number; height: number };
@@ -297,6 +310,38 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   const busy = isCheckupBusy(state);
 
   /**
+   * 设施类别选择器：可选的大类来自后端能力表，界面不自己维护一份分类表。
+   *
+   * `scope` 是用户的勾选（只活在这一次会话里），`catalog.coreMajors` 是默认。核心口径
+   * 进主请求；勾上的扩展大类不进主请求，而是等结果出来之后走按需补查 —— 把它们一起发
+   * 过去会让"31 个小类 × 4 块 = 124 次"撞上默认 60 次的预算，那是一个还没发请求就会被
+   * 拒的任务。
+   */
+  const catalog = view?.facilityCatalog ?? null;
+  const [scope, setScope] = useState<MajorCategory[] | null>(null);
+  const picked = useMemo(() => scope ?? catalog?.coreMajors ?? [], [scope, catalog]);
+  const scopeParts = useMemo(
+    () => (catalog ? splitScope(catalog, picked) : { core: [], extended: [] }),
+    [catalog, picked]);
+  const scopeMinors = useMemo(() => (catalog ? scopeParts.core.reduce(
+    (total, key) => total + (catalog.majors.find(major => major.key === key)?.minorCategories ?? 0),
+    0) : 0), [catalog, scopeParts.core]);
+  const scopeNeeded = catalog ? requiredRequests(catalog, scopeParts.core) : null;
+  const scopeMissingCore = catalog ? missingCoreMajors(catalog, scopeParts.core) : [];
+
+  function toggleScope(key: MajorCategory, on: boolean) {
+    if (catalog === null) return;
+    setScope(on ? [...new Set([...picked, key])]
+      : picked.filter(item => item !== key));
+  }
+
+  /** 刷新后把已有的补查读回来：结果是服务端的，不靠本地记。 */
+  useEffect(() => {
+    if (task !== undefined && isTerminal(task)) void controller.loadExtensions();
+    // 只跟任务标识与状态走：补查自己的状态变化不该再触发一次列表读取。
+  }, [controller, task?.taskId, task?.status]);
+
+  /**
    * 图层：按当前修订按需取，取到就缓存（控制器按"图层:修订"记），**一次只取一层**。
    *
    * 写成"取一层、状态一变再取下一层"，而不是在循环里连着 await 五层：循环版本会在每次
@@ -376,7 +421,12 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     if (!canStart || !draft) return;
     setCenter(draft); setSelected(null);
     setLayerErrors({}); setFailed({});
-    void controller.start({ center: draft, engine, ...(budget === null ? {} : { budget }) });
+    // 勾选与默认口径一致时不带 `facilities`：请求体保持不变，幂等键也就不会因为一次
+    // 多余的"我选了同样的三类"而换一个指纹。勾选变了才显式声明作用域。
+    const scoped = catalog !== null && scopeParts.core.length > 0
+      && !sameScope(scopeParts.core, catalog.coreMajors);
+    void controller.start({ center: draft, engine, ...(budget === null ? {} : { budget }),
+      ...(scoped ? { categories: scopeParts.core } : {}) });
   }
   function clear() {
     if (controller.clear()) { setSelected(null); setLayerErrors({}); setFailed({}); }
@@ -551,6 +601,34 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             {selectedEngine?.alert && <Alert type="warning" showIcon title={selectedEngine.alert} />}
             {selectedEngine?.caveat && selectedEngine.caveat !== selectedEngine.alert
               && <p className="wb-hint">{selectedEngine.caveat}</p>}
+
+            {catalog !== null ? <div className="wb-scope" data-testid="checkup-scope">
+              <p className="wb-label">设施类别</p>
+              <p className="wb-hint">标"核心"的三类决定总体覆盖率；其余类别按需补查，
+                只出点位与数量，不进入总体分。</p>
+              {catalog.groups.map(group => <fieldset key={group.key}>
+                <legend>{group.label}</legend>
+                {group.majors.map(major => <Checkbox key={major.key}
+                  data-testid={`checkup-scope-${major.key}`}
+                  checked={picked.includes(major.key)}
+                  onChange={event => toggleScope(major.key, event.target.checked)}>
+                  {major.label}{major.core ? '（核心）' : ''}
+                </Checkbox>)}
+              </fieldset>)}
+              {scopeNeeded !== null && <p className="wb-hint" data-testid="checkup-scope-budget">
+                核心口径首轮至少 {scopeNeeded} 次地点检索
+                （{catalog.blocksUpperBound} 个查询分块 × {scopeMinors} 个检索小类）；翻页与细分还要更多。
+              </p>}
+              {scopeMissingCore.length > 0 && <Alert type="warning" showIcon
+                data-testid="checkup-scope-missing"
+                title={`总体覆盖率将无法给出：缺 ${scopeMissingCore.map(categoryLabel).join('、')}`}
+                description="总体区间分只按核心三类加权，不会用已分析的类别重新加权。" />}
+              {scopeParts.extended.length > 0 && <p className="wb-hint" data-testid="checkup-scope-extended">
+                待补查（结果出来后）：{scopeParts.extended.map(categoryLabel).join('、')}
+              </p>}
+            </div> : view !== null ? <p className="wb-hint" data-testid="checkup-scope-unavailable">
+              当前后端不提供设施类别目录，本次按后端的核心口径体检。
+            </p> : null}
             {(view?.quota.label || (view?.quota.lines.length ?? 0) > 0) && <div className="wb-quota">
               {view?.quota.label && <p data-testid="quota-label">{view.quota.label}</p>}
               {view?.quota.lines.map(line => <p key={line}>{line}</p>)}
@@ -669,6 +747,42 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
               onClick={() => void controller.retry()}>{state.recovery === 'unconfirmed' ? '重新提交'
                 : state.recovery === 'expired' || task?.status === 'failed' ? '重新体检' : '重试'}</Button>} />}
         </section>
+
+        {/* 扩展设施补查：独立一轮，只加设施，不改上面的报告与评分。 */}
+        {task !== undefined && isTerminal(task) && catalog !== null && <>
+          <section className="wb-sec wb-extension" aria-label="扩展设施补查">
+            <p className="wb-label">扩展设施补查</p>
+            {scopeParts.extended.length === 0
+              ? <p className="wb-hint" data-testid="checkup-extension-none">
+                  在"采样与引擎"里勾选核心三类之外的类别，就能在这里补查。
+                </p>
+              : <>
+                <p className="wb-hint">复用本次已经算出的圈面，只再检索这几类；
+                  它不发布新修订，也不进入总体覆盖率。</p>
+                <Button size="small" data-testid="checkup-extension-run"
+                  disabled={state.extensionRunning === true}
+                  onClick={() => void controller.extend(scopeParts.extended)}>
+                  {state.extensionRunning === true ? '检索中…'
+                    : `补查 ${scopeParts.extended.map(categoryLabel).join('、')}`}
+                </Button>
+              </>}
+            {state.extensionError && <Alert type="error" showIcon data-testid="checkup-extension-error"
+              title={state.extensionError} />}
+            {(state.extensions?.length ?? 0) > 0 && <ul className="wb-extension-list"
+              data-testid="checkup-extensions">
+              {state.extensions?.map(item => <li key={item.extensionId} data-status={item.status}>
+                <b>{item.categories.map(categoryLabel).join('、')}</b>
+                {' · '}{EXTENSION_STATUS_LABELS[item.status] ?? item.status}
+                {Object.keys(item.countsByCategory).length > 0 && <span className="wb-extension-counts">
+                  {' · '}{Object.entries(item.countsByCategory)
+                    .map(([key, value]) => `${categoryLabel(key)} ${value} 处`).join('，')}
+                </span>}
+                {!EXTENSION_DONE.has(item.status) && <Button type="link" size="small"
+                  onClick={() => void controller.cancelExtension(item.extensionId)}>取消</Button>}
+              </li>)}
+            </ul>}
+          </section>
+        </>}
 
         {snapshot && <section className="wb-sec wb-summary" aria-label="覆盖区间摘要">
           <p className="wb-label">覆盖率</p>

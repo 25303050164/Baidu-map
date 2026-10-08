@@ -10,6 +10,7 @@
  * 让用户自己决定，而不是替他悄悄降级。
  */
 import type { Capabilities, EngineOption } from './validate';
+import { facilityCatalogView, type FacilityCatalogView } from './categories';
 import { waterReviewRefs, type WaterReviewRef } from './water';
 
 type RecordValue = Record<string, unknown>;
@@ -48,6 +49,11 @@ export type CapabilityView = {
   graphState: 'unloaded' | 'loading' | 'ready' | 'unavailable' | null;
   /** 当前部署采用的水系复核（用来认出早于复核的旧版本）；旧后端不给时为空。 */
   waterReviews: WaterReviewRef[];
+  /**
+   * 设施类别目录：类别选择器与预算算术的来源。旧后端不给这一项时为 null，界面据此
+   * 说"这一版不提供类别选择"，而不是显示一份空的类别清单。
+   */
+  facilityCatalog: FacilityCatalogView | null;
 };
 
 function nested(source: RecordValue, ...path: string[]): unknown {
@@ -105,6 +111,7 @@ export function capabilityView(value: Capabilities): CapabilityView {
     quota: quotaSummary(value),
     graphState,
     waterReviews: waterReviewRefs(value.waterReviews),
+    facilityCatalog: facilityCatalogView(value),
   };
 }
 

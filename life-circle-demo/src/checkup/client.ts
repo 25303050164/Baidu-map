@@ -10,8 +10,10 @@
  * `checkup_detail_budget_exhausted`……），`message` 是给读者的话。两个都留下 —— 界面用
  * `message` 显示，逻辑用 `code` 判断，不要拿 `message` 去比对字符串。
  */
-import type { CheckupLayer, CheckupRequest, CheckupSnapshot, CheckupTaskView, FacilityRoute } from './contract';
-import { validCapabilities, validFacilityRoute, validLayer, validSnapshot, validTaskView,
+import type { CheckupLayer, CheckupRequest, CheckupSnapshot, CheckupTaskView,
+  FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView, FacilityRoute } from './contract';
+import { validCapabilities, validFacilityExtensionDocument, validFacilityExtensionView,
+  validFacilityRoute, validLayer, validSnapshot, validTaskView,
   type Capabilities, type LayerId } from './validate';
 
 export class CheckupError extends Error {
@@ -22,6 +24,9 @@ export class CheckupError extends Error {
 export const NOT_READY = 'checkup_result_not_ready';
 export const DETAIL_BUDGET_EXHAUSTED = 'checkup_detail_budget_exhausted';
 export const ROUTE_UNAVAILABLE = 'checkup_route_unavailable';
+/** 补查在花钱之前就被拒的两个原因：界面要把"要多少次、剩多少次"原样显示出来。 */
+export const EXTENSION_BUDGET_TOO_SMALL = 'checkup_extension_budget_too_small';
+export const EXTENSION_DAILY_BUDGET = 'checkup_extension_daily_budget';
 
 export type CheckupService = {
   /** 能力表：能选哪个引擎、哪一档预算，以及本应用预算余额的说法，都从这里来。 */
@@ -33,6 +38,12 @@ export type CheckupService = {
   layer: (taskId: string, layerId: LayerId, revision: number) => Promise<CheckupLayer>;
   cancel: (taskId: string) => Promise<CheckupTaskView>;
   route: (taskId: string, facilityId: string) => Promise<FacilityRoute>;
+  /** 按需补查：复用原任务的圈面，只再查一次扩展类别。 */
+  extensionCreate: (taskId: string, body: FacilityExtensionRequest) => Promise<FacilityExtensionView>;
+  extensionStatus: (taskId: string, extensionId: string, signal?: AbortSignal) => Promise<FacilityExtensionView>;
+  extensionList: (taskId: string, signal?: AbortSignal) => Promise<FacilityExtensionView[]>;
+  extensionResult: (taskId: string, extensionId: string) => Promise<FacilityExtensionDocument>;
+  extensionCancel: (taskId: string, extensionId: string) => Promise<FacilityExtensionView>;
 };
 
 const NOT_FOUND = new Set(['checkup_task_not_found', 'checkup_unknown_engine']);
@@ -145,6 +156,57 @@ export function createCheckupService(
       const path = `/${encodeURIComponent(taskId)}/routes/${encodeURIComponent(facilityId)}`;
       const { body: value } = await request(path, 'POST');
       return checked<FacilityRoute>(value, validFacilityRoute, '设施路线');
+    },
+    async extensionCreate(taskId, body) {
+      const path = `/${encodeURIComponent(taskId)}/facility-extensions`;
+      const { body: value } = await request(path, 'POST', body);
+      const view = checked<FacilityExtensionView>(value, validFacilityExtensionView, '补查状态');
+      // 回来的必须是刚提交的那一次：错配的标识会让轮询盯着别人的补查。
+      if (view.taskId !== taskId || view.clientRequestId !== body.clientRequestId) {
+        throw new CheckupError('体检服务返回了另一次补查的状态，请检查服务版本', 0, 'mismatched_request');
+      }
+      return view;
+    },
+    async extensionStatus(taskId, extensionId, signal) {
+      const path = `/${encodeURIComponent(taskId)}/facility-extensions/${encodeURIComponent(extensionId)}`;
+      const { body: value } = await request(path, 'GET', undefined, signal);
+      const view = checked<FacilityExtensionView>(value, validFacilityExtensionView, '补查状态');
+      if (view.taskId !== taskId || view.extensionId !== extensionId) {
+        throw new CheckupError('体检服务返回了另一次补查的状态，请检查服务版本', 0, 'mismatched_task');
+      }
+      return view;
+    },
+    async extensionList(taskId, signal) {
+      const path = `/${encodeURIComponent(taskId)}/facility-extensions`;
+      const { body: value } = await request(path, 'GET', undefined, signal);
+      if (!Array.isArray(value)) {
+        throw new CheckupError('体检服务返回的补查列表结构异常，请检查服务版本', 0, 'invalid_response');
+      }
+      const views = value.map(item =>
+        checked<FacilityExtensionView>(item, validFacilityExtensionView, '补查状态'));
+      // 列表里混进别的任务的补查，等于把一次越权访问当成一次成功读取。
+      if (views.some(item => item.taskId !== taskId)) {
+        throw new CheckupError('补查列表里出现了不属于本任务的记录，请检查服务版本', 0, 'mismatched_task');
+      }
+      return views;
+    },
+    async extensionResult(taskId, extensionId) {
+      const path = `/${encodeURIComponent(taskId)}/facility-extensions/${encodeURIComponent(extensionId)}/result`;
+      const { body: value } = await request(path, 'GET');
+      const document = checked<FacilityExtensionDocument>(value, validFacilityExtensionDocument, '补查结果');
+      if (document.taskId !== taskId || document.extensionId !== extensionId) {
+        throw new CheckupError('补查结果与请求的任务或补查不符，请检查服务版本', 0, 'mismatched_revision');
+      }
+      return document;
+    },
+    async extensionCancel(taskId, extensionId) {
+      const path = `/${encodeURIComponent(taskId)}/facility-extensions/${encodeURIComponent(extensionId)}/cancel`;
+      const { body: value } = await request(path, 'POST');
+      const view = checked<FacilityExtensionView>(value, validFacilityExtensionView, '补查状态');
+      if (view.taskId !== taskId || view.extensionId !== extensionId) {
+        throw new CheckupError('体检服务返回了另一次补查的状态，请检查服务版本', 0, 'mismatched_task');
+      }
+      return view;
     },
   };
 }

@@ -25,10 +25,11 @@ TaskStatus = Literal["queued", "running", "cancelling", "completed", "failed", "
 BusinessStatus = Literal["complete", "partial", "insufficient"]
 Stage = Literal["isochrone", "poi", "accessibility", "verification", "reporting", "ready"]
 
-# Fixed first-release budgets. A request may lower them, never raise them.
+# The default remains conservative for the core scope. Explicitly requesting
+# the expanded taxonomy may raise the task pool up to the primary-query bound.
 DEFAULT_POI_REQUESTS = 60
 DEFAULT_ROUTE_REQUESTS = 120
-MAX_POI_REQUESTS = 60
+MAX_POI_REQUESTS = 160
 MAX_ROUTE_REQUESTS = 120
 DETAIL_ROUTE_REQUESTS = 20
 
@@ -38,6 +39,8 @@ DETAIL_ROUTE_REQUESTS = 20
 QUERY_PADDING_M = int(service_rules.QUERY_PADDING_M)
 
 TERMINAL: frozenset[str] = frozenset({"completed", "failed", "cancelled"})
+#: 一次补查的终态。``partial`` 也是终态：它带回了部分页面，不会自己继续。
+EXTENSION_TERMINAL: frozenset[str] = frozenset({"completed", "partial", "failed", "cancelled"})
 
 
 class CheckupModel(BaseModel):
@@ -52,7 +55,7 @@ class CheckupIsochrone(CheckupModel):
 
 
 class CheckupFacilities(CheckupModel):
-    categories: tuple[MajorCategory, ...] = tuple(catalog.majors())
+    categories: tuple[MajorCategory, ...] = tuple(catalog.default_analysis_majors())
     max_poi_requests: int = Field(default=DEFAULT_POI_REQUESTS, ge=1, le=MAX_POI_REQUESTS)
     max_route_requests: int = Field(default=DEFAULT_ROUTE_REQUESTS, ge=1, le=MAX_ROUTE_REQUESTS)
 
@@ -149,6 +152,71 @@ class FacilityGroup(CheckupModel):
     statistics: dict = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     stop_reason: str | None = None
+
+
+class FacilityExtensionRequest(CheckupModel):
+    """按需补查：复用原体检已经算出的圈面，只再跑一次设施检索。
+
+    扩展类别产出点位、数量和分类统计，**不**进入核心综合分，也不进入综合灰区：
+    原体检的修订、评分和报告不因为一次补查而改变。这样"十类设施"是加出来的，
+    不是把有业务依据的三类口径换掉。
+    """
+    schema_version: Literal["checkup-v1"] = SCHEMA_VERSION
+    client_request_id: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
+    categories: tuple[MajorCategory, ...]
+    #: 不给就按类别数推导一个够用的下限；给了但不够就明确拒绝，不静默少查。
+    max_poi_requests: int | None = Field(default=None, ge=1, le=MAX_POI_REQUESTS)
+
+    @model_validator(mode="after")
+    def unique_categories(self):
+        if len(set(self.categories)) != len(self.categories):
+            raise ValueError("duplicate facility category")
+        if not self.categories:
+            raise ValueError("at least one facility category is required")
+        return self
+
+
+class FacilityExtensionView(CheckupModel):
+    """一次补查的状态。它有自己的标识和预算，不占用原任务的设施额度。"""
+    extension_id: str
+    task_id: str
+    base_revision: int = Field(ge=1)
+    client_request_id: str
+    status: Literal["queued", "running", "completed", "partial", "failed", "cancelled"]
+    stage: Literal["poi", "ready"] | None = None
+    categories: list[MajorCategory]
+    budget: dict = Field(default_factory=dict)
+    requests: int = Field(default=0, ge=0)
+    network_requests: int = Field(default=0, ge=0)
+    facilities_status: str | None = None
+    counts_by_category: dict[str, int] = Field(default_factory=dict)
+    error: str | None = None
+    created_at: float
+    finished_at: float | None = None
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in EXTENSION_TERMINAL
+
+
+class FacilityExtensionDocument(CheckupModel):
+    """一次补查的完整结果。
+
+    ``group`` 为 null 只有一个意思：这次检索没有产出可用结果（具名原因在
+    ``issues`` 里）。它绝不是"这片区域没有这类设施"，空清单与空目录是两件事。
+    """
+    extension_id: str
+    task_id: str
+    base_revision: int = Field(ge=1)
+    categories: list[MajorCategory]
+    status: Literal["completed", "partial", "failed", "cancelled"]
+    facilities_status: str | None = None
+    group: FacilityGroup | None = None
+    requests: int = Field(default=0, ge=0)
+    network_requests: int = Field(default=0, ge=0)
+    budget: dict = Field(default_factory=dict)
+    issues: list[Issue] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
 
 
 class CategoryCoverage(CheckupModel):
@@ -591,6 +659,12 @@ class CheckupCapabilities(CheckupModel):
     data_versions: dict
     coverage: dict
     budgets: dict
+    #: §3.4 的跨任务复用窗口：``freshnessSeconds`` 为 null 表示缓存只在同一个任务内复用，
+    #: 所以重复体检同一片区域不会省下任何请求。这个开关要让用户看得见。
+    cache: dict = Field(default_factory=dict)
+    #: 设施目录的 v2 视图（展示组 / 大类 / 每类检索小类数 / 哪几类是核心口径）：
+    #: 类别选择器和预算算术都从这里来，不在界面里另写一份分类表。
+    facility_categories: dict = Field(default_factory=dict)
     # The application's own remaining allowance, never the account's.
     quota: dict
     #: Water reviews this deployment applies: ``[{reviewId, version, label, title, bbox}]``.

@@ -47,16 +47,43 @@ CREATE TABLE IF NOT EXISTS revisions (
     payload TEXT NOT NULL,
     PRIMARY KEY (task_id, revision)
 );
+CREATE TABLE IF NOT EXISTS facility_extensions (
+    extension_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    client_request_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    base_revision INTEGER NOT NULL,
+    categories TEXT NOT NULL,
+    budget INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    stage TEXT,
+    requests INTEGER NOT NULL DEFAULT 0,
+    network_requests INTEGER NOT NULL DEFAULT 0,
+    document TEXT,
+    counts_by_category TEXT,
+    facilities_status TEXT,
+    error TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    finished_at REAL,
+    UNIQUE (task_id, client_request_id)
+);
 """
 #: Columns added after the first release, with their declarations. A store
 #: created before them is migrated in place; existing rows read them as NULL,
 #: which the view reports as "not recorded" rather than inventing a time.
 ADDED_COLUMNS = (("stage_started_at", "REAL"), ("activity_at", "REAL"), ("progress", "TEXT"))
+#: 补查表同理：早于它的库按原样读回，不编造缺的字段。
+EXTENSION_ADDED_COLUMNS = (("facilities_status", "TEXT"),)
 #: What ``update`` may write. ``progress`` is the worker's in-stage step (a JSON
 #: object); ``stage_started_at`` and ``activity_at`` are maintained here, never
 #: passed in.
 UPDATABLE = frozenset({"status", "stage", "business_status", "requests", "network_requests",
                        "started_at", "finished_at", "cancel_requested", "error", "progress"})
+#: 补查行可以改的字段。``document`` 是结果文件的相对路径，写入即意味着这次补查定稿。
+EXTENSION_UPDATABLE = frozenset({"status", "stage", "requests", "network_requests",
+                                 "document", "counts_by_category", "facilities_status",
+                                 "error", "finished_at"})
 
 
 class RequestIdConflict(Exception):
@@ -65,6 +92,10 @@ class RequestIdConflict(Exception):
 
 class TaskNotFound(LookupError):
     """Unknown or pruned task id."""
+
+
+class ExtensionNotFound(LookupError):
+    """Unknown补查 id，或它不属于这个任务。"""
 
 
 @dataclass(frozen=True)
@@ -109,6 +140,43 @@ def _record(row) -> TaskRecord:
         progress=None if row["progress"] is None else json.loads(row["progress"]))
 
 
+@dataclass(frozen=True)
+class ExtensionRecord:
+    """一次按需补查的行：它自己的预算、状态和结果文件。"""
+    extension_id: str
+    task_id: str
+    client_request_id: str
+    fingerprint: str
+    base_revision: int
+    categories: list[str]
+    budget: int
+    status: str
+    stage: str | None
+    requests: int
+    network_requests: int
+    document_path: str | None
+    counts_by_category: dict
+    facilities_status: str | None
+    error: str | None
+    created_at: float
+    updated_at: float
+    finished_at: float | None
+
+
+def _extension_record(row) -> ExtensionRecord:
+    return ExtensionRecord(
+        extension_id=row["extension_id"], task_id=row["task_id"],
+        client_request_id=row["client_request_id"], fingerprint=row["fingerprint"],
+        base_revision=row["base_revision"], categories=json.loads(row["categories"]),
+        budget=row["budget"], status=row["status"], stage=row["stage"],
+        requests=row["requests"], network_requests=row["network_requests"],
+        document_path=row["document"], error=row["error"], created_at=row["created_at"],
+        updated_at=row["updated_at"], finished_at=row["finished_at"],
+        facilities_status=row["facilities_status"],
+        counts_by_category=({} if not row["counts_by_category"]
+                            else json.loads(row["counts_by_category"])))
+
+
 class CheckupStore:
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -142,6 +210,12 @@ class CheckupStore:
             for name, declaration in ADDED_COLUMNS:
                 if name not in present:
                     connection.execute(f"ALTER TABLE tasks ADD COLUMN {name} {declaration}")
+            extension_columns = {row["name"] for row in
+                                 connection.execute("PRAGMA table_info(facility_extensions)")}
+            for name, declaration in EXTENSION_ADDED_COLUMNS:
+                if name not in extension_columns:
+                    connection.execute(
+                        f"ALTER TABLE facility_extensions ADD COLUMN {name} {declaration}")
 
     def interrupt_unfinished(self) -> int:
         """Fail every queued/running/cancelling task as ``interrupted_by_restart``.
@@ -161,6 +235,12 @@ class CheckupStore:
                 " error='interrupted_by_restart', updated_at=?"
                 " WHERE status IN ('queued','running','cancelling')",
                 (time.time(), time.time()))
+            # 补查走同一条重启语义：没跑完的补查不会自己续上，也不会重放任何已付费的请求。
+            # 它不动原任务，所以原体检的报告仍然可以照常查看。
+            connection.execute(
+                "UPDATE facility_extensions SET status='failed', stage=NULL, finished_at=?,"
+                " error='interrupted_by_restart', updated_at=?"
+                " WHERE status IN ('queued','running')", (time.time(), time.time()))
             return cursor.rowcount
 
     def artifact_dir(self, task_id: str) -> Path:
@@ -301,3 +381,97 @@ class CheckupStore:
         if row is None:
             return None
         return {**dict(row), "snapshot": json.loads((self.root / row["payload"]).read_text("utf-8"))}
+
+    # -- 按需补查 -----------------------------------------------------------
+
+    def create_extension(self, *, extension_id: str, task_id: str, client_request_id: str,
+                         fingerprint: str, base_revision: int, categories, budget: int):
+        """Insert once per (task, client request id); identical repeats return the same row.
+
+        幂等键按任务隔离：两个任务里的同一个客户端请求标识是两次不同的补查。
+        """
+        now = time.time()
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM facility_extensions WHERE task_id=? AND client_request_id=?",
+                (task_id, client_request_id)).fetchone()
+            if existing is not None:
+                connection.execute("COMMIT")
+                if existing["fingerprint"] != fingerprint:
+                    raise RequestIdConflict(client_request_id)
+                return _extension_record(existing), False
+            connection.execute(
+                "INSERT INTO facility_extensions (extension_id, task_id, client_request_id,"
+                " fingerprint, base_revision, categories, budget, status, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,'queued',?,?)",
+                (extension_id, task_id, client_request_id, fingerprint, base_revision,
+                 json.dumps(list(categories), ensure_ascii=False), budget, now, now))
+            connection.execute("COMMIT")
+            return self._extension(extension_id), True
+
+    def _extension(self, extension_id: str) -> ExtensionRecord:
+        with self._connection() as connection:
+            row = connection.execute("SELECT * FROM facility_extensions WHERE extension_id=?",
+                                     (extension_id,)).fetchone()
+        if row is None:
+            raise ExtensionNotFound(extension_id)
+        return _extension_record(row)
+
+    def extension(self, extension_id: str) -> ExtensionRecord:
+        return self._extension(extension_id)
+
+    def extensions_of(self, task_id: str) -> list[ExtensionRecord]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM facility_extensions WHERE task_id=? ORDER BY created_at,"
+                " extension_id", (task_id,)).fetchall()
+        return [_extension_record(row) for row in rows]
+
+    def claim_extension(self, extension_id: str) -> bool:
+        """queued -> running 恰好一次，所以两个 worker 不会同时开始同一次补查。"""
+        now = time.time()
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "UPDATE facility_extensions SET status='running', stage='poi', updated_at=?"
+                " WHERE extension_id=? AND status='queued'", (now, extension_id))
+            return cursor.rowcount == 1
+
+    def update_extension(self, extension_id: str, **fields) -> ExtensionRecord:
+        unknown = set(fields) - EXTENSION_UPDATABLE
+        if unknown:
+            raise ValueError(f"unknown extension fields: {sorted(unknown)}")
+        if not fields:
+            return self._extension(extension_id)
+        if "counts_by_category" in fields and fields["counts_by_category"] is not None:
+            fields["counts_by_category"] = json.dumps(fields["counts_by_category"],
+                                                      ensure_ascii=False, sort_keys=True)
+        assignments = [f"{name}=?" for name in fields]
+        with self._connection() as connection:
+            connection.execute(
+                f"UPDATE facility_extensions SET {', '.join(assignments)}, updated_at=?"
+                " WHERE extension_id=?", (*fields.values(), time.time(), extension_id))
+        return self._extension(extension_id)
+
+    def finish_extension(self, extension_id: str, *, status: str, document_path: str | None,
+                         counts_by_category: dict | None = None, requests: int = 0,
+                         network_requests: int = 0, facilities_status: str | None = None,
+                         error: str | None = None) -> ExtensionRecord:
+        """定稿一次补查。``document_path`` 在行上出现就意味着结果已经落到磁盘。"""
+        return self.update_extension(
+            extension_id, status=status, stage="ready" if document_path else None,
+            document=document_path, counts_by_category=counts_by_category,
+            requests=requests, network_requests=network_requests,
+            facilities_status=facilities_status, error=error, finished_at=time.time())
+
+    def extension_document(self, extension_id: str) -> dict | None:
+        record = self._extension(extension_id)
+        if record.document_path is None:
+            return None
+        return json.loads((self.root / record.document_path).read_text("utf-8"))
+
+    def publish_extension_document(self, extension_id: str, task_id: str, document: dict) -> str:
+        """先把结果写到磁盘，再由调用方把它记进行里 —— 与修订同序，半写不入索引。"""
+        relative = Path("tasks") / task_id / f"extension-{extension_id}.json"
+        atomic_dump(self.root / relative, document)
+        return relative.as_posix()

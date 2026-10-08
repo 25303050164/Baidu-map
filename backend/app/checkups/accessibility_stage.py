@@ -36,8 +36,8 @@ from ..accessibility.zones import CellRecord, merge_zones
 from ..algorithms.hybrid_isochrone.hard_obstacles import load_obstacles
 from ..contracts import Issue
 from ..geo.coordinates import wgs84_to_bd09
-from ..scoring import (CATEGORY_WEIGHT, CategoryAreas, area_tolerance, category_score,
-                       interval_degenerates, overall_score)
+from ..scoring import (CategoryAreas, DEFAULT_SCORING_CATEGORIES, area_tolerance, category_score,
+                       category_weights, interval_degenerates, overall_score)
 from .models import (DISTANCE_RULE, AccessibilityEvidence, CategoryCoverage, HeatmapEvidence,
                      ScoreEvidence, ServiceGapsEvidence, ServiceZone, WaterDataEvidence)
 from .water_data import water_evidence
@@ -447,7 +447,13 @@ def _overall_payload(overall) -> dict:
 
 
 def _score(evaluated, domain_area_m2: float) -> ScoreEvidence:
-    """§7.1 的区间分。缺空间支持的类别不给百分比，也不参与总体分。"""
+    """§7.1 的区间分。缺空间支持的类别不给百分比，也不参与总体分。
+
+    总体分的口径固定是**核心分析范围**（三大类各 1/3），不是这一次请求的类别集合。
+    两个方向都会错：请求两类时把两类等权，等于用"这次只看了两类"冒充"三类总分"；
+    请求十类时按十类等权，则把 1/3 的业务权重悄悄换成 1/10，而那个权重没有任何依据。
+    扩展类别照常出自己的一行，只是不进总体分。
+    """
     scores, rows = {}, []
     for item in evaluated:
         score = category_score(item.category, item.areas, domain_area_m2=domain_area_m2,
@@ -463,10 +469,11 @@ def _score(evaluated, domain_area_m2: float) -> ScoreEvidence:
                      "unavailableReason": score.unavailable_reason})
     return ScoreEvidence(
         domain_area_m2=domain_area_m2, categories=rows,
-        overall=_overall_payload(overall_score(scores)),
+        overall=_overall_payload(overall_score(
+            scores, expected_categories=DEFAULT_SCORING_CATEGORIES)),
         formula={"coverageLower": "100*C/A", "coverageUpper": "100*(C+U)/A",
                  "assessable": "100*(C+G)/A", "identity": "C+G+U=A",
-                 "categoryWeights": {item.category: CATEGORY_WEIGHT for item in evaluated}})
+                 "categoryWeights": category_weights(DEFAULT_SCORING_CATEGORIES)})
 
 
 def _zone_payload(zone, projection) -> ServiceZone:

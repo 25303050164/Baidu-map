@@ -319,7 +319,8 @@ def test_invalid_configuration_is_refused():
     with pytest.raises(ValueError, match='empty_query_domain'):
         build(QueryDomain(((0.0, 0.0), (0.0, 0.0), (0.0, 0.0))))
     with pytest.raises(ValueError, match='unknown_category'):
-        build(QueryDomain.circle(1300), categories=('supermarket',))
+        # ``supermarket`` 现在在设施目录里（购物），换一个目录里真的没有的名字。
+        build(QueryDomain.circle(1300), categories=('no_such_category',))
     with pytest.raises(ValueError, match='budget must be a positive integer'):
         build(QueryDomain.circle(1300), budget=0)
     with pytest.raises(ValueError, match='at least one category required'):
@@ -333,3 +334,47 @@ def test_the_planner_takes_the_request_centre():
                             categories=CATEGORIES, budget=60, source='synthetic')
     assert len(planner.coarse) == 4
     assert len(planner.sequences) == 4 * sum(len(RULES['queries'][c]) for c in CATEGORIES)
+
+
+def test_a_throttled_page_is_retried_once_and_the_round_keeps_going():
+    """一次并发超限不再终止整轮：重试成功之后，剩下的查询照常跑完。
+
+    这是"十大类下百度并发限制导致拿不到结果"的直接修复：以前第一次 401 就让整轮归零，
+    现在它只花掉一次有界重试，并且仍被记进它自己的分块记录里。
+    """
+    looked = []
+
+    class ThrottleOnce:
+        async def __call__(self, sequence, page):
+            looked.append(sequence['sequenceId'])
+            if len(looked) == 1:
+                return None, 'rate_limit'
+            return page_of_one(sequence, page), None
+
+    planner = build(QueryDomain.circle(1300), budget=10, categories=('pharmacy',))
+    result = asyncio.run(planner.run(ThrottleOnce()))
+    assert result.stop_reason is None
+    assert result.status == 'completed'
+    assert 'rate_limit' not in result.warnings
+    # 第一次失败留在它自己的页面记录里，没有被抹掉，也没有被读成"这里没有设施"。
+    errors = [error for item in result.coverage for error in item['pageErrors']]
+    assert [error['reason'] for error in errors] == ['rate_limit']
+    assert errors[0]['pageNum'] == 0
+
+
+def test_persistent_throttling_pauses_after_one_bounded_retry_and_keeps_progress():
+    """持续限流：同一页重试一次就暂停本轮，不是每一类都先花一次请求再说。"""
+    looked = []
+
+    class AlwaysThrottled:
+        async def __call__(self, sequence, page):
+            looked.append(sequence['sequenceId'])
+            return None, 'rate_limit'
+
+    planner = build(QueryDomain.circle(1300), budget=60, categories=('pharmacy',))
+    result = asyncio.run(planner.run(AlwaysThrottled()))
+    assert len(looked) == 2 and looked[0] == looked[1]
+    assert result.attempts == 2
+    assert result.stop_reason == 'rate_limit' and 'rate_limit' in result.warnings
+    assert result.status == 'failed'
+    assert {item['stopReason'] for item in result.coverage} == {'rate_limit'}

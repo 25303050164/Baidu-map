@@ -20,6 +20,7 @@ import json
 import math
 import time
 from contextlib import AsyncExitStack
+from types import SimpleNamespace
 from uuid import uuid4
 
 from life_circle.coordinates import LocalProjection, normalize
@@ -28,21 +29,26 @@ from life_circle.models import CancelToken
 from ..accessibility.grid import AssessmentCancelled
 from ..algorithms.osm_offline.lazy import resolve
 from ..cache import KeyedCache
-from ..catalog import major_of
+from ..catalog import major_of, poi_keys
 from ..contracts import Issue, Origin
 from ..engines import EngineContext, IsochroneAsk, IsochroneSnapshot, canonical_hash
 from ..engines.protocol import EngineCancelled
+from ..poi.online import coarse_blocks
 from ..poi.planner import RULES as POI_RULES
-from ..quota import attach_token
+from ..quota import PLACE, attach_token
 from .accessibility_stage import AccessibilityOutcome, assess_accessibility
 from .facilities import FacilityOutcome, collect_facilities, stale_for
-from .models import (DETAIL_ROUTE_REQUESTS, DISTANCE_RULE, RULE_VERSION, TERMINAL, CheckupRequest,
-                     CheckupSnapshot, CheckupTaskView, EngineRef, FacilityGroup, FacilityRoute,
-                     ReportEvidence, ScopeEvidence, TaskProgress, new_trace)
+from .facility_stage import query_domain
+from .models import (DEFAULT_POI_REQUESTS, DETAIL_ROUTE_REQUESTS, DISTANCE_RULE,
+                     EXTENSION_TERMINAL, MAX_POI_REQUESTS, QUERY_PADDING_M, RULE_VERSION, TERMINAL,
+                     CheckupFacilities, CheckupRequest, CheckupSnapshot, CheckupTaskView, EngineRef,
+                     FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView,
+                     FacilityGroup, FacilityRoute, ReportEvidence, ScopeEvidence, TaskProgress,
+                     new_trace)
 from .progress import StepReporter, category_label
 from .reporting_stage import build_report
 from .routes import DETAIL_POOL, RoutesUnavailable, open_online as open_routes
-from .store import CheckupStore, RequestIdConflict, TaskNotFound
+from .store import CheckupStore, ExtensionNotFound, RequestIdConflict, TaskNotFound
 from .verification_stage import (VerificationOutcome, carried_over, judge_route,
                                  refusal as verification_refusal, verify_facilities)
 
@@ -65,6 +71,14 @@ OPTIONAL_ANALYSIS_FIELDS = ("water",)
 #: 重启或淘汰之后这个任务的详情额度从 20 重新计起，账本上的消耗不会被抹掉。任务记录的
 #: 累计计数写的是整趟流水线的用量，点击详情不改写它 —— 让它和正在跑的阶段互相覆盖，
 #: 只会把两边都算错。
+#: 按需补查自带的三条口径，随结果一起冻结：它们是读这份结果时必须知道的事。
+EXTENSION_NOTES = (
+    "按需补查：复用原体检已经算出的圈面，只再跑一次设施检索，不重新成圈。",
+    "扩展类别只做点位、数量和分类展示：不进入核心综合分，也不进入综合灰区，"
+    "原体检的修订、评分与报告不因一次补查而改变。",
+    "关键词检索查完不等于现实目录完整：这里的数量是本次检索到的记录，不是设施总量。",
+)
+
 DETAIL_BUCKETS = 256
 
 
@@ -210,6 +224,12 @@ class CheckupManager:
         self.tokens: dict[str, CancelToken] = {}
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.worker: asyncio.Task | None = None
+        # 按需补查有自己的队列和 worker：它不进主流程的修订链，所以一次补查失败或
+        # 被取消都不会碰到已经发布的报告。它和主流程共用同一个 place 服务池，
+        # 两者加起来仍然只有一个调度点、一本日账。
+        self.extension_queue: asyncio.Queue[str] = asyncio.Queue()
+        self.extension_worker: asyncio.Task | None = None
+        self.extension_tokens: dict[str, CancelToken] = {}
         self.closing = False
 
     # -- admission ---------------------------------------------------------
@@ -228,6 +248,8 @@ class CheckupManager:
         if self.worker is None or self.worker.done():
             self.closing = False
             self.worker = asyncio.create_task(self._serve())
+        if self.extension_worker is None or self.extension_worker.done():
+            self.extension_worker = asyncio.create_task(self._serve_extensions())
 
     def submit(self, payload: CheckupRequest) -> tuple[CheckupTaskView, bool]:
         engine = self.registry.get(payload.engine)
@@ -1004,10 +1026,199 @@ class CheckupManager:
                 token.cancel()
         return self.view(self.store.get(task_id)), True
 
+    # -- 按需补查 ----------------------------------------------------------
+
+    def submit_extension(self, task_id: str, payload: FacilityExtensionRequest) -> FacilityExtensionView:
+        """为一次已完成的体检补查若干设施大类。
+
+        发请求之前先把"够不够"算清楚：预算不足或今天额度不够就带数字拒绝，而不是
+        先收下一个注定查不完的补查，再让用户看到一个没有原因的失败。
+        """
+        parent = self.get(task_id)
+        stored = self.store.revision(task_id)
+        if stored is None:
+            raise CheckupError(409, "checkup_extension_boundary_unavailable",
+                               "原体检还没有可用的圈面，暂时无法补查设施")
+        isochrone = stored["snapshot"].get("isochrone") or {}
+        geometry = isochrone.get("geometry")
+        if geometry is None:
+            raise CheckupError(409, "checkup_extension_boundary_unavailable",
+                               "原体检的圈面没有可用几何，无法补查设施")
+        origin = normalize((parent.payload["center"]["lng"], parent.payload["center"]["lat"]))
+        try:
+            domain, _widened = query_domain(geometry, origin, QUERY_PADDING_M)
+        except ValueError:
+            raise CheckupError(409, "checkup_extension_boundary_unavailable",
+                               "原体检的圈面无法转成查询范围，无法补查设施") from None
+        blocks = len(coarse_blocks(domain))
+        minors = poi_keys(payload.categories)
+        required = blocks * len(minors)
+        requested = payload.max_poi_requests or min(MAX_POI_REQUESTS,
+                                                    max(DEFAULT_POI_REQUESTS, required))
+        if required > requested:
+            raise CheckupError(
+                422, "checkup_extension_budget_too_small",
+                f"补查 {len(payload.categories)} 个设施大类至少需要 {required} 次地点检索"
+                f"（{blocks} 个查询分块 × {len(minors)} 个检索小类，每类先取主关键词一次），"
+                f"但这次只给了 {requested} 次。请提高补查预算或减少类别。"
+                f"这是下界，密集区域的翻页与细分还需要更多次数。")
+        remaining_today = self.quota.remaining(PLACE)
+        if remaining_today is not None and remaining_today < required:
+            raise CheckupError(
+                429, "checkup_extension_daily_budget",
+                f"今天的地点检索额度不足以完成这次补查：至少需要 {required} 次，"
+                f"本应用今天还剩 {remaining_today} 次。请减少类别，"
+                f"或在次日（北京时间）额度恢复后再补查。")
+        fingerprint = canonical_hash({
+            "taskId": task_id, "baseRevision": stored["revision"],
+            "categories": sorted(payload.categories), "maxPoiRequests": requested})
+        try:
+            record, created = self.store.create_extension(
+                extension_id=str(uuid4()), task_id=task_id,
+                client_request_id=payload.client_request_id, fingerprint=fingerprint,
+                base_revision=stored["revision"], categories=list(payload.categories),
+                budget=requested)
+        except RequestIdConflict:
+            raise CheckupError(409, "checkup_extension_request_id_conflict",
+                               "该请求标识已用于不同参数的补查") from None
+        if created:
+            self.extension_queue.put_nowait(record.extension_id)
+            self.start()
+        return self.extension_view(record)
+
+    def extensions(self, task_id: str) -> list[FacilityExtensionView]:
+        self.get(task_id)
+        return [self.extension_view(record) for record in self.store.extensions_of(task_id)]
+
+    def extension(self, task_id: str, extension_id: str) -> FacilityExtensionView:
+        return self.extension_view(self._extension_of(task_id, extension_id))
+
+    def extension_document(self, task_id: str, extension_id: str) -> FacilityExtensionDocument:
+        record = self._extension_of(task_id, extension_id)
+        document = self.store.extension_document(extension_id)
+        if document is None:
+            raise CheckupError(409, "checkup_extension_result_not_ready", "补查结果尚未就绪")
+        return FacilityExtensionDocument(**document)
+
+    def cancel_extension(self, task_id: str, extension_id: str) -> FacilityExtensionView:
+        """取消一次补查。原体检不受影响 —— 它从来没有等过这次补查。"""
+        record = self._extension_of(task_id, extension_id)
+        if record.status in EXTENSION_TERMINAL:
+            return self.extension_view(record)
+        if record.status == "queued":
+            self.store.update_extension(extension_id, status="cancelled", finished_at=time.time())
+        else:
+            token = self.extension_tokens.get(extension_id)
+            if token is not None:
+                token.cancel()
+        return self.extension_view(self.store.extension(extension_id))
+
+    def _extension_of(self, task_id: str, extension_id: str):
+        try:
+            record = self.store.extension(extension_id)
+        except ExtensionNotFound:
+            raise CheckupError(404, "checkup_extension_not_found", "补查不存在或已过期") from None
+        if record.task_id != task_id:
+            # 一个任务读不到另一个任务的补查：这是一次越权的数据访问，不是一个空结果。
+            raise CheckupError(404, "checkup_extension_not_found", "该补查不属于这个任务") from None
+        return record
+
+    def extension_view(self, record) -> FacilityExtensionView:
+        spent = record.network_requests
+        return FacilityExtensionView(
+            extension_id=record.extension_id, task_id=record.task_id,
+            base_revision=record.base_revision, client_request_id=record.client_request_id,
+            status=record.status, stage=record.stage, categories=list(record.categories),
+            budget={"limit": record.budget, "spent": spent,
+                    "remaining": max(0, record.budget - spent)},
+            requests=record.requests, network_requests=spent,
+            facilities_status=record.facilities_status,
+            counts_by_category=record.counts_by_category, error=record.error,
+            created_at=record.created_at, finished_at=record.finished_at)
+
+    async def _serve_extensions(self) -> None:
+        while True:
+            extension_id = await self.extension_queue.get()
+            try:
+                if not self.closing:
+                    await self._run_extension(extension_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # 补查必须走到终态，哪怕编排本身出错；原因被记下，原始异常不外泄。
+                self.store.finish_extension(extension_id, status="failed", document_path=None,
+                                            error="orchestration_failed")
+            finally:
+                self.extension_queue.task_done()
+
+    async def _run_extension(self, extension_id: str) -> None:
+        if not self.store.claim_extension(extension_id):
+            return
+        record = self.store.extension(extension_id)
+        parent = CheckupRequest(**self.store.get(record.task_id).payload)
+        stored = self.store.revision(record.task_id, record.base_revision)
+        if stored is None:
+            self.store.finish_extension(extension_id, status="failed", document_path=None,
+                                        error="boundary_missing")
+            return
+        isochrone = stored["snapshot"].get("isochrone") or {}
+        # 只借用圈面的几何与质量：设施检索读到的就是这两样，别的都不该由补查决定。
+        snapshot = SimpleNamespace(geometry=isochrone.get("geometry"),
+                                   quality=isochrone.get("quality"))
+        payload = parent.model_copy(update={
+            "facilities": CheckupFacilities(categories=tuple(record.categories),
+                                            max_poi_requests=record.budget,
+                                            max_route_requests=1)})
+        # 只有 POI 这一个池会被用到：补查不成圈，也不请求步行路线。
+        budget = self.quota.task_budget(isochrone=0, poi=record.budget, route=0, detail=0)
+        token = CancelToken()
+        self.extension_tokens[extension_id] = token
+        # 缓存用原任务的标识：核心三类已经取过的页面在这里算"同任务命中"，不再付费。
+        context = EngineContext(task_id=record.task_id, token=token,
+                                deadline=time.monotonic() + DEADLINE_SECONDS,
+                                artifact_dir=self.store.artifact_dir(record.task_id))
+        try:
+            outcome = await collect_facilities(
+                payload, snapshot, settings=self.settings, context=context, quota=self.quota,
+                budget=budget, cache=self.cache, places_factory=self.place_factory,
+                progress=lambda sent, limit: self.store.update_extension(
+                    extension_id, network_requests=sent))
+        finally:
+            self.extension_tokens.pop(extension_id, None)
+        document = FacilityExtensionDocument(
+            extension_id=extension_id, task_id=record.task_id, base_revision=record.base_revision,
+            categories=list(record.categories), status=_extension_status(outcome, token),
+            facilities_status=(outcome.group.query_status if outcome.group is not None else None),
+            group=outcome.group, requests=outcome.requests,
+            network_requests=outcome.network_requests, budget=budget.state().get("poi", {}),
+            issues=outcome.issues, notes=list(EXTENSION_NOTES))
+        path = self.store.publish_extension_document(extension_id, record.task_id,
+                                                     document.model_dump(mode="json", by_alias=True))
+        self.store.finish_extension(
+            extension_id, status=document.status, document_path=path,
+            counts_by_category=(outcome.group.counts_by_category
+                                if outcome.group is not None else {}),
+            facilities_status=document.facilities_status, requests=outcome.requests,
+            network_requests=outcome.network_requests,
+            error=None if outcome.group is not None else "no_facilities_retrieved")
+
     async def close(self) -> None:
         self.closing = True
         for token in list(self.tokens.values()):
             token.cancel()
+        for token in list(self.extension_tokens.values()):
+            token.cancel()
         if self.worker is not None and not self.worker.done():
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
+        if self.extension_worker is not None and not self.extension_worker.done():
+            self.extension_worker.cancel()
+            await asyncio.gather(self.extension_worker, return_exceptions=True)
+
+
+def _extension_status(outcome: FacilityOutcome, token: CancelToken) -> str:
+    """检索器的 ``queryStatus`` → 补查自己的状态。被取消的补查仍然是"取消"。"""
+    if token.cancelled:
+        return "cancelled"
+    return {"complete": "completed", "partial": "partial", "cancelled": "cancelled"}.get(
+        outcome.status, "failed")

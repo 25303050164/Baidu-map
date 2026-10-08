@@ -80,6 +80,9 @@ class MetredAnalyticProvider(EndpointAnalyticProvider):
 def make_app(tmp_path, provider_factory=None, **overrides):
     settings = Settings(
         _env_file=None, baidu_map_ak="", analysis_provider="synthetic",
+        # 档位切换点必须固定在测试里：默认值是一个真实日期，过了那天这个夹具就会
+        # 悄悄换成保守档，能力表和额度断言的失败与代码无关。
+        baidu_quota_fallback_at="2099-01-01T00:00:00+08:00",
         checkup_dir=tmp_path / "checkups", hybrid_ledger_dir=tmp_path / "ledgers",
         quota_ledger_path=tmp_path / "quota.sqlite3",
         hybrid_obstacle_path=Path("missing-checkup-obstacles"),
@@ -450,6 +453,16 @@ def test_capabilities_report_both_engines_and_the_fixed_distance_rule(tmp_path):
         assert rules["bandIsNotRadiusExpansion"] is True
         assert document["budgets"]["poiRequests"] == 60
         assert document["budgets"]["routeRequests"] == 120
+        # 一次检索的最小次数是"查询分块 × 检索小类"，请求体里算不出来：客户端要能
+        # 在提交前用它判断预算够不够，而不是提交后拿到一个预算不足的失败任务。
+        from app.catalog import default_analysis_majors, majors, poi_keys
+        assert document["budgets"]["poiMinorCategories"] == {
+            "default": len(poi_keys(list(default_analysis_majors()))),
+            "all": len(poi_keys(list(majors())))}
+        assert document["budgets"]["poiBlocksUpperBound"] == 4
+        assert document["budgets"]["poiRequestsIsLowerBound"] is True
+        # 跨任务复用窗口是部署决定，能力表要把当前生效值报出来。
+        assert document["cache"] == {"freshnessSeconds": None, "crossTaskReuse": False}
         assert document["coverage"]["queryPaddingM"] == 1300
         assert document["coverage"]["graphState"] == "unavailable"
 
@@ -475,7 +488,8 @@ def test_capabilities_report_the_application_budget_never_the_account_balance(tm
 def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
     """§10: a new contract must be checked alongside the old OpenAPI surface."""
     from tools.export_contract import typescript
-    from app.contracts import AnalysisResponse, TaskResultResponse, TaskStatusResponse, OsmOfflineRequest
+    from app.contracts import (AnalysisResponse, FacilityCatalog, TaskResultResponse,
+                               TaskStatusResponse, OsmOfflineRequest)
     from app.hybrid_contracts import HybridError, HybridRequest, HybridResultResponse
 
     app = make_app(tmp_path)
@@ -486,6 +500,10 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
             "/api/v2/checkups/{task_id}", "/api/v2/checkups/{task_id}/result",
             "/api/v2/checkups/{task_id}/layers/{layer_id}", "/api/v2/checkups/{task_id}/cancel",
             "/api/v2/checkups/{task_id}/routes/{facility_id}",
+            "/api/v2/checkups/{task_id}/facility-extensions",
+            "/api/v2/checkups/{task_id}/facility-extensions/{extension_id}",
+            "/api/v2/checkups/{task_id}/facility-extensions/{extension_id}/result",
+            "/api/v2/checkups/{task_id}/facility-extensions/{extension_id}/cancel",
             "/api/v2/capabilities"} <= set(paths)
     # Every legacy surface is still declared next to the versioned one.
     assert {"/api/analyses", "/api/analyses/by-request/{client_request_id}",
@@ -501,13 +519,19 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
         schemas["CheckupRequest"]["properties"])
     # v2 adds no model to the generated demo contract, so the strict POI
     # evidence types keep the serialization test_poi_evidence locks down.
+    # 这份清单必须与 ``tools/export_contract.export`` 一致：漏一个模型就会让这条
+    # 断言去和一份"少了 FacilityCatalog"的生成物比较，失败与契约无关。
     legacy = typescript(
         [AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest,
-         HybridRequest, HybridResultResponse, HybridError],
+         FacilityCatalog, HybridRequest, HybridResultResponse, HybridError],
         request_models=[OsmOfflineRequest, HybridRequest])
     assert legacy == (Path(__file__).resolve().parents[2]
                       / "life-circle-demo/src/api-contract.ts").read_text(encoding="utf-8")
-    assert "Checkup" not in legacy and "checkup" not in legacy
+    # 判据是"没有 v2 的模型"，不是"没有 checkup 这个词"：设施目录里真有一个小类
+    # 就叫 checkup（体检/健康管理），按子串判会把一个正常的小类当成契约泄漏。
+    assert not [name for name in ("CheckupRequest", "CheckupSnapshot", "CheckupLayer",
+                                 "CheckupCapabilities", "CheckupTaskView", "FacilityRoute")
+                if name in legacy]
 
 
 def _unreachable():

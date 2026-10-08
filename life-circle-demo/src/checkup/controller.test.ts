@@ -9,7 +9,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CheckupController } from './controller';
 import { CheckupError, DETAIL_BUDGET_EXHAUSTED, type CheckupService } from './client';
 import { STAGE_LABELS, isCheckupBusy, isStageReached, type CheckupHandle } from './types';
-import { CENTER, SERVER_TIME, capabilities, layer, route, snapshot, task } from './fixtures';
+import { CENTER, SERVER_TIME, capabilities, extensionDocument, extensionView, layer, route,
+  snapshot, task } from './fixtures';
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView } from './contract';
 
 const input = { center: CENTER, engine: 'baidu_e82', budget: 200 };
@@ -25,6 +26,11 @@ function service(): CheckupService {
       layer({ layerId: id, revision, resultHash: `hash-${revision}` })),
     cancel: vi.fn(async () => task({ status: 'cancelled' })),
     route: vi.fn(async () => route()),
+    extensionCreate: vi.fn(async () => extensionView()),
+    extensionStatus: vi.fn(async () => extensionView()),
+    extensionList: vi.fn(async () => [extensionView()]),
+    extensionResult: vi.fn(async () => extensionDocument()),
+    extensionCancel: vi.fn(async () => extensionView({ status: 'cancelled' })),
   };
 }
 afterEach(() => vi.useRealTimers());

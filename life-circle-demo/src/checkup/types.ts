@@ -1,5 +1,6 @@
 import type { Center } from '../types';
-import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityRoute } from './contract';
+import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityExtensionView,
+  FacilityRoute, MajorCategory } from './contract';
 import type { Contact, Reconnect } from './live';
 import { STAGES, type LayerId, type Stage } from './validate';
 
@@ -9,6 +10,13 @@ export type CheckupInput = {
   engine: string;
   budget?: number;
   clientRequestId: string;
+  /**
+   * 这一次体检要评估的核心大类。不给就由后端用它自己的核心口径。
+   *
+   * 只放核心口径：扩展大类不进主请求，而是走按需补查 —— 一起发过来会让"31 个小类 × 4 块
+   * = 124 次"撞上默认 60 次的预算，那是一个还没发请求就会被拒的任务。
+   */
+  categories?: MajorCategory[];
 };
 
 /**
@@ -49,6 +57,13 @@ export type CheckupState = {
   layers?: Partial<Record<LayerId, CheckupLayer>>;
   route?: FacilityRoute;
   routeError?: string;
+  /**
+   * 按需补查：独立于主任务的一轮。它失败或取消都不影响 `task`、`snapshot` 与报告 ——
+   * 一次成功的体检不会因为多查了几类设施而看起来白做了。
+   */
+  extensions?: FacilityExtensionView[];
+  extensionRunning?: boolean;
+  extensionError?: string;
   error?: string;
 };
 

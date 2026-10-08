@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from app.algorithms.baidu_e82 import EndpointAnalyticProvider
 from app.algorithms.hybrid_isochrone.models import Evidence, Validity
+from app.catalog import poi_keys
 from app.checkups.places import POI_POOL
 from app.checkups.routes import ROUTE_POOL
 from app.config import Settings
@@ -680,3 +681,206 @@ def test_the_verification_layer_draws_what_was_asked_and_what_came_back(tmp_path
         # 每一家都画出来了：图上少一个点就等于少报一次核验。
         assert {item["properties"]["facilityId"] for item in collection["features"]} == \
             {item["id"] for item in document(client, task_id)["facilities"]["facilities"]}
+
+
+# -- 按需补查：十大类里的扩展类别 ---------------------------------------------
+#
+# 十类设施按需加出来，而不是把有业务依据的三类口径换掉：补查复用原体检已经算出的
+# 圈面，只再跑一次设施检索，不发布修订、不改评分。下面验的就是这条边界 —— 复核、
+# 预算、幂等和"取消不碰报告"都在这条链上。
+
+#: 两个扩展大类，五个检索小类：足够证明补查只发自己那几类。
+EXTENDED = ("dining", "leisure")
+
+
+def extension_body(client_request_id, categories, **overrides):
+    payload = {"schemaVersion": "checkup-v1", "clientRequestId": client_request_id,
+               "categories": list(categories)}
+    payload.update(overrides)
+    return payload
+
+
+def submit_extension(client, task_id, client_request_id, categories, **overrides):
+    created = client.post(f"/api/v2/checkups/{task_id}/facility-extensions",
+                          json=extension_body(client_request_id, categories, **overrides))
+    assert created.status_code == 202, created.text
+    return created.json()
+
+
+def extension_of(client, task_id, extension_id, timeout=120.0):
+    """等一次补查走到终态。``partial`` 也是终态：它不会自己继续。"""
+    deadline = time.monotonic() + timeout
+    view = client.get(f"/api/v2/checkups/{task_id}/facility-extensions/{extension_id}").json()
+    while time.monotonic() < deadline:
+        if view["status"] in ("completed", "partial", "failed", "cancelled"):
+            return view
+        time.sleep(0.02)
+        view = client.get(f"/api/v2/checkups/{task_id}/facility-extensions/{extension_id}").json()
+    raise AssertionError(f"extension {extension_id} did not finish: {view}")
+
+
+def test_a_facility_extension_reuses_the_boundary_and_leaves_the_report_alone(tmp_path):
+    places = SyntheticPlaces(at_origin())
+    app = make_app(tmp_path, places)
+    with TestClient(app) as client:
+        task_id, _view = run(client, body())
+        before = document(client, task_id)
+        revisions_before = len(app.state.checkups.store.revisions(task_id))
+        sent_before = len(places.sent)
+        minors = poi_keys(list(EXTENDED))
+        assert len(minors) == 5
+
+        created = submit_extension(client, task_id, "ext-1", EXTENDED)
+        assert created["taskId"] == task_id
+        # 绑定的是补查开始那一刻的最新修订：之后原任务再发版也不会改写这次补查的圈面。
+        assert created["baseRevision"] == before["revision"]
+        assert created["categories"] == list(EXTENDED)
+        assert created["budget"]["limit"] >= 4 * len(minors)
+        view = extension_of(client, task_id, created["extensionId"])
+        assert view["status"] == "completed", view
+        assert view["facilitiesStatus"] == "completed"
+        assert set(view["countsByCategory"]) == set(EXTENDED)
+
+        result = client.get(f"/api/v2/checkups/{task_id}/facility-extensions/"
+                            f"{created['extensionId']}/result")
+        assert result.status_code == 200, result.text
+        document_ = result.json()
+        assert document_["status"] == "completed"
+        assert document_["baseRevision"] == before["revision"]
+        group = document_["group"]
+        assert group is not None and group["queryStatus"] == "completed"
+        assert set(group["countsByCategory"]) == set(EXTENDED)
+        assert {item["category"] for item in group["facilities"]} <= set(minors)
+        assert group["queryDomain"]["origin"] is not None
+
+        # 只发扩展类别：原任务那 14 个小类一条都没有重发，也没有重新成圈。
+        resent = places.sent[sent_before:]
+        assert {sequence_id.split(":")[1] for sequence_id, _page in resent} == set(minors)
+        assert len(resent) == 4 * len(minors)  # 每个小类、每个查询分块各首查一次
+
+        # 补查不发布修订、不改评分：报告逐字节不变，"十类设施"是加出来的。
+        assert len(app.state.checkups.store.revisions(task_id)) == revisions_before
+        assert document(client, task_id) == before
+        assert any("不进入核心综合分" in note for note in document_["notes"])
+        # 列表只列这一个任务自己的补查。
+        listed = client.get(f"/api/v2/checkups/{task_id}/facility-extensions").json()
+        assert [item["extensionId"] for item in listed] == [created["extensionId"]]
+
+
+def test_an_extension_budget_too_small_for_its_categories_is_refused_with_numbers(tmp_path):
+    places = SyntheticPlaces(at_origin())
+    app = make_app(tmp_path, places)
+    with TestClient(app) as client:
+        task_id, _view = run(client, body())
+        sent_before = len(places.sent)
+        minors = poi_keys(list(EXTENDED))
+        refused = client.post(f"/api/v2/checkups/{task_id}/facility-extensions",
+                              json=extension_body("ext-small", EXTENDED, maxPoiRequests=1))
+        assert refused.status_code == 422, refused.text
+        answer = refused.json()
+        assert answer["code"] == "checkup_extension_budget_too_small"
+        # 拒绝要把"要多少次、给了多少次"一起说出来，而不是提交后才给一个失败。
+        assert f"至少需要 {4 * len(minors)} 次" in answer["message"]
+        assert "只给了 1 次" in answer["message"]
+        assert len(places.sent) == sent_before
+        assert client.get(f"/api/v2/checkups/{task_id}/facility-extensions").json() == []
+
+
+def test_an_extension_the_days_allowance_cannot_cover_is_refused_with_numbers(tmp_path):
+    places = SyntheticPlaces(at_origin())
+    # 三大类首轮 56 次要花掉当天额度的大部分；剩下的不够扩展类别就当场拒绝。
+    app = make_app(tmp_path, places, baidu_place_daily_budget=60)
+    with TestClient(app) as client:
+        task_id, _view = run(client, body())
+        remaining = app.state.quota.remaining("place")
+        needed = 4 * len(poi_keys(list(EXTENDED)))
+        assert remaining is not None and remaining < needed
+        sent_before = len(places.sent)
+        refused = client.post(f"/api/v2/checkups/{task_id}/facility-extensions",
+                              json=extension_body("ext-daily", EXTENDED))
+        assert refused.status_code == 429, refused.text
+        answer = refused.json()
+        assert answer["code"] == "checkup_extension_daily_budget"
+        assert f"至少需要 {needed} 次" in answer["message"]
+        assert f"还剩 {remaining} 次" in answer["message"]
+        assert len(places.sent) == sent_before
+
+
+def test_the_same_extension_request_id_is_one_extension_and_a_different_one_conflicts(tmp_path):
+    places = SyntheticPlaces(at_origin())
+    app = make_app(tmp_path, places)
+    with TestClient(app) as client:
+        task_id, _view = run(client, body())
+        first = submit_extension(client, task_id, "ext-same", EXTENDED)
+        extension_of(client, task_id, first["extensionId"])
+        again = submit_extension(client, task_id, "ext-same", EXTENDED)
+        assert again["extensionId"] == first["extensionId"]
+        assert len(client.get(f"/api/v2/checkups/{task_id}/facility-extensions").json()) == 1
+        # 同一个标识换一套参数是冲突，不是"悄悄按新的类别再查一次"。
+        conflict = client.post(f"/api/v2/checkups/{task_id}/facility-extensions",
+                               json=extension_body("ext-same", ("finance", "life")))
+        assert conflict.status_code == 409, conflict.text
+        assert conflict.json()["code"] == "checkup_extension_request_id_conflict"
+
+
+def test_an_extension_is_readable_only_through_its_own_task(tmp_path):
+    places = SyntheticPlaces(at_origin())
+    app = make_app(tmp_path, places)
+    with TestClient(app) as client:
+        task_id, _view = run(client, body())
+        other_id, _other = run(client, body(clientRequestId="checkup-2"))
+        unknown = client.post("/api/v2/checkups/no-such-task/facility-extensions",
+                              json=extension_body("ext-x", EXTENDED))
+        assert unknown.status_code == 404, unknown.text
+        assert unknown.json()["code"] == "checkup_task_not_found"
+        assert client.get(f"/api/v2/checkups/{task_id}/facility-extensions/nope").status_code == 404
+        created = submit_extension(client, task_id, "ext-own", EXTENDED)
+        extension_of(client, task_id, created["extensionId"])
+        # 另一个任务读不到这次补查：这是越权访问，不是"没有结果"。
+        cross = client.get(f"/api/v2/checkups/{other_id}/facility-extensions/"
+                           f"{created['extensionId']}")
+        assert cross.status_code == 404, cross.text
+        assert cross.json()["code"] == "checkup_extension_not_found"
+        assert client.get(f"/api/v2/checkups/{other_id}/facility-extensions").json() == []
+
+
+def test_an_extension_before_any_boundary_is_a_named_refusal(tmp_path):
+    app = make_app(tmp_path, SyntheticPlaces(at_origin()))
+    with TestClient(app) as client:
+        # 一行还没有任何修订的任务：补查没有可复用的圈面。
+        app.state.checkups.store.create(task_id="t-no-boundary", client_request_id="no-boundary",
+                                        engine="baidu_e82", fingerprint="fp",
+                                        payload=body(), budget=200)
+        refused = client.post("/api/v2/checkups/t-no-boundary/facility-extensions",
+                              json=extension_body("ext-none", EXTENDED))
+        assert refused.status_code == 409, refused.text
+        answer = refused.json()
+        assert answer["code"] == "checkup_extension_boundary_unavailable"
+        assert "圈面" in answer["message"]
+
+
+def test_a_cancelled_extension_keeps_what_it_retrieved_and_never_touches_the_report(tmp_path):
+    places = SyntheticPlaces(at_origin(), delay=0.1)
+    app = make_app(tmp_path, places)
+    with TestClient(app) as client:
+        task_id, _view = run(client, body())
+        before = document(client, task_id)
+        created = submit_extension(client, task_id, "ext-cancel", EXTENDED)
+        extension_id = created["extensionId"]
+        # 等它真的开始花钱再取消 —— 取消是在配额入口逐次生效的，不是事后改状态。
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            view = client.get(f"/api/v2/checkups/{task_id}/facility-extensions/"
+                              f"{extension_id}").json()
+            if view["status"] == "running" and view["networkRequests"] > 0:
+                break
+            time.sleep(0.02)
+        client.post(f"/api/v2/checkups/{task_id}/facility-extensions/{extension_id}/cancel")
+        view = extension_of(client, task_id, extension_id)
+        assert view["status"] == "cancelled", view
+        result = client.get(f"/api/v2/checkups/{task_id}/facility-extensions/"
+                            f"{extension_id}/result").json()
+        # 已取到的页面照常留下；缺的部分说成"取消"，绝不读成"没有设施"。
+        assert result["status"] == "cancelled"
+        assert result["group"] is not None and result["group"]["queryStatus"] == "cancelled"
+        assert document(client, task_id) == before

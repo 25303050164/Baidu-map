@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { CheckupError, DETAIL_BUDGET_EXHAUSTED, createCheckupService, isNotFound } from './client';
-import { capabilities, layer, route, snapshot, task } from './fixtures';
+import { capabilities, extensionDocument, extensionView, layer, route, snapshot, task } from './fixtures';
 
 type Reply = { body?: unknown; status?: number; raw?: unknown };
 
@@ -126,5 +126,59 @@ describe('checkup client', () => {
     const bad = service([{ body: route({ routeDistanceM: null }) }]);
     await expect(bad.api.route('task-1', 'facility-1'))
       .rejects.toMatchObject({ code: 'invalid_response' });
+  });
+});
+
+describe('on-demand facility extensions', () => {
+  it('posts the extension under its own task and keeps the request id', async () => {
+    const { api, calls } = service([{ body: extensionView({ status: 'queued', stage: null }) }]);
+    const body = { schemaVersion: 'checkup-v1' as const, clientRequestId: 'ext-request-1',
+      categories: ['dining', 'leisure'] as const };
+    await api.extensionCreate('task-1', { ...body, categories: [...body.categories] });
+    expect(calls[0].url).toBe('/api/v2/checkups/task-1/facility-extensions');
+    expect(calls[0].init.method).toBe('POST');
+    expect(JSON.parse(String(calls[0].init.body))).toEqual(body);
+  });
+
+  it('refuses an extension view minted for a different task or request', async () => {
+    // 补查的标识决定后面去轮询谁，错配就是把别人的补查读成自己的。
+    const otherRequest = service([{ body: extensionView({ clientRequestId: 'ext-request-9' }) }]);
+    await expect(otherRequest.api.extensionCreate('task-1',
+      { schemaVersion: 'checkup-v1', clientRequestId: 'ext-request-1', categories: ['dining'] }))
+      .rejects.toMatchObject({ code: 'mismatched_request' });
+    const otherTask = service([{ body: extensionView({ taskId: 'task-9' }) }]);
+    await expect(otherTask.api.extensionStatus('task-1', 'extension-1'))
+      .rejects.toMatchObject({ code: 'mismatched_task' });
+  });
+
+  it('refuses a list that carries an extension of another task', async () => {
+    // 列表里混进别的任务的记录，等于把一次越权读取当成一次成功读取。
+    const { api } = service([{ body: [extensionView(), extensionView({ taskId: 'task-9' })] }]);
+    await expect(api.extensionList('task-1')).rejects.toMatchObject({ code: 'mismatched_task' });
+  });
+
+  it('reads the result from the extension path and checks both identifiers', async () => {
+    const { api, calls } = service([{ body: extensionDocument() }]);
+    const document_ = await api.extensionResult('task-1', 'extension-1');
+    expect(calls[0].url).toBe('/api/v2/checkups/task-1/facility-extensions/extension-1/result');
+    // 数量在结果文档的 group 里（它是那次检索自己的记录），视图上的那一份是摘要。
+    expect(document_.group?.countsByCategory).toEqual({ dining: 1, leisure: 2 });
+    const mismatched = service([{ body: extensionDocument({ extensionId: 'extension-9' }) }]);
+    await expect(mismatched.api.extensionResult('task-1', 'extension-1'))
+      .rejects.toMatchObject({ code: 'mismatched_revision' });
+  });
+
+  it('refuses a result that says "no facilities" without saying why', async () => {
+    // 空清单与空目录是两件事：没有原因的空结果会被读成"这片区域没有这类设施"。
+    const { api } = service([{ body: extensionDocument({ group: null, issues: [] }) }]);
+    await expect(api.extensionResult('task-1', 'extension-1'))
+      .rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
+  it('cancels through the extension path', async () => {
+    const { api, calls } = service([{ body: extensionView({ status: 'cancelled' }) }]);
+    const view = await api.extensionCancel('task-1', 'extension-1');
+    expect(calls[0].url).toBe('/api/v2/checkups/task-1/facility-extensions/extension-1/cancel');
+    expect(view.status).toBe('cancelled');
   });
 });

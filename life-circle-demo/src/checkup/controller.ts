@@ -16,7 +16,7 @@
  * 每个异步步骤结束回写状态之前都要问一次"这一轮还算数吗"（``current``）：取消、清除
  * 都会让旧的一轮作废，而它可能正好在这时返回。
  */
-import type { CheckupLayer, CheckupTaskView } from './contract';
+import type { CheckupLayer, CheckupTaskView, FacilityExtensionView, MajorCategory } from './contract';
 import type { LayerId } from './validate';
 import { CheckupError, DETAIL_BUDGET_EXHAUSTED, isNotFound, type CheckupService } from './client';
 import type { CheckupHandle, CheckupInput, CheckupState } from './types';
@@ -377,6 +377,93 @@ export class CheckupController {
 
   /** 不再发布状态、停止轮询；**不取消**服务端的任务。 */
   dispose() { this.publish = () => {}; this.run?.abort.abort(); ++this.revision; }
+
+  // -- 按需补查 ----------------------------------------------------------
+
+  /**
+   * 对当前已完成的体检补查若干扩展大类。
+   *
+   * 补查是**独立一轮**：它有自己的标识和预算，不发布修订，也不改已经上屏的报告。所以
+   * 这里的失败只写进 `extensionError`，绝不动 `phase`、`task` 和 `snapshot` —— 把补查的
+   * 失败写成整个体检失败，会让一次成功的体检看起来白做了。
+   */
+  async extend(categories: MajorCategory[]) {
+    const task = this.state.task;
+    const revision = this.state.snapshot?.revision;
+    if (task === undefined || revision === undefined || categories.length === 0) return;
+    if (this.state.extensionRunning) return;
+    this.patch({ extensionRunning: true, extensionError: undefined });
+    const clientRequestId = crypto.randomUUID();
+    try {
+      const created = await this.api.extensionCreate(task.taskId, {
+        schemaVersion: 'checkup-v1', clientRequestId, categories: [...categories],
+      });
+      if (this.state.task?.taskId !== task.taskId) return;
+      this.patch({ extensions: mergeExtension(this.state.extensions, created) });
+      const settled = await this.followExtension(task.taskId, created);
+      if (this.state.task?.taskId !== task.taskId) return;
+      this.patch({ extensions: mergeExtension(this.state.extensions, settled) });
+    } catch (error) {
+      if (this.state.task?.taskId !== task.taskId) return;
+      // 后端在花钱之前就把"要多少次、剩多少次"写在 message 里：原样显示，不改写。
+      this.patch({ extensionError: error instanceof CheckupError
+        ? error.message : '补查没有完成，请稍后重试' });
+    } finally {
+      if (this.state.task?.taskId === task.taskId) this.patch({ extensionRunning: false });
+    }
+  }
+
+  /** 补查的取消：只停这一次补查，不动主任务。 */
+  async cancelExtension(extensionId: string) {
+    const task = this.state.task;
+    if (task === undefined) return;
+    try {
+      const view = await this.api.extensionCancel(task.taskId, extensionId);
+      if (this.state.task?.taskId !== task.taskId) return;
+      this.patch({ extensions: mergeExtension(this.state.extensions, view) });
+    } catch (error) {
+      if (this.state.task?.taskId !== task.taskId) return;
+      this.patch({ extensionError: error instanceof CheckupError
+        ? error.message : '未能取消这次补查' });
+    }
+  }
+
+  /** 刷新后把已有的补查读回来：结果是服务端的，不靠本地记。 */
+  async loadExtensions() {
+    const task = this.state.task;
+    if (task === undefined) return;
+    try {
+      const views = await this.api.extensionList(task.taskId);
+      if (this.state.task?.taskId !== task.taskId) return;
+      this.patch({ extensions: views });
+    } catch {
+      // 列表读不到不是体检的问题：不写 extensionError，面板显示"读不到"即可。
+    }
+  }
+
+  /** 轮询到终态。终态仍要把视图写回列表里 —— 它带着最终的计数和原因。 */
+  private async followExtension(taskId: string, created: FacilityExtensionView) {
+    for (let attempt = 0; attempt < EXTENSION_POLL_LIMIT; attempt += 1) {
+      if (isExtensionTerminal(created.status) || this.state.task?.taskId !== taskId) return created;
+      await new Promise(resolve => setTimeout(resolve, EXTENSION_POLL_MS));
+      if (this.state.task?.taskId !== taskId) return created;
+      created = await this.api.extensionStatus(taskId, created.extensionId);
+    }
+    return created;
+  }
+}
+
+/** 同一个补查只保留最新的一条视图：轮询回来的那一版才是它的当前状态。 */
+function mergeExtension(
+  list: FacilityExtensionView[] | undefined, view: FacilityExtensionView,
+): FacilityExtensionView[] {
+  const rest = (list ?? []).filter(item => item.extensionId !== view.extensionId);
+  return [...rest, view];
+}
+
+function isExtensionTerminal(status: FacilityExtensionView['status']): boolean {
+  return status === 'completed' || status === 'partial' || status === 'failed'
+    || status === 'cancelled';
 }
 
 /** 输入 → 请求体。`isochrone` 只在真的给了预算时才带上，让后端用它自己的默认档。 */
@@ -386,5 +473,12 @@ function toRequest(input: CheckupInput) {
     engine: input.engine, center: { lng: input.center.lng, lat: input.center.lat },
     coordinateSystem: 'bd09ll' as const,
     ...(input.budget === undefined ? {} : { isochrone: { budget: input.budget } }),
+    // 选中的核心口径才进主请求。扩展大类走按需补查：把它们一起发过来会让一次正常体检
+    // 变成一次"31 个小类 × 4 块 = 124 次"的检索，而默认预算是 60 次 —— 那是必拒的。
+    ...(input.categories === undefined ? {} : { facilities: { categories: [...input.categories] } }),
   };
 }
+
+/** 一次补查的轮询间隔与上限：补查只发一轮检索，没有成圈那种长阶段。 */
+const EXTENSION_POLL_MS = 1000;
+const EXTENSION_POLL_LIMIT = 600;

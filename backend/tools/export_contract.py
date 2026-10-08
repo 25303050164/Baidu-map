@@ -2,8 +2,10 @@
 import json
 from pathlib import Path
 
-from app.checkups.models import (CheckupCapabilities, CheckupLayer, CheckupRequest,
-                                 CheckupSnapshot, CheckupTaskView, FacilityRoute)
+from app.checkups.models import (CheckupCapabilities, CheckupFacilities, CheckupIsochrone,
+                                 CheckupLayer, CheckupRequest, CheckupSnapshot, CheckupTaskView,
+                                 FacilityExtensionDocument, FacilityExtensionRequest,
+                                 FacilityExtensionView, FacilityRoute)
 from app.contracts import (AnalysisResponse, CategoryResult, Data, Facility, FacilityCatalog, Geometry,
                            Issue, Origin, Rules, TaskResultResponse, TaskStatusResponse, OsmOfflineRequest)
 from app.hybrid_contracts import HybridRequest, HybridResultResponse, HybridError
@@ -121,7 +123,17 @@ def export():
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         typescript([CheckupRequest, CheckupTaskView, CheckupSnapshot, CheckupLayer,
-                    FacilityRoute, CheckupCapabilities], request_models=[CheckupRequest]),
+                    FacilityRoute, CheckupCapabilities,
+                    # 请求里带默认值的两个嵌套模型也要按请求方向生成：否则客户端会被要求
+                    # 传 `maxPoiRequests`/`maxRouteRequests`，而它们在服务端本来是可省的 ——
+                    # 前端于是只好把默认值抄一份，后端改档位就静默分叉。
+                    CheckupFacilities, CheckupIsochrone,
+                    # 按需补查也是 v2 契约的一部分：它有自己的请求、状态和结果文档，
+                    # 手写这三份类型就等于给同一份字段留第二处定义。
+                    FacilityExtensionRequest, FacilityExtensionView,
+                    FacilityExtensionDocument],
+                   request_models=[CheckupRequest, CheckupFacilities, CheckupIsochrone,
+                                   FacilityExtensionRequest]),
         encoding="utf-8")
 
 
