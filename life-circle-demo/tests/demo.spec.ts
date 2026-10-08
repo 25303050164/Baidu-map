@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-const screenshots = resolve(process.env.DEMO_OUTPUT_DIR || 'D:/CodexOutputs/isochrone-demo-regression', 'screenshots');
+import { demoArtifacts, demoPort } from './browser';
+const screenshots = resolve(demoArtifacts(), 'screenshots');
 mkdirSync(screenshots, { recursive: true });
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -26,7 +27,7 @@ test('complete flow, filters, layers, facilities and full report', async ({ page
   const errors: string[] = [], external: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', e => { if (e.type() === 'error') errors.push(e.text()); });
-  page.on('request', r => { if (!r.url().startsWith('http://127.0.0.1:5173') && !r.url().startsWith('data:')) external.push(r.url()); });
+  page.on('request', r => { if (!r.url().startsWith(`http://127.0.0.1:${demoPort()}`) && !r.url().startsWith('data:')) external.push(r.url()); });
   await page.screenshot({ path: resolve(screenshots, 'desktop-initial.png'), fullPage: true, animations: 'disabled' });
   await analyze(page);
   await expect(page.getByTestId('total-count')).toHaveText('7');

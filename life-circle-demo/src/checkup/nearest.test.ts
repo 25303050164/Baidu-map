@@ -3,7 +3,8 @@
  * 排序按距离、取前 N、每组总数正确；同组记录不重复占位；缺大类不冒充三类。
  */
 import { describe, expect, it } from 'vitest';
-import { nearestFacilities, straightLineM } from './nearest';
+import { nearestEmptyNote, nearestFacilities, straightLineM } from './nearest';
+import type { FacilityGroup } from './contract';
 import type { LayerDrawable, LayerPoint } from './layers';
 
 const center = { lng: 116.4, lat: 39.9 };
@@ -89,5 +90,43 @@ describe('nearest facilities', () => {
     broken.lng = Number.NaN;
     const groups = nearestFacilities(drawable([broken, facility(1, 120)]), center);
     expect(groups[0].total).toBe(1);
+  });
+});
+
+/**
+ * 图层空着时说的那句话：查完了才可以说"没有设施"，没查完就必须说没查完。
+ * 这一条是浏览器集成套件先发现的红：上游一直限流，界面照样写着"没有接收的设施"，
+ * 把"没取到"说成了"没有"。
+ */
+describe('empty facilities note', () => {
+  const group = (overrides: Partial<FacilityGroup> = {}): FacilityGroup => Object.assign({
+    queryStatus: 'completed', catalogCompleteness: 'unverified', provider: 'synthetic',
+    apiVersion: '3.0', dataSource: 'synthetic', queryDomain: {}, dataObtainedAt: null,
+    initialPlan: null, countsByCategory: {}, facilities: [], nearbyFacilities: [],
+    reviewCandidates: [], excludedCandidates: [], quarantine: [], queryCoverage: [],
+    queryIncompleteRegions: null, statistics: {}, warnings: [], stopReason: null,
+  } as FacilityGroup, overrides);
+
+  it('says there were none only when the retrieval did finish', () => {
+    expect(nearestEmptyNote(group())).toBe('本次体检没有接收的设施。');
+  });
+
+  it('names the reason when the retrieval did not finish', () => {
+    const note = nearestEmptyNote(group({ queryStatus: 'failed', stopReason: 'rate_limit' }));
+    expect(note).toContain('未完成');
+    expect(note).toContain('触发限流，已保留已取到的结果');
+    expect(note).not.toContain('没有接收的设施');
+  });
+
+  it('keeps an unknown stop reason instead of showing a blank', () => {
+    const note = nearestEmptyNote(group({ queryStatus: 'partial', stopReason: 'brand_new_reason' }));
+    expect(note).toContain('brand_new_reason');
+    expect(note).not.toContain('没有接收的设施');
+  });
+
+  it('reads a cancelled run as cancelled, and a missing group as none received', () => {
+    expect(nearestEmptyNote(group({ queryStatus: 'cancelled', stopReason: 'cancelled' })))
+      .toContain('已取消');
+    expect(nearestEmptyNote(null)).toBe('本次体检没有接收的设施。');
   });
 });

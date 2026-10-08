@@ -1,10 +1,29 @@
 """CLI gates and offline execution are tested without network access."""
 import json
+from pathlib import Path
 
 import pytest
 
 from app.poi.models import CollectionConfig, PoiCollectRequest, RuntimeConfig
+from app.poi.planner import build_plan
 from tools.poi_collect import main
+
+
+def test_the_shipped_example_config_is_valid_and_fully_replayable():
+    """示例配置与回放夹具都要跟着词典走，否则离线 CLI 会以一个笼统的错误码失败。
+
+    两处都曾在词典扩容后失效：示例只列了三个类的预算，而 ``RuntimeConfig`` 要求逐类
+    给全（于是校验直接拒绝，``main`` 只能回 ``configuration_or_execution_failed``）；
+    回放夹具缺了新增的市场关键词页面（那一页回 ``fixture_missing``，整轮降级成
+    ``partial``，退出码 2）。用例把这两件事分开报，失败时说得出是哪一条、缺哪一页。
+    """
+    config = CollectionConfig.model_validate_json(
+        Path('tools/poi-example.json').read_text(encoding='utf-8-sig'))
+    plan = build_plan(config.request, config.runtime)
+    fixture = json.loads(Path('tests/fixtures/poi/collection.json').read_text(encoding='utf-8'))
+    missing = sorted({f"{sequence['query']}:0" for sequence in plan['sequences']}
+                     - set(fixture['pages']))
+    assert missing == [], f'回放夹具缺这些首轮页面：{missing}'
 
 
 @pytest.mark.parametrize('mode', ['plan', 'replay'])

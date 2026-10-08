@@ -33,7 +33,7 @@ import { CATEGORY_ORDER, categoryLabel, coverageItems, percent } from './report'
 import { missingCoreMajors, estimatedFirstRoundPages, splitScope } from './categories';
 import { extensionLines } from './extensions';
 import type { MajorCategory } from './contract';
-import { nearestFacilities } from './nearest';
+import { nearestEmptyNote, nearestFacilities } from './nearest';
 import { WeatherCard } from './WeatherCard';
 import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
 import { outdatedText, recomputedText, versionView, waterView } from './water';
@@ -819,7 +819,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
           <h2 className="wb-h">周边设施 · 每类最近 5 处</h2>
           {!drawables.facilities ? <p className="wb-hint">{layerErrors.facilities
             ?? '设施结果尚未加载。'}</p>
-            : drawables.facilities.state === 'empty' ? <p className="wb-hint">本次体检没有接收的设施。</p>
+            : drawables.facilities.state === 'empty' ? <p className="wb-hint"
+              data-testid="checkup-nearest-empty">{nearestEmptyNote(snapshot.facilities)}</p>
             : <>
               <p className="wb-hint">按直线距离排序；点选可查步行路线。</p>
               {nearestGroups.map(group => <div className="wb-near" key={group.category}>
