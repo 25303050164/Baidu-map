@@ -55,3 +55,55 @@ GET /api/facility-catalog
 3. 重新生成 `backend/docs`、`backend/mocks`、`life-circle-demo/src/api-contract.ts` 和 `life-circle-demo/src/checkup/contract.ts`。
 4. 检查 `/api/facility-catalog`、主类冲突、次类字段和重复统计。
 5. 历史报告保留原规则版本，不进行批量改写。
+
+## 7. 路网下载与构建改动
+
+本轮同步更新 `intro-page/Baidu-map-site/help/操作说明.md` 与 `help/index.html`：移除不存在的 `python dev.py osm` 自动下载说明，改为统一的地区运行包下载、校验、选择和自定义 PBF 构建流程。
+
+## 当前下载与构建流程
+
+新增 `backend/scripts/setup_osm_region.py` 作为单一入口：
+
+```bash
+python backend/scripts/setup_osm_region.py list
+python backend/scripts/setup_osm_region.py download --url <runtime-package-url> --region <region-id> --sha256 <archive-sha256>
+python backend/scripts/setup_osm_region.py select --region <region-id>
+python backend/scripts/setup_osm_region.py clear
+```
+
+下载命令要求运行包 ZIP 包含 `data/osm/manifest.json`，会安全解压、校验 manifest 中声明的文件哈希，然后写入 `backend/.env` 并激活地区。已经解压的包可以直接用 `select` 激活。
+
+自定义地区或重建数据时，构图依赖只需安装一次，之后由一个命令生成图缓存、风险层、障碍层和 manifest，并完成激活：
+
+```bash
+python -m pip install -r backend/requirements-osm-build.txt
+python backend/scripts/setup_osm_region.py build --region <region-id> --pbf <path-to-pbf> --coverage <path-to-poly> --version <snapshot-id> --metric-crs <metric-crs> --source <pbf-url> --downloaded-at <yyyy-mm-dd>
+```
+
+生成包保存在 `data/osm/regions/<region-id>/`。`--no-simplify` 用于排查构图问题，替换已有地区时使用 `--force`。`dev.py` 仍只负责依赖、环境和服务启动。
+
+## 路网地区配置
+
+- 后端不再默认指向上海 PBF、图缓存、风险层、障碍层或水系复核目录；未选择 OSM 数据包时，路网状态为 `unconfigured`，百度模式仍可独立运行。
+- 默认米制投影改为通用的 `EPSG:3857`。具体 OSM 数据包必须在 manifest 或其 `graph_metadata.json` 中声明自己的 CRS 和数据版本。
+- 构图脚本在未配置 PBF 或图缓存目标时返回明确错误，不再依赖隐含的上海输出路径。
+- `backend/app/osm_package.py` 负责发现、解析和写入地区数据包配置。
+- `backend/scripts/configure_osm_region.py` 保留为兼容入口；新流程统一使用 `setup_osm_region.py`。
+- `backend/docs/OSM_REGION_SETUP.md` 记录下载、构建、激活和清除配置的操作流程。
+- 数据包至少需要图缓存和覆盖边界；风险层、障碍层和复核文件按数据版本绑定，不能复用上海文件到其他地区。
+
+## 验证
+
+- `backend/tests/test_osm_package.py` 覆盖地区 manifest 选择、清除配置、现有运行时包发现，以及临时 ZIP 下载和哈希校验。
+- `python -m py_compile backend/scripts/setup_osm_region.py` 已通过。
+- `python -m pytest backend/tests/test_osm_package.py -q` 已通过（4 passed）。
+- `python backend/scripts/setup_osm_region.py list` 已识别本地上海包并报告 `ready`。
+- 后端完整 pytest 在当前环境收集阶段受缺少 `shapely`、`pydantic_settings`、`life_circle`、`networkx` 等依赖影响，未能执行；该环境阻塞与本次脚本无关。
+
+日期：2026-10-05
+
+## 8. 使用说明同步
+
+- `intro-page/Baidu-map-site/help/操作说明.md` 与 `help/index.html` 已同步统一的地区包下载、选择、清除和 PBF 构建命令。
+- 已运行站点构建，将同样内容生成到 `intro-page/Baidu-map-site/dist/help/`；源码与构建产物哈希一致。
+- `npm.cmd run check` 已通过。

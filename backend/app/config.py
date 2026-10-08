@@ -3,7 +3,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -21,10 +21,13 @@ class Settings(BaseSettings):
     baidu_map_ak: SecretStr = SecretStr("")
     analysis_provider: Literal["baidu", "synthetic"] = "baidu"
     analysis_qps: float | None = Field(default=None, gt=0, allow_inf_nan=False)
-    osm_pbf_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.osm.pbf"
-    osm_graph_cache_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.osm-cache"
+    # OSM is an optional, region-specific runtime package. A deployment must
+    # select one explicitly; never silently load Shanghai data for another area.
+    osm_region_id: str | None = None
+    osm_pbf_path: Path | None = None
+    osm_graph_cache_path: Path | None = None
     osm_data_version: str = "unconfigured"
-    osm_metric_crs: str = "EPSG:32651"
+    osm_metric_crs: str = "EPSG:3857"
     walk_speed_mps: float = Field(default=1.3, gt=0, allow_inf_nan=False)
     snap_max_distance_m: float = Field(default=200, ge=0, allow_inf_nan=False)
     isochrone_buffer_m: float = Field(default=25, gt=0, allow_inf_nan=False)
@@ -50,11 +53,11 @@ class Settings(BaseSettings):
     baidu_fallback_place_qps: float = Field(default=2, gt=0, allow_inf_nan=False)
     baidu_fallback_place_daily_budget: int = Field(default=80, ge=0)
     quota_ledger_path: Path = BACKEND_DIR / ".quota/quota.sqlite3"
-    hybrid_risk_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.risks.geojson"
-    hybrid_obstacle_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.obstacles.geojson"
+    hybrid_risk_path: Path | None = None
+    hybrid_obstacle_path: Path | None = None
     # Field-reviewed corrections to the obstacle layer (water_review.py). Each file
     # applies to one OSM extract and only inside its own extent.
-    water_review_dir: Path | None = BACKEND_DIR.parent / "data/water-reviews"
+    water_review_dir: Path | None = None
 
     @field_validator("osm_pbf_path", "osm_graph_cache_path", "osm_coverage_boundary_path", "hybrid_ledger_dir", "hybrid_risk_path", "hybrid_obstacle_path", "water_review_dir", "checkup_dir", "quota_ledger_path", mode="before")
     @classmethod
@@ -80,6 +83,13 @@ class Settings(BaseSettings):
     def empty_optional_numbers(cls, value):
         # An empty value means "unconfigured", which is not the same as zero.
         return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("osm_region_id", "osm_data_version", mode="before")
+    @classmethod
+    def empty_optional_osm_values(cls, value, info: ValidationInfo):
+        if isinstance(value, str) and not value.strip():
+            return None if info.field_name == "osm_region_id" else "unconfigured"
+        return value
 
     @field_validator("baidu_quota_fallback_at")
     @classmethod

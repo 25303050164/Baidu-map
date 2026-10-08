@@ -18,6 +18,6 @@
 - 启动与健康检查不加载城市图；首次 Hybrid 或 OSM Offline 分析才惰性加载。缺失数据保留 `degraded` 标记。
 - 自动测试使用合成数据与模拟传输，不代表真实社区精度验收；测试会话在 `conftest.py` 中拒绝一切外连。
 - 默认百度模式（`ANALYSIS_PROVIDER` 不写即为 `baidu`）。离线合成模式只用于测试：E8.2 的替身按直线距离回答，任何点都画出半径约 1080 米的正圆，设施、覆盖与核验不运行；此时能力表把引擎标为“合成替身”并在说明里写明，后端启动时打印警告（2026-09-29）。
-- 本地数据：Geofabrik 已清理 2026-09-12 日快照，本机改用 `shanghai-260928.osm.pbf`（数据版本 `geofabrik-shanghai-20260928`）构图并导出障碍层；国定一水系复核仍绑定 20260912 版本，因此在本机会以版本不符告警、不被采用。
+- 本地数据：运行时路网包使用固定快照 `shanghai-latest.osm.pbf`（数据版本 `geofabrik-shanghai-260913`，PBF SHA256 `11e420b2fe24176856b31c26da308e3ec41a9a7f5a2b849d91c34f7069837c12`），已生成并校验 `shanghai.osm-cache`、`shanghai.poly` 及障碍/风险层；国定一水系复核仍绑定旧版 20260912 版本，因此在本机会以版本不符告警、不被采用。
 
 [Hybrid 设计](HYBRID_ISOCHRONE_DESIGN.md) · [后端说明](backend/README.md) · [本地启动与前后端联调](backend/docs/本地启动与前后端联调.md)
