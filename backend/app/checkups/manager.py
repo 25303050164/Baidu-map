@@ -255,7 +255,7 @@ class CheckupManager(ContinuationMixin):
     # -- execution ---------------------------------------------------------
 
     async def _serve(self) -> None:
-        while True:
+        while not self.closing:
             task_id = await self.queue.get()
             try:
                 if not self.closing:
@@ -1038,3 +1038,4 @@ class CheckupManager(ContinuationMixin):
         if self.worker is not None and not self.worker.done():
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
+        self.store.close()

@@ -1,6 +1,6 @@
 """§4.2 adaptive online planning: coarse blocks, rotation, subdivision, evidence.
 
-The fixed 4×4 plan in ``planner.py`` spends 96 requests on its first round and
+The full-catalog fixed 4×4 plan in ``planner.py`` needs 1520 first-page requests and
 cannot fit the standard 60-attempt online budget. This module plans the same
 ``around`` search adaptively instead: it starts from the query domain's envelope
 split 2×2, keeps the blocks that intersect the domain, and spends its budget in a
@@ -331,9 +331,12 @@ class OnlinePlanner:
         key = lambda state: state.mapping['sequenceId']
         sequences = []
         for state in self.sequences.values():
-            value = asdict(state)
+            value = {**vars(state), 'block': vars(state.block).copy(),
+                     'mapping': copy.deepcopy(state.mapping), 'pages': copy.deepcopy(state.pages),
+                     'pagination': {**vars(state.pagination)}}
             value['pagination']['fingerprints'] = sorted(state.pagination.fingerprints)
             value['pagination']['seen_uids'] = sorted(state.pagination.seen_uids)
+            value['pagination']['warnings'] = list(state.pagination.warnings)
             sequences.append(value)
         return {'version': 1, 'domain': self.domain.polygon, 'origin': list(self.origin),
                 'categories': list(self.categories), 'source': self.source,
@@ -342,7 +345,7 @@ class OnlinePlanner:
                 'sequences': sequences, 'queue': ([key(self.active)] if self.active else [])
                     + [key(s) for s in self.queue],
                 'later': {major: [key(s) for s in queue] for major, queue in self.later.items()},
-                'majorCursor': self.major_cursor, 'observations': [asdict(o) for o in self.observations],
+                'majorCursor': self.major_cursor, 'observations': [dict(provenance=o.provenance.copy(), row=copy.deepcopy(o.row)) for o in self.observations],
                 'warnings': list(self.warnings)}
 
     def restore(self, value):
@@ -378,9 +381,18 @@ class OnlinePlanner:
         self.observations = [Observation(**v) for v in value['observations']]
         self.warnings = list(value['warnings'])
 
-    def _save(self):
+    async def _save(self):
         if self.on_checkpoint:
-            self.on_checkpoint(self.checkpoint())
+            # Await every durable checkpoint before dispatching the next page.
+            # The planner cannot mutate while this thread owns its serialization.
+            saved = asyncio.create_task(asyncio.to_thread(
+                lambda: self.on_checkpoint(self.checkpoint())))
+            try:
+                await asyncio.shield(saved)
+            except asyncio.CancelledError:
+                # Finish the in-flight write before changing scheduling state.
+                await saved
+                raise
 
     def _used(self):
         return self.attempts if self.spent is None else self.spent()
@@ -489,7 +501,7 @@ class OnlinePlanner:
         self._finish(state, stop)
 
     async def run(self, fetch: Fetch) -> OnlineResult:
-        self._save()
+        await self._save()
         try:
             while (self.queue or any(self.later.values())) and self.stopped is None:
                 if self.token.cancelled:
@@ -502,16 +514,16 @@ class OnlinePlanner:
                 if state.status not in ('pending', 'more'):
                     continue
                 self.active = state
-                self._save()
+                await self._save()
                 await self._step(fetch, state)
                 self.active = None
-                self._save()
+                await self._save()
         except asyncio.CancelledError:
             # Cancellation is an outcome of this run, not an exception for the
             # caller to clean up: the evidence already obtained is still reported.
             self.token.cancel()
             self.stopped = 'cancelled'
-        self._save()
+        await self._save()
         return self.result()
 
     def _covered(self, block, category, query):

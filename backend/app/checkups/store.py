@@ -115,13 +115,18 @@ class CheckupStore(RoundStore):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.path = self.root / "checkups.sqlite3"
+        self._keeper = None
+
+    def close(self):
+        if self._keeper is not None:
+            self._keeper.close()
+            self._keeper = None
 
     @contextmanager
     def _connection(self):
         connection = sqlite3.connect(self.path, timeout=30, isolation_level=None)
         connection.row_factory = sqlite3.Row
         try:
-            connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA foreign_keys=ON")
             yield connection
         finally:
@@ -138,6 +143,12 @@ class CheckupStore(RoundStore):
     def create_schema(self) -> None:
         """Create the tables and add any later column. Changes no task's state."""
         with self._connection() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            # Keep WAL alive between short per-operation connections. Closing the
+            # last connection otherwise checkpoints and removes WAL on every page.
+            if self._keeper is None:
+                self._keeper = sqlite3.connect(self.path, check_same_thread=False,
+                                               isolation_level=None)
             connection.executescript(SCHEMA)
             connection.executescript(ROUND_SCHEMA)
             present = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
