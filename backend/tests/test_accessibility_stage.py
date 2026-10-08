@@ -12,6 +12,7 @@
 import pytest
 from shapely.geometry import MultiPolygon, box, shape
 
+from app import catalog
 from app.accessibility.service_graph import build_views
 from app.algorithms.hybrid_isochrone.hard_obstacles import LocalObstacles
 from app.algorithms.osm_offline.graph_store import PEDESTRIAN_ATTRS, GraphStore
@@ -174,17 +175,17 @@ def test_overall_score_is_unavailable_when_a_category_cannot_be_scored():
     outcome = run(majors=("shopping", "medical"))
     assert outcome.scores.overall.available is False
     assert outcome.scores.overall.reason == "categories_not_analysed"
-    assert outcome.scores.overall.missing_categories == ["education"]
+    assert outcome.scores.overall.missing_categories == [major for major in catalog.majors() if major not in ("shopping", "medical")]
 
 
-def test_three_assessable_categories_give_one_overall_interval():
-    outcome = run(facilities=[facility(100), facility(100, 0, facility_id="f-shop",
-                                                   category="market"),
-                             facility(100, 0, facility_id="f-school", category="school")])
+def test_ten_assessable_categories_give_one_overall_interval():
+    outcome = run(majors=catalog.majors(), facilities=[
+        facility(100, facility_id=major, category=catalog.minors_of(major)[0])
+        for major in catalog.majors()])
     overall = outcome.scores.overall
     assert overall.available is True
     assert 0 <= overall.coverage_lower_pct <= overall.coverage_upper_pct <= 100
-    assert overall.weights == {name: pytest.approx(1 / 3) for name in MAJORS}
+    assert overall.weights == {name: pytest.approx(1 / 10) for name in catalog.majors()}
 
 
 # ---------------------------------------------------------------- 拒绝与降级

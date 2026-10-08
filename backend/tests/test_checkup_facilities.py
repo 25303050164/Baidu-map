@@ -13,6 +13,7 @@ served from the cache costs no attempt and keeps its original data time; a
 cancelled stage keeps what it retrieved; and a failure is never a zero.
 """
 import asyncio
+import pytest
 import contextlib
 import json
 import math
@@ -31,6 +32,15 @@ from app.poi.planner import RULES
 from app.quota import BudgetExhausted, DeadlineReached
 from life_circle.coordinates import LocalProjection, normalize
 from life_circle.models import RouteObservation
+
+@pytest.fixture(autouse=True)
+def three_category_query_fixture(monkeypatch):
+    """Freeze a three-minor test directory; full catalog rounds use no patch."""
+    from app import catalog
+    selected = ('market', 'pharmacy', 'primary_school')
+    monkeypatch.setattr(catalog, 'poi_keys', lambda majors=None: tuple(
+        key for key in selected if majors is None or catalog.major_of(key) in majors))
+
 
 ORIGIN = (121.513925, 31.313079)
 CENTER = {"lng": ORIGIN[0], "lat": ORIGIN[1]}
@@ -285,7 +295,8 @@ def make_app(tmp_path, places=None, routes=None, **overrides):
 def body(**overrides):
     payload = {"schemaVersion": "checkup-v1", "clientRequestId": "checkup-1",
                "engine": "baidu_e82", "center": dict(CENTER), "coordinateSystem": "bd09ll",
-               "isochrone": {"budget": 200}}
+               "isochrone": {"budget": 200},
+               "facilities": {"categories": ["shopping", "medical", "education"]}}
     payload.update(overrides)
     return payload
 
@@ -335,12 +346,12 @@ def test_both_engines_close_the_loop_over_their_own_boundary(tmp_path):
             task_id, view = run(client, body(engine=engine))
             assert view["status"] == "completed", view
             assert view["stage"] == "ready" and view["revision"] == 5
-            # The facility stage sent 24 pages and the verification stage then
+            # The facility stage sent 28 pages and the verification stage then
             # asked for one route per candidate: both are this task's requests,
             # and the counters report the task's own attempts rather than the
             # facility stage's share of them.
-            assert len(places.sent) == 24
-            assert view["networkRequests"] == 24 + 3
+            assert len(places.sent) == 28
+            assert view["networkRequests"] == 28 + 3
             assert view["requests"] >= view["networkRequests"]
             # This deployment has no walking graph, so the assessment refused and
             # the checkup is not called complete on the strength of a boundary and
@@ -367,14 +378,14 @@ def test_both_engines_close_the_loop_over_their_own_boundary(tmp_path):
             assert group["countsByCategory"] == {"shopping": 1, "medical": 1, "education": 1}
             assert len(group["facilities"]) == 3
             assert {item["classificationStatus"] for item in group["facilities"]} == {"accepted"}
-            assert group["statistics"]["uidMergedRecords"] == 24 - 3
+            assert group["statistics"]["uidMergedRecords"] == 28 - 3
             assert group["statistics"]["acceptedRecords"] == 3
             assert group["statistics"]["invalidRecords"] == 0
             assert group["statistics"]["outsideBoundaryRecords"] == 0
             assert group["statistics"]["cachedPages"] == 0
-            assert group["statistics"]["livePages"] == 24
-            assert group["statistics"]["budgetSpent"] == 24
-            assert group["statistics"]["pageAttempts"] == 24
+            assert group["statistics"]["livePages"] == 28
+            assert group["statistics"]["budgetSpent"] == 28
+            assert group["statistics"]["pageAttempts"] == 28
             assert group["stopReason"] is None and group["warnings"] == []
             assert group["queryDomain"]["paddingMeters"] == 1300
             assert group["dataObtainedAt"] > 0
@@ -387,7 +398,7 @@ def test_both_engines_close_the_loop_over_their_own_boundary(tmp_path):
             assert document_["businessStatus"] == "partial"
             assert app.state.checkups.store.revisions(task_id)[4]["stage"] == "reporting"
             assert document_["trace"]["ruleVersions"]["classification"] == RULES["version"]
-            assert document_["trace"]["budgets"]["poi"] == {"limit": 60, "spent": 24}
+            assert document_["trace"]["budgets"]["poi"] == {"limit": 60, "spent": 28}
             assert document_["trace"]["budgets"]["route"] == {"limit": 120, "spent": 0}
             assert document_["trace"]["budgets"]["detail"] == {"limit": 20, "spent": 0}
             assert document_["trace"]["budgets"]["isochrone"]["limit"] == 200
@@ -465,10 +476,10 @@ def test_a_facility_run_that_fails_every_page_is_a_failed_query(tmp_path):
         # A retry is an attempt: every one of them reserved its slot, so the
         # revision counts the pages it asked for and the attempts they cost.
         statistics = group["statistics"]
-        assert len(places.sent) == statistics["pageAttempts"] == statistics["budgetSpent"] == 48
-        assert statistics["queryAttempts"] == 48
-        assert statistics["livePages"] == 24  # 24 distinct pages, each asked twice
-        assert view["networkRequests"] == 48 and view["requests"] == 48
+        assert len(places.sent) == statistics["pageAttempts"] == statistics["budgetSpent"] == 56
+        assert statistics["queryAttempts"] == 56
+        assert statistics["livePages"] == 28  # 28 distinct pages, each asked twice
+        assert view["networkRequests"] == 56 and view["requests"] == 56
         assert document_["facilitiesStatus"] == "failed"
         assert document_["businessStatus"] == "insufficient"
 
@@ -494,7 +505,7 @@ def test_a_cancelled_facility_stage_keeps_what_it_retrieved(tmp_path):
         assert group["queryStatus"] == "cancelled" and group["stopReason"] == "cancelled"
         # Whatever it did retrieve is still reported, and the queries it never
         # sent are visible as such.
-        assert 0 <= group["statistics"]["queryAttempts"] < 24
+        assert 0 <= group["statistics"]["queryAttempts"] < 28
         assert len(places.sent) <= group["statistics"]["queryAttempts"]
         assert group["statistics"]["acceptedRecords"] == len(group["facilities"])
         assert all(item["classificationStatus"] == "accepted" for item in group["facilities"])
@@ -509,7 +520,7 @@ def test_a_cached_page_costs_no_attempt_and_keeps_its_data_time(tmp_path):
     with TestClient(app) as client:
         first_id, _view = run(client, body(clientRequestId="checkup-a"))
         first = document(client, first_id)
-        assert len(places.sent) == 24
+        assert len(places.sent) == 28
         second_id, view = run(client, body(clientRequestId="checkup-b"))
         assert view["status"] == "completed", view
         second = document(client, second_id)
@@ -517,16 +528,16 @@ def test_a_cached_page_costs_no_attempt_and_keeps_its_data_time(tmp_path):
         # route verification is a separate matter — no route is cached, so the
         # second task still asked once per candidate, and the counter reports
         # exactly those.
-        assert len(places.sent) == 24
+        assert len(places.sent) == 28
         assert view["networkRequests"] == 3
         group = second["facilities"]
-        assert group["statistics"]["cachedPages"] == 24
+        assert group["statistics"]["cachedPages"] == 28
         assert group["statistics"]["livePages"] == 0
         assert group["statistics"]["budgetSpent"] == 0
         assert group["statistics"]["pageAttempts"] == 0
-        # The planner still worked through all 24 queries; it just did not have
+        # The planner still worked through all 28 queries; it just did not have
         # to ask for any of them again.
-        assert group["statistics"]["queryAttempts"] == 24
+        assert group["statistics"]["queryAttempts"] == 28
         # The same evidence, and the original data time rather than a new one.
         assert group["facilities"] == first["facilities"]["facilities"]
         assert group["countsByCategory"] == first["facilities"]["countsByCategory"]

@@ -7,9 +7,9 @@
   ``C + G + U`` 去凑 A —— 否则删掉未评估的格子就能把分数抬上去（§7.1）。
   ``C + G + U = A`` 必须成立；不成立是调用方的实现错误，直接报错，不静默归一化。
 * **未知既不算覆盖也不算缺口。** 覆盖率因此是一个区间：下界只认 C，上界把未知也
-  算作可能覆盖。三类都没有未知面积时区间自然退化为一个点，不另外产出一个"总分"。
-* **部分类别不冒充总体。** 只有三大类都参与并且都有空间支持时才有总体区间分；只分析
-  一部分类别时总体分是"无法给出"，而不是把已分析类别重新加权成三类总分。
+  算作可能覆盖。全部类别都没有未知面积时区间自然退化为一个点，不另外产出一个"总分"。
+* **部分类别不冒充总体。** 只有目录全部大类都参与并且都有空间支持时才有总体区间分；只分析
+  一部分类别时总体分是"无法给出"，而不是把已分析类别重新加权成全部类别总分。
 
 这些区间以当前目录与路网模型为前提，不是统计置信区间，也不包含目录本身遗漏的现实
 设施；没有人口数据就不输出人口覆盖率，设施数量也不代表容量或政策准入（§7.1）。
@@ -21,7 +21,7 @@ from .contracts import MajorCategory
 
 MAJOR_CATEGORIES: tuple[MajorCategory, ...] = tuple(majors())
 
-# §7.1：三大类各占 1/3；只有三大类齐备时才有总体分。
+# §7.1：目录全部大类等权；只有目录全部大类齐备时才有总体分。
 CATEGORY_WEIGHT = 1.0 / len(MAJOR_CATEGORIES)
 
 # §11.3 门槛 1：每类别 C＋G＋U 与评估域 A 的误差不超过 max(1 m², A×10⁻⁶)。
@@ -71,7 +71,7 @@ class CategoryScore:
 
 @dataclass(frozen=True)
 class OverallScore:
-    """三类的总体区间分：下界按 1/3 加权下界，上界按 1/3 加权上界。"""
+    """全部类别的总体区间分：上下界分别按目录大类等权加权。"""
     coverage_lower_pct: float
     coverage_upper_pct: float
     assessable_pct: float
@@ -126,10 +126,10 @@ def category_score(category: str, areas: CategoryAreas, *, domain_area_m2: float
 
 
 def overall_score(scores: dict[str, CategoryScore]) -> OverallScore | OverallUnavailable:
-    """三大类的总体区间分，或说明为什么给不出（§7.1）。
+    """目录全部大类的总体区间分，或说明为什么给不出（§7.1）。
 
-    只分析部分大类、或某一类没有空间支持时都不给总体分：把两类重新加权成"三类总分"
-    会让读者以为三类都评估过了。
+    只分析部分大类、或某一类没有空间支持时都不给总体分：把两类重新加权成"全部类别总分"
+    会让读者以为全部类别都评估过了。
     """
     missing = tuple(category for category in MAJOR_CATEGORIES if category not in scores)
     if missing:
@@ -154,5 +154,5 @@ def overall_score(scores: dict[str, CategoryScore]) -> OverallScore | OverallUna
 
 
 def interval_degenerates(score: CategoryScore) -> bool:
-    """三类都没有未知面积时区间退化为一个点；此处用于报告文案判断。"""
+    """全部类别都没有未知面积时区间退化为一个点；此处用于报告文案判断。"""
     return score.supported and score.areas.unknown_m2 <= 0

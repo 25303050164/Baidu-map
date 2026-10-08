@@ -28,6 +28,15 @@ from app.geo.projection import MetricProjection
 from test_checkup_facilities import (ORIGIN, SyntheticPlaces, body, document, every_page,
                                      make_app, offset, run)
 
+@pytest.fixture(autouse=True)
+def three_category_query_fixture(monkeypatch):
+    """Freeze complete three-minor evidence for geometry/report regressions."""
+    from app import catalog
+    selected = ('market', 'pharmacy', 'primary_school')
+    monkeypatch.setattr(catalog, 'poi_keys', lambda majors=None: tuple(
+        key for key in selected if majors is None or catalog.major_of(key) in majors))
+
+
 CRS = "EPSG:32651"
 SPEED = 1.3
 #: Must match the deployment's ``osm_data_version``: the graph views are keyed by it.
@@ -131,7 +140,7 @@ def test_the_pipeline_publishes_the_report_last_and_the_domain_divides_exactly(t
         # The facilities were retrieved, so the assessment could run: this
         # deployment simply has no hard-obstacle layer, which is a limitation of
         # the result rather than a reason to withhold it.
-        assert document_["facilitiesStatus"] == "partial"
+        assert document_["facilitiesStatus"] == "complete"
         assert document_["accessibility"]["status"] == "partial"
         assert document_["businessStatus"] == "partial"
         assert document_["serviceGaps"]["obstacleLayerAvailable"] is False
@@ -144,9 +153,9 @@ def test_the_pipeline_publishes_the_report_last_and_the_domain_divides_exactly(t
             assert item["supported"] is True, item
             assert item["coveredM2"] + item["gapM2"] + item["unknownM2"] == pytest.approx(
                 domain_area, abs=1.0)
-            # At ten categories the 60-call budget leaves keyword work unfinished.
-            # Unsearched space stays unknown, never a fabricated zero-coverage gap.
-            assert item["coveredM2"] > 0 and item["gapM2"] == 0 and item["unknownM2"] > 0, item
+            # This focused three-minor directory completes all keyword pages.
+            # Its frozen domain contains coverage, measured gaps and uncertainty.
+            assert item["coveredM2"] > 0 and item["gapM2"] > 0 and item["unknownM2"] > 0, item
 
 
 def test_the_scores_are_intervals_over_the_frozen_domain(tmp_path):
@@ -167,8 +176,9 @@ def test_the_scores_are_intervals_over_the_frozen_domain(tmp_path):
             assert item["assessablePct"] + item["unknownPct"] == pytest.approx(100, abs=1e-6)
             assert item["assessablePct"] > item["coverageLowerPct"]
         overall = scores["overall"]
-        assert overall["available"] is True
-        assert overall["coverageLowerPct"] <= overall["coverageUpperPct"]
+        assert overall["available"] is False
+        assert overall["reason"] == "categories_not_analysed"
+        assert len(overall["missingCategories"]) == 7
 
 
 def test_every_grey_zone_explains_itself_and_the_layer_draws_the_counted_geometry(tmp_path):

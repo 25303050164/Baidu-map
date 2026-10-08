@@ -14,11 +14,17 @@ from app.checkups.facilities import FacilityOutcome
 from app.checkups.models import FacilityGroup
 from app.poi.online import OnlinePlanner, QueryDomain
 from test_poi_online import Synthetic, two_pages, page_of_one, ORIGIN as PLANNER_ORIGIN
-from test_checkup_facilities import body, document, run, terminal, ORIGIN
+from test_checkup_facilities import body as three_category_body, document, run, terminal, ORIGIN
 from test_checkup_report import make_report_app
 from test_checkup_facilities import make_app, SyntheticPlaces, at_origin
 from app.engines import IsochroneSnapshot
 from life_circle.coordinates import LocalProjection
+
+
+def body(**overrides):
+    overrides.setdefault('facilities', {})
+    overrides['facilities'].setdefault('categories', list(catalog.majors()))
+    return three_category_body(**overrides)
 
 
 def planner(budget, checkpoint=None, **kwargs):
@@ -120,6 +126,13 @@ def test_ten_categories_complete_across_manual_rounds_without_rebuilding_boundar
         assert view['status'] == 'completed', view
         first = document(client, task_id)
         first_bytes = json.dumps(first, sort_keys=True)
+        assert first['facilities']['queryStatus'] == 'partial'
+        assert view['completion']['roundPoiRequests'] == 60
+        assert len(view['completion']['queryCompleteByMajor']) == 10
+        assert not all(view['completion']['queryCompleteByMajor'].values())
+        # Unfinished retrieval cannot produce invented grey zones.
+        assert first['serviceGaps']['gapAreaM2'] == 0
+
         assert view['completion']['canContinue']
         history = [view['completion']['cumulativePoiRequests']]
         for number in range(2, 16):
