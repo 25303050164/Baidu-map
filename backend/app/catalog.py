@@ -249,6 +249,8 @@ POI_RULES: dict = {
     "queries": _mapping(lambda c: list(c.queries())),
     "supportedTags": _mapping(lambda c: list(c.tag_hints)),
     "nameHints": _mapping(lambda c: list(c.name_hints)),
+    "nameShadows": [[poi_key(specific), poi_key(generic)]
+                    for specific, generic in DATA["nameShadows"]],
     "excludeHints": _mapping(lambda c: list(c.exclude_hints)),
     "displayGroupByCategory": _mapping(lambda c: c.display_group or display_group_for_major(c.major)),
     "priorities": _mapping(lambda c: c.priority),

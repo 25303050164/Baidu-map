@@ -118,8 +118,9 @@ class RouteSession:
                 self.stop_reason = 'deadline'
                 return None
             try:
-                self.budget.request_context[pool] = {'facilityId': facility_id,
-                                                     'origin': origin, 'destination': destination}
+                if self.budget is not None:
+                    self.budget.request_context[pool] = {'facilityId': facility_id,
+                                                         'origin': origin, 'destination': destination}
                 # The token is passed only when there is one, so an injected pool keeps
                 # its plain signature.
                 extra = {} if self.token is None else {'token': self.token}
@@ -134,7 +135,7 @@ class RouteSession:
                         facility_id, origin, destination,
                         min(MAX_TIMEOUT_SECONDS, timeout))
                     attempt.outcome(value.reason)
-                    if self.budget.on_result is not None:
+                    if self.budget is not None and self.budget.on_result is not None:
                         self.budget.on_result(self.budget.reservations[pool], asdict(value), value.reason)
             # 桶用尽和到点都不是"这条路走不通"，而是"这次没有结论"：停下来，把原因
             # 带到证据里去，而不是让异常从阶段里冒出来变成一次失败。
