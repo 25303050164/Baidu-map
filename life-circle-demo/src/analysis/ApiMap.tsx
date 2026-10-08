@@ -10,7 +10,7 @@ import {
 import { aggregateByCell, FACILITY_CLUSTER_CELL_PX } from '../map/layers/aggregate';
 import { createDensityOverlay, type DensityOverlay } from '../map/layers/heatmapOverlay';
 import type { Facility, AssessmentPoint } from '../api-contract';
-import { majorMeta } from '../taxonomy';
+import { displayGroupForMajor, displayGroupMeta, majorMeta } from '../taxonomy';
 
 export type Layers = { reachable: boolean; unreachable: boolean; unknown: boolean; uncertain: boolean; extent: boolean; serviceBlind: boolean; heatmap: boolean };
 
@@ -25,12 +25,14 @@ export type MapResult = {
   timeBands?: { minutes: number; geometry: DrawableGeometry | null }[];
 };
 
-/** 设施大类颜色（与图例、FacilityPanel 分组一致）；符号取小类首字。 */
-const majorColors: Record<string, string> = {
-  medical: '#397ac6', shopping: '#168875', education: '#c78b36', care: '#8b5cf6', dining: '#e06b3c',
-  finance: '#0f766e', public: '#64748b', leisure: '#2f855a', transport: '#2563eb', life: '#a16207',
+/** 设施展示组颜色（与图例、FacilityPanel 分组一致）；符号取小类首字。 */
+const displayGroupColors: Record<string, string> = {
+  healthcare: '#397ac6', education: '#c78b36', daily_life: '#168875',
+  public_mobility: '#64748b', leisure: '#2f855a',
 };
-const majorNames: Record<string, string> = Object.fromEntries(Object.entries(majorMeta).map(([key, value]) => [key, value.label]));
+const majorColors: Record<string, string> = Object.fromEntries(
+  Object.keys(majorMeta).map(major => [major, displayGroupColors[displayGroupForMajor(major) ?? 'daily_life']]),
+);
 const minorSymbols: Record<string, string> = {
   market: '菜', supermarket: '超', pharmacy: '药', hospital_pharmacy: '医', school: '学', primary_school: '学',
   hospital: '院', clinic: '诊', checkup: '检', wet_market: '市', fresh_store: '鲜', combined_school: '学',
@@ -274,8 +276,8 @@ export function ApiMap({ center, result, resultCenter, layers, onPick, minutes =
       </div>}
     </div>
     {facilities.length > 0 && <div className="api-map-legend" data-testid="map-legend" aria-label="地图图例">
-      {Object.entries(majorMeta).sort(([, left], [, right]) => left.order - right.order).map(([key, value]) => (
-        <span key={key} className="api-legend-item"><i className="api-legend-dot" style={{ background: majorColors[key] }} />{majorNames[key]}</span>
+      {Object.entries(displayGroupMeta).sort(([, left], [, right]) => left.order - right.order).map(([key, value]) => (
+        <span key={key} className="api-legend-item"><i className="api-legend-dot" style={{ background: displayGroupColors[key] }} />{value.label}</span>
       ))}
       {facilities.length > 1 && <span className="api-legend-item">共 {facilities.length} 处设施，同格合并显示，数据不截断</span>}
       {route.length > 1 && <span className="api-legend-item"><i className="api-legend-line" />步行路线</span>}

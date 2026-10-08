@@ -1,6 +1,6 @@
 import type { RouteEvidence, PoiEvidence } from '../api-contract';
 import type { AnalysisResult, BusinessStatus, TaskStatus } from './types';
-import { majorCategories } from '../taxonomy';
+import { majorCategories, displayGroups } from '../taxonomy';
 
 type RecordValue = Record<string, unknown>;
 const object = (v: unknown): v is RecordValue => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -38,6 +38,10 @@ export function validResult(v: unknown): v is AnalysisResult {
     || !['not_integrated', 'complete', 'partial', 'failed'].includes(v.facilitiesStatus as string) || v.coordinateSystem !== 'bd09ll'
     || v.coordinateOrder !== 'longitude,latitude' || !object(v.units) || !object(v.rules)
     || !object(v.data) || !Array.isArray(v.data.categories)
+    || (v.data.facilityDisplayGroups !== undefined && (!Array.isArray(v.data.facilityDisplayGroups)
+      || !v.data.facilityDisplayGroups.every(groupInfo => object(groupInfo)
+        && displayGroup(groupInfo.key) && typeof groupInfo.label === 'string'
+        && Number.isInteger(groupInfo.order) && Array.isArray(groupInfo.majors))))
     || !v.data.categories.every(c => object(c) && minor(c.category)
       && (c.count_in_circle === null || count(c.count_in_circle)))
     || !object(v.isochrone)) return false;
@@ -79,6 +83,7 @@ export function validResult(v: unknown): v is AnalysisResult {
 }
 
 const group = (v: unknown) => majorCategories.includes(v as typeof majorCategories[number]);
+const displayGroup = (v: unknown) => displayGroups.includes(v as typeof displayGroups[number]);
 const minorKeys = new Set([
   'market', 'pharmacy', 'hospital_pharmacy', 'hospital', 'clinic', 'checkup', 'fresh_store',
   'supermarket', 'school', 'combined_school', 'middle_school', 'college', 'preschool',
@@ -141,6 +146,10 @@ function validAssessment(v: unknown): boolean {
 function validFacility(v: unknown): boolean {
   return object(v) && typeof v.id === 'string' && v.id.length > 0 && typeof v.name === 'string'
     && group(v.major_category) && object(v.location) && point([v.location.lng, v.location.lat])
+    && (v.displayGroup === undefined || v.displayGroup === null || displayGroup(v.displayGroup))
+    && (v.secondaryCategories === undefined || (Array.isArray(v.secondaryCategories)
+      && v.secondaryCategories.every(minor) && new Set(v.secondaryCategories).size === v.secondaryCategories.length))
+    && (v.capabilities === undefined || (Array.isArray(v.capabilities) && v.capabilities.every(item => typeof item === 'string')))
     && (v.in_circle === null || typeof v.in_circle === 'boolean')
     && (v.poiEvidence == null || (validPoiEvidence(v.poiEvidence) && v.poiEvidence.facilityId === v.id
       && v.poiEvidence.destination[0] === +(v.location.lng as number).toFixed(6)

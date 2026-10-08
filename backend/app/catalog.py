@@ -46,8 +46,11 @@ class Category:
     name_hints: tuple[str, ...] = ()
     tag_hints: tuple[str, ...] = ()
     exclude_hints: tuple[str, ...] = ()
+    display_group: str | None = None
     priority: int = 0
     negative: bool = False
+    secondary_categories: tuple[str, ...] = ()
+    capabilities: tuple[str, ...] = ()
 
     def queries(self) -> tuple[str, ...]:
         """Every request type for this category, primary one first."""
@@ -60,6 +63,27 @@ def _read() -> dict:
 
 DATA = _read()
 VERSION: str = DATA["version"]
+
+
+@dataclass(frozen=True)
+class DisplayGroup:
+    key: str
+    label: str
+    order: int
+    majors: tuple[str, ...]
+
+
+DISPLAY_GROUPS: tuple[DisplayGroup, ...] = tuple(
+    DisplayGroup(
+        key=item["key"], label=item["label"], order=item.get("order", index + 1),
+        majors=tuple(item.get("majors", ())),
+    )
+    for index, item in enumerate(DATA.get("displayGroups", ()))
+)
+DISPLAY_GROUP_BY_KEY: dict[str, DisplayGroup] = {item.key: item for item in DISPLAY_GROUPS}
+MAJOR_TO_DISPLAY_GROUP: dict[str, str] = {
+    major: group.key for group in DISPLAY_GROUPS for major in group.majors
+}
 
 MAJOR_LABELS: dict[str, str] = {
     "medical": "医疗健康", "shopping": "购物消费", "education": "教育",
@@ -74,8 +98,11 @@ CATEGORIES: tuple[Category, ...] = tuple(
         poi_runtime=item.get("poiRuntime", False), poi_name=item.get("poiName"),
         extra_queries=tuple(item.get("extraQueries", ())),
         name_hints=tuple(item["nameHints"]), tag_hints=tuple(item["tagHints"]),
-        exclude_hints=tuple(item.get("excludeHints", ())), priority=int(item.get("priority", 0)),
+        exclude_hints=tuple(item.get("excludeHints", ())),
+        display_group=item.get("displayGroup"), priority=int(item.get("priority", 0)),
         negative=bool(item.get("negative", False)),
+        secondary_categories=tuple(item.get("secondaryCategories", ())),
+        capabilities=tuple(item.get("capabilities", ())),
     ) for item in DATA["categories"])
 
 BY_KEY: dict[str, Category] = {category.key: category for category in CATEGORIES}
@@ -119,6 +146,61 @@ def minors_of(major: str) -> tuple[str, ...]:
     return tuple(category.key for category in CATEGORIES if category.major == major)
 
 
+def display_group_keys() -> tuple[str, ...]:
+    return tuple(group.key for group in sorted(DISPLAY_GROUPS, key=lambda item: item.order))
+
+
+def display_group_for_major(major: str) -> str | None:
+    return MAJOR_TO_DISPLAY_GROUP.get(major)
+
+
+def display_group_for_minor(name: str) -> str | None:
+    category = BY_KEY.get(contract_key(name))
+    return category.display_group if category and category.display_group else (
+        display_group_for_major(category.major) if category else None
+    )
+
+
+def display_group_label(key: str) -> str | None:
+    group = DISPLAY_GROUP_BY_KEY.get(key)
+    return group.label if group else None
+
+
+def secondary_categories_for(name: str) -> tuple[str, ...]:
+    category = BY_KEY.get(contract_key(name))
+    return category.secondary_categories if category else ()
+
+
+def capabilities_for(name: str) -> tuple[str, ...]:
+    category = BY_KEY.get(contract_key(name))
+    return category.capabilities if category else ()
+
+
+def catalog_payload() -> dict:
+    """Stable read-only payload used by clients that need the current taxonomy."""
+    return {
+        "version": VERSION,
+        "displayGroups": [
+            {"key": group.key, "label": group.label, "order": group.order, "majors": list(group.majors)}
+            for group in sorted(DISPLAY_GROUPS, key=lambda item: item.order)
+        ],
+        "categories": [
+            {
+                "key": category.key,
+                "major": category.major,
+                "displayGroup": category.display_group or display_group_for_major(category.major),
+                "label": category.label,
+                "query": category.query,
+                "extraQueries": list(category.extra_queries),
+                "priority": category.priority,
+                "secondaryCategories": list(category.secondary_categories),
+                "capabilities": list(category.capabilities),
+            }
+            for category in CATEGORIES
+        ],
+    }
+
+
 def poi_key(key: str) -> str:
     """The POI runtime's spelling of a category; every other name is unchanged."""
     return ALIASES.get(key, key)
@@ -160,11 +242,18 @@ def _mapping(selector) -> dict:
 # in the shape its planner and normalizer already read.
 POI_RULES: dict = {
     "version": VERSION,
+    "displayGroups": [
+        {"key": group.key, "label": group.label, "order": group.order, "majors": list(group.majors)}
+        for group in sorted(DISPLAY_GROUPS, key=lambda item: item.order)
+    ],
     "queries": _mapping(lambda c: list(c.queries())),
     "supportedTags": _mapping(lambda c: list(c.tag_hints)),
     "nameHints": _mapping(lambda c: list(c.name_hints)),
     "excludeHints": _mapping(lambda c: list(c.exclude_hints)),
+    "displayGroupByCategory": _mapping(lambda c: c.display_group or display_group_for_major(c.major)),
     "priorities": _mapping(lambda c: c.priority),
+    "secondaryCategories": _mapping(lambda c: list(c.secondary_categories)),
+    "capabilities": _mapping(lambda c: list(c.capabilities)),
     "negative": _mapping(lambda c: c.negative),
     "excluded": list(EXCLUSIONS),
     "nonBusinessParentTags": sorted(NON_BUSINESS_PARENT_TAGS),

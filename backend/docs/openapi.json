@@ -1261,6 +1261,25 @@
           }
         }
       }
+    },
+    "/api/facility-catalog": {
+      "get": {
+        "summary": "Facility Catalog",
+        "description": "Return the versioned facility taxonomy used by search and responses.",
+        "operationId": "facility_catalog_api_facility_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacilityCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1695,6 +1714,154 @@
         ],
         "title": "BlindPoint"
       },
+      "CatalogCategory": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "pharmacy",
+              "hospital_pharmacy",
+              "hospital",
+              "clinic",
+              "checkup",
+              "market",
+              "fresh_store",
+              "supermarket",
+              "school",
+              "combined_school",
+              "middle_school",
+              "college",
+              "preschool",
+              "training",
+              "nursing_home",
+              "rehab",
+              "restaurant",
+              "cafe",
+              "bank",
+              "finance_service",
+              "government",
+              "post",
+              "library",
+              "park",
+              "sports",
+              "entertainment",
+              "bus",
+              "parking",
+              "fuel",
+              "repair",
+              "beauty"
+            ],
+            "title": "Key"
+          },
+          "major": {
+            "type": "string",
+            "enum": [
+              "medical",
+              "shopping",
+              "education",
+              "care",
+              "dining",
+              "finance",
+              "public",
+              "leisure",
+              "transport",
+              "life"
+            ],
+            "title": "Major"
+          },
+          "displayGroup": {
+            "type": "string",
+            "enum": [
+              "healthcare",
+              "education",
+              "daily_life",
+              "public_mobility",
+              "leisure"
+            ],
+            "title": "Displaygroup"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "extraQueries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Extraqueries"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "secondaryCategories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "pharmacy",
+                "hospital_pharmacy",
+                "hospital",
+                "clinic",
+                "checkup",
+                "market",
+                "fresh_store",
+                "supermarket",
+                "school",
+                "combined_school",
+                "middle_school",
+                "college",
+                "preschool",
+                "training",
+                "nursing_home",
+                "rehab",
+                "restaurant",
+                "cafe",
+                "bank",
+                "finance_service",
+                "government",
+                "post",
+                "library",
+                "park",
+                "sports",
+                "entertainment",
+                "bus",
+                "parking",
+                "fuel",
+                "repair",
+                "beauty"
+              ]
+            },
+            "type": "array",
+            "title": "Secondarycategories"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "major",
+          "displayGroup",
+          "label",
+          "query",
+          "extraQueries",
+          "priority",
+          "secondaryCategories",
+          "capabilities"
+        ],
+        "title": "CatalogCategory"
+      },
       "CategoryCoverage": {
         "properties": {
           "category": {
@@ -1895,6 +2062,25 @@
               "unknown"
             ],
             "title": "Service Status"
+          },
+          "displayGroup": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "healthcare",
+                  "education",
+                  "daily_life",
+                  "public_mobility",
+                  "leisure"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displaygroup",
+            "x-legacy-optional": true
           }
         },
         "additionalProperties": false,
@@ -2776,6 +2962,14 @@
             ],
             "title": "Facilities"
           },
+          "facilityDisplayGroups": {
+            "items": {
+              "$ref": "#/components/schemas/DisplayGroupInfo"
+            },
+            "type": "array",
+            "title": "Facilitydisplaygroups",
+            "x-legacy-optional": true
+          },
           "categories": {
             "items": {
               "$ref": "#/components/schemas/CategoryResult"
@@ -2822,6 +3016,57 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Data"
+      },
+      "DisplayGroupInfo": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "healthcare",
+              "education",
+              "daily_life",
+              "public_mobility",
+              "leisure"
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
+          "majors": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "medical",
+                "shopping",
+                "education",
+                "care",
+                "dining",
+                "finance",
+                "public",
+                "leisure",
+                "transport",
+                "life"
+              ]
+            },
+            "type": "array",
+            "title": "Majors"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "order",
+          "majors"
+        ],
+        "title": "DisplayGroupInfo"
       },
       "DistanceRule": {
         "properties": {
@@ -3028,6 +3273,74 @@
             ],
             "title": "In Circle"
           },
+          "displayGroup": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "healthcare",
+                  "education",
+                  "daily_life",
+                  "public_mobility",
+                  "leisure"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displaygroup",
+            "x-legacy-optional": true
+          },
+          "secondaryCategories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "pharmacy",
+                "hospital_pharmacy",
+                "hospital",
+                "clinic",
+                "checkup",
+                "market",
+                "fresh_store",
+                "supermarket",
+                "school",
+                "combined_school",
+                "middle_school",
+                "college",
+                "preschool",
+                "training",
+                "nursing_home",
+                "rehab",
+                "restaurant",
+                "cafe",
+                "bank",
+                "finance_service",
+                "government",
+                "post",
+                "library",
+                "park",
+                "sports",
+                "entertainment",
+                "bus",
+                "parking",
+                "fuel",
+                "repair",
+                "beauty"
+              ]
+            },
+            "type": "array",
+            "title": "Secondarycategories",
+            "x-legacy-optional": true
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities",
+            "x-legacy-optional": true
+          },
           "poiEvidence": {
             "anyOf": [
               {
@@ -3153,6 +3466,36 @@
           "warnings"
         ],
         "title": "FacilityAnalysis"
+      },
+      "FacilityCatalog": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "displayGroups": {
+            "items": {
+              "$ref": "#/components/schemas/DisplayGroupInfo"
+            },
+            "type": "array",
+            "title": "Displaygroups"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogCategory"
+            },
+            "type": "array",
+            "title": "Categories"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "displayGroups",
+          "categories"
+        ],
+        "title": "FacilityCatalog"
       },
       "FacilityGroup": {
         "properties": {
