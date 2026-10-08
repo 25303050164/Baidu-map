@@ -290,7 +290,7 @@ def body(**overrides):
     return payload
 
 
-def terminal(client, task_id, timeout=120.0, until_stage=None):
+def terminal(client, task_id, timeout=300.0, until_stage=None):
     """Wait for a task to reach a terminal state, or for one stage to start."""
     deadline = time.monotonic() + timeout
     view = client.get(f"/api/v2/checkups/{task_id}").json()

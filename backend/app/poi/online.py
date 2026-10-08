@@ -26,9 +26,10 @@ so this module cannot express a completeness claim at all: the only value it can
 report is ``unverified`` (§4.2).
 """
 import asyncio
+import copy
 import math
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Protocol
 
 import httpx
@@ -38,6 +39,7 @@ from app.quota import QuotaError
 from app.request_control import RequestStopped
 from life_circle.coordinates import LocalProjection
 from life_circle.models import CancelToken
+from app import catalog
 
 from .planner import RULES, sequence
 
@@ -275,7 +277,7 @@ class OnlinePlanner:
 
     def __init__(self, *, domain: QueryDomain, origin, categories, budget: int, source: str,
                  finest_edge: float = FINEST_BLOCK_METERS, max_pages: int = MAX_PAGES,
-                 token=None):
+                 token=None, checkpoint=None, on_checkpoint=None, spent=None):
         if type(budget) is not int or budget <= 0:
             raise ValueError('budget must be a positive integer')
         if not categories:
@@ -287,6 +289,8 @@ class OnlinePlanner:
         self.source = source
         self.finest_edge, self.max_pages = finest_edge, max_pages
         self.token = token or CancelToken()
+        self.on_checkpoint, self.spent = on_checkpoint, spent
+        self.active = None
         self.projection = LocalProjection((origin[0], origin[1]))
         # Structure first: a domain with no extent is empty, not out of range.
         self.coarse = coarse_blocks(domain)
@@ -295,16 +299,91 @@ class OnlinePlanner:
             raise ValueError('empty_query_domain')
         self.blocks = {block.tile_id: block for block in self.coarse}
         self.children, self.sequences, self.queue = {}, {}, deque()
+        self.later = {major: deque() for major in catalog.majors()}
+        self.major_order = tuple(major for major in catalog.majors()
+                                 if any(catalog.major_of(category) == major for category in self.categories))
+        self.major_cursor = 0
         self.observations, self.attempts, self.stopped, self.warnings = [], 0, None, []
-        # §4.2.2: within each block the categories take their keywords in
-        # rotation, so a category with more keywords cannot exhaust the budget
-        # before the others have had their first turn.
-        for block in self.coarse:
-            pending = [(category, deque(RULES['queries'][category])) for category in self.categories]
-            while any(queries for _, queries in pending):
-                for category, queries in pending:
-                    if queries:
-                        self._enqueue(block, category, queries.popleft())
+        # First give every major a first minor on every block. Then rotate the
+        # remaining primary minor queries. Supplements and follow-up pages share
+        # a later queue, so neither can consume the first-pass opportunity.
+        ordered_blocks = sorted(self.coarse, key=lambda block: (
+            (block.x + block.edge / 2) ** 2 + (block.y + block.edge / 2) ** 2,
+            block.tile_id))
+        minors = {major: [category for category in self.categories
+                          if catalog.major_of(category) == major] for major in self.major_order}
+        for index in range(max(map(len, minors.values()))):
+            for block in ordered_blocks:
+                for major in self.major_order:
+                    if index < len(minors[major]):
+                        category = minors[major][index]
+                        self._enqueue(block, category, RULES['queries'][category][0])
+        for block in ordered_blocks:
+            for major in self.major_order:
+                for category in minors[major]:
+                    for query in RULES['queries'][category][1:]:
+                        self._enqueue(block, category, query, later=True)
+        if checkpoint is not None:
+            self.restore(checkpoint)
+
+    def checkpoint(self):
+        """JSON-safe scheduling state, independent of the per-round allowance."""
+        key = lambda state: state.mapping['sequenceId']
+        sequences = []
+        for state in self.sequences.values():
+            value = asdict(state)
+            value['pagination']['fingerprints'] = sorted(state.pagination.fingerprints)
+            value['pagination']['seen_uids'] = sorted(state.pagination.seen_uids)
+            sequences.append(value)
+        return {'version': 1, 'domain': self.domain.polygon, 'origin': list(self.origin),
+                'categories': list(self.categories), 'source': self.source,
+                'blocks': [asdict(block) for block in self.blocks.values()],
+                'children': {key: [b.tile_id for b in children] for key, children in self.children.items()},
+                'sequences': sequences, 'queue': ([key(self.active)] if self.active else [])
+                    + [key(s) for s in self.queue],
+                'later': {major: [key(s) for s in queue] for major, queue in self.later.items()},
+                'majorCursor': self.major_cursor, 'observations': [asdict(o) for o in self.observations],
+                'warnings': list(self.warnings)}
+
+    def restore(self, value):
+        if (value['version'] != 1 or tuple(value['categories']) != self.categories
+                or tuple(value['origin']) != tuple(self.origin)
+                or tuple(map(tuple, value['domain'])) != self.domain.polygon
+                or value['source'] != self.source):
+            raise ValueError('incompatible_query_checkpoint')
+        self.blocks = {v['tile_id']: QueryBlock(**v) for v in value['blocks']}
+        self.children = {key: tuple(self.blocks[i] for i in ids) for key, ids in value['children'].items()}
+        self.sequences = {}
+        by_id = {}
+        for raw in value['sequences']:
+            raw = copy.deepcopy(raw)
+            raw['block'] = self.blocks[raw['block']['tile_id']]
+            pagination = raw['pagination']
+            for name in ('fingerprints', 'seen_uids'):
+                pagination[name] = set(pagination[name])
+            raw['pagination'] = Pagination(**pagination)
+            state = _Sequence(**raw)
+            state.page_attempts = 0
+            self.sequences[(state.block.tile_id, state.category, state.query)] = state
+            by_id[state.mapping['sequenceId']] = state
+        self.queue = deque(by_id[i] for i in value['queue'])
+        self.later = {major: deque(by_id[i] for i in ids) for major, ids in value['later'].items()}
+        queued = {id(s) for s in self.queue} | {id(s) for q in self.later.values() for s in q}
+        for state in self.sequences.values():
+            if state.stop in RETRY_ERRORS | FATAL | {'cancelled', 'budget_exhausted', 'unfinished'}:
+                state.status, state.stop = ('more' if state.pagination.pages else 'pending'), None
+                if id(state) not in queued:
+                    self.later[catalog.major_of(state.category)].append(state)
+        self.major_cursor = value['majorCursor']
+        self.observations = [Observation(**v) for v in value['observations']]
+        self.warnings = list(value['warnings'])
+
+    def _save(self):
+        if self.on_checkpoint:
+            self.on_checkpoint(self.checkpoint())
+
+    def _used(self):
+        return self.attempts if self.spent is None else self.spent()
 
     def _window(self):
         x0, y0, x1, y1 = self.domain.envelope
@@ -313,7 +392,7 @@ class OnlinePlanner:
         if not (-180 <= southwest[0] < northeast[0] <= 180 and -85 < southwest[1] < northeast[1] < 85):
             raise ValueError('window outside supported projection')
 
-    def _enqueue(self, block, category, query):
+    def _enqueue(self, block, category, query, *, later=False):
         key = (block.tile_id, category, query)
         if key in self.sequences:
             return None
@@ -321,8 +400,17 @@ class OnlinePlanner:
                           mapping=sequence(block.tile_id, block.x, block.y, block.edge,
                                            category, query, self.projection))
         self.sequences[key] = state
-        self.queue.append(state)
+        (self.later[catalog.major_of(category)] if later else self.queue).append(state)
         return state
+
+    def _next_later(self):
+        for offset in range(len(self.major_order)):
+            index = (self.major_cursor + offset) % len(self.major_order)
+            major = self.major_order[index]
+            if self.later[major]:
+                self.major_cursor = (index + 1) % len(self.major_order)
+                return self.later[major].popleft()
+        return None
 
     async def _attempt(self, fetch, mapping, page):
         """One call, with the scheduling layer's refusals turned into reasons."""
@@ -359,7 +447,7 @@ class OnlinePlanner:
         self.children[state.block.tile_id] = children
         for child in children:
             self.blocks.setdefault(child.tile_id, child)
-            self._enqueue(child, state.category, state.query)
+            self._enqueue(child, state.category, state.query, later=True)
 
     async def _step(self, fetch, state):
         page = state.page
@@ -370,13 +458,16 @@ class OnlinePlanner:
                   'pageNum': page, 'requested': True, 'succeeded': payload is not None,
                   'source': self.source, 'reason': reason, 'total': None, 'returned': 0,
                   'truncated': False, 'warnings': []}
+        metadata = getattr(fetch, 'metadata', lambda *_: {})(state.mapping, page)
+        if metadata:
+            record.update(fetchSource=metadata.get('source'), obtainedAt=metadata.get('obtainedAt'))
         state.pages.append(record)
         if payload is None:
             if reason in FATAL:
                 self.stopped = reason
             if (reason in RETRY_ERRORS and state.page_attempts < MAX_PAGE_ATTEMPTS
-                    and self.attempts < self.budget and self.stopped is None):
-                self.queue.append(state)  # The same page, inside the same budget.
+                    and self.stopped is None):
+                self.later[catalog.major_of(state.category)].append(state)
                 return
             self._finish(state, reason)
             return
@@ -392,29 +483,35 @@ class OnlinePlanner:
         if stop is None:
             state.page = page + 1
             state.status = 'more'
-            self.queue.append(state)
+            self.later[catalog.major_of(state.category)].append(state)
             return
         state.page = page + 1
         self._finish(state, stop)
 
     async def run(self, fetch: Fetch) -> OnlineResult:
+        self._save()
         try:
-            while self.queue and self.stopped is None:
+            while (self.queue or any(self.later.values())) and self.stopped is None:
                 if self.token.cancelled:
                     self.stopped = 'cancelled'
                     break
-                state = self.queue.popleft()
-                if state.status not in ('pending', 'more'):
-                    continue
-                if self.attempts >= self.budget:
+                if self._used() >= self.budget:
                     self.stopped = 'budget_exhausted'
                     break
+                state = self.queue.popleft() if self.queue else self._next_later()
+                if state.status not in ('pending', 'more'):
+                    continue
+                self.active = state
+                self._save()
                 await self._step(fetch, state)
+                self.active = None
+                self._save()
         except asyncio.CancelledError:
             # Cancellation is an outcome of this run, not an exception for the
             # caller to clean up: the evidence already obtained is still reported.
             self.token.cancel()
             self.stopped = 'cancelled'
+        self._save()
         return self.result()
 
     def _covered(self, block, category, query):
@@ -450,11 +547,15 @@ class OnlinePlanner:
                 for category in self.categories}
 
     def result(self) -> OnlineResult:
-        """Report the run. Closes out anything the budget left unscheduled."""
+        """Project unfinished work into report rows without destroying the cursor."""
+        coverage = []
         for state in self.sequences.values():
+            entry = state.entry(self.source)
             if state.status in ('pending', 'more'):
-                self._finish(state, self.stopped or 'unfinished')
-        coverage = [state.entry(self.source) for state in self.sequences.values()]
+                entry.update(status='partial' if state.pagination.pages else 'failed',
+                             stopReason=(state.pages[-1]['reason'] if state.pages and
+                                         not state.pages[-1]['succeeded'] else self.stopped or 'unfinished'))
+            coverage.append(entry)
         covered = all(self._covered(block, category, query)
                       for block in self.coarse for category in self.categories
                       for query in RULES['queries'][category])

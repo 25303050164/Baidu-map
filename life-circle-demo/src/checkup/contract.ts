@@ -26,6 +26,24 @@ export type CheckupRequest = {
   facilities?: CheckupFacilities;
 };
 
+export type CheckupCompletion = {
+  reportRevision: number;
+  roundNumber: number;
+  roundPoiLimit: number;
+  roundPoiRequests: number;
+  cumulativePoiRequests: number;
+  routeRequests: number;
+  routeRemaining: number;
+  queryCompleteByMajor: Record<string, boolean>;
+  evaluatedCategories: number;
+  totalCategories: number;
+  evaluationStatus: "partial" | "complete" | "limited";
+  canContinue: boolean;
+  restartRetrieval: boolean;
+  stopReason: string | null;
+  limitations: Array<string>;
+};
+
 export type TaskProgress = {
   step: string;
   label: string;
@@ -56,6 +74,7 @@ export type CheckupTaskView = {
   stageStartedAt: number | null;
   lastActivityAt: number | null;
   progress: TaskProgress | null;
+  completion?: CheckupCompletion | null;
 };
 
 export type AccessibilityEvidence = {
@@ -83,6 +102,12 @@ export type CategoryCoverage = {
   cells: Record<string, unknown>;
   entrances: Record<string, unknown>;
   coverage: Record<string, unknown> | null;
+};
+
+export type CategoryDirectoryEntry = {
+  id: string;
+  label: string;
+  order: number;
 };
 
 export type CoverageRow = {
@@ -174,12 +199,15 @@ export type ReportEvidence = {
   domain: Record<string, unknown> | null;
   domainAreaM2: number | null;
   categories: Array<CoverageRow>;
+  categoryDirectoryVersion?: string | null;
+  categoryDirectory?: Array<CategoryDirectoryEntry>;
   overall: OverallScore | null;
   gaps: ReportGaps;
   verification: ReportVerification;
   evidence: ReportQuality;
   dataSources: Record<string, unknown> | null;
   limitations: Array<string>;
+  completion?: CheckupCompletion | null;
 };
 
 export type ReportGaps = {
@@ -216,6 +244,10 @@ export type ReportVerification = {
   checked: number;
   failed: number;
   unresolved: number;
+  routeReturns?: number;
+  strictConfirmed?: number;
+  toleranceEstimated?: number;
+  noUsableDecision?: number;
   facilities: Array<Record<string, unknown>>;
   conflicts: Array<Record<string, unknown>>;
   spotChecks: Array<Record<string, unknown>>;
@@ -303,6 +335,10 @@ export type VerificationEvidence = {
   checked: number;
   failed: number;
   unresolved: number;
+  routeReturns?: number;
+  strictConfirmed?: number;
+  toleranceEstimated?: number;
+  noUsableDecision?: number;
   facilities: Array<Record<string, unknown>>;
   conflicts: Array<Record<string, unknown>>;
   spotChecks: Array<Record<string, unknown>>;
@@ -351,6 +387,7 @@ export type CheckupSnapshot = {
   report: ReportEvidence | null;
   water: WaterDataEvidence | null;
   warnings: Array<Issue>;
+  completion?: CheckupCompletion | null;
 };
 
 export type CheckupLayer = {
@@ -379,6 +416,7 @@ export type FacilityRoute = {
   observedDurationS: number | null;
   poiStatus: "pending" | "verified_reachable" | "verified_unreachable";
   poiReason: string | null;
+  entranceStatus?: string | null;
   evidenceGrade: "verified" | "model";
   routeOrigin: Origin | null;
   routeDestination: Origin | null;
@@ -401,4 +439,11 @@ export type CheckupCapabilities = {
   budgets: Record<string, unknown>;
   quota: Record<string, unknown>;
   waterReviews: Array<Record<string, unknown>>;
+  categoryDirectoryVersion: string;
+  categoryDirectory: Array<CategoryDirectoryEntry>;
+};
+
+export type ContinueCheckupRequest = {
+  clientRequestId: string;
+  baseRevision: number;
 };

@@ -131,7 +131,7 @@ def test_the_pipeline_publishes_the_report_last_and_the_domain_divides_exactly(t
         # The facilities were retrieved, so the assessment could run: this
         # deployment simply has no hard-obstacle layer, which is a limitation of
         # the result rather than a reason to withhold it.
-        assert document_["facilitiesStatus"] == "complete"
+        assert document_["facilitiesStatus"] == "partial"
         assert document_["accessibility"]["status"] == "partial"
         assert document_["businessStatus"] == "partial"
         assert document_["serviceGaps"]["obstacleLayerAvailable"] is False
@@ -144,17 +144,9 @@ def test_the_pipeline_publishes_the_report_last_and_the_domain_divides_exactly(t
             assert item["supported"] is True, item
             assert item["coveredM2"] + item["gapM2"] + item["unknownM2"] == pytest.approx(
                 domain_area, abs=1.0)
-            # Two facilities on a road grid: near them is covered, far from them
-            # is a gap, and the tolerance band in between stays unknown. All
-            # three states are present, which is what makes the next assertions
-            # about them meaningful.
-            #
-            # A gap can only be decided out of a *completed* retrieval: with the
-            # query incomplete every "definitely too far" cell degrades to
-            # unknown, the grey-zone list empties, and the revision still looks
-            # complete. So this assertion is also the one that pins the two
-            # spellings of that status together across the stage boundary.
-            assert item["coveredM2"] > 0 and item["gapM2"] > 0 and item["unknownM2"] > 0, item
+            # At ten categories the 60-call budget leaves keyword work unfinished.
+            # Unsearched space stays unknown, never a fabricated zero-coverage gap.
+            assert item["coveredM2"] > 0 and item["gapM2"] == 0 and item["unknownM2"] > 0, item
 
 
 def test_the_scores_are_intervals_over_the_frozen_domain(tmp_path):

@@ -14,6 +14,7 @@
  *   图例写的购物绿"。
  */
 import type { CheckupLayer } from './contract';
+import { CATEGORY_COLORS } from './report';
 import { readLayerGeometry, type LayerId } from './validate';
 import type { DrawableGeometry } from '../analysis/geometry';
 import type { ServiceSample, ServiceStatus } from '../map/layers/serviceField';
@@ -49,7 +50,7 @@ export const LAYER_STYLES: Record<LayerId, LayerStyle> = {
 
 /** 点色：设施与热力按大类，核验按结论。缺的属性给中性灰，不猜。 */
 export const POINT_COLORS: Record<string, string> = {
-  shopping: '#12b886', medical: '#7b5cff', education: '#ff9f1a',
+  ...CATEGORY_COLORS,
   covered: '#3366ff', gap: '#ff8a00', unknown: '#8a94a6',
   verified_reachable: '#3366ff', verified_unreachable: '#ff8a00', pending: '#8a94a6',
 };

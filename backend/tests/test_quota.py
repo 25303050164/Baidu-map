@@ -52,7 +52,7 @@ def settings_with(tmp_path, **overrides):
 # -- independent pools -----------------------------------------------------
 
 def test_the_two_services_have_separate_gates_and_separate_allowances(tmp_path):
-    quota = Quota(settings_with(tmp_path), clock=before_switch)
+    quota = Quota(settings_with(tmp_path, baidu_place_daily_budget=1600), clock=before_switch)
     assert quota.direction.gate is not quota.place.gate
     quota.ledger.reserve(DIRECTION, 10 ** 9, cost=500)
     # A route attempt does not touch the place allowance and vice versa.
@@ -178,7 +178,7 @@ def test_two_tasks_keep_their_own_buckets_but_share_the_days_allowance(tmp_path)
 # -- the durable ledger ----------------------------------------------------
 
 def test_daily_spend_survives_a_restart_and_a_new_quota_instance(tmp_path):
-    settings = settings_with(tmp_path)
+    settings = settings_with(tmp_path, baidu_place_daily_budget=1600)
     Quota(settings, clock=before_switch).ledger.reserve(PLACE, 1600, cost=25)
     restarted = Quota(settings, clock=before_switch)
     # A restart neither clears the ledger nor replays the requests it paid for.
@@ -232,7 +232,7 @@ def test_the_configured_qps_cap_is_the_tier_ceiling(tmp_path):
     # After the switch instant the conservative tier applies without a restart.
     downgraded = Quota(settings_with(tmp_path), clock=after_switch)
     assert (downgraded.direction.ceiling(), downgraded.place.ceiling()) == (2, 2)
-    assert downgraded.tiers.active().place_daily_budget == 80
+    assert downgraded.tiers.active().place_daily_budget is None
 
 
 # -- one scheduling point --------------------------------------------------
@@ -355,7 +355,8 @@ def test_an_attempt_that_never_reports_is_not_read_as_a_clean_response(tmp_path)
 
 def test_a_pool_reservation_is_the_number_the_balance_reports(tmp_path):
     async def run():
-        quota = Quota(settings_with(tmp_path), clock=before_switch)
+        quota = Quota(settings_with(tmp_path, baidu_place_daily_budget=1600),
+                      clock=before_switch)
         async with quota.place.attempt(time.monotonic() + 10) as attempt:
             attempt.outcome(None)
         report = quota.balance()
@@ -388,7 +389,8 @@ def test_quota_settings_reject_unsafe_values():
 
 
 def test_the_balance_reports_an_application_budget_not_an_account_balance(tmp_path):
-    quota = Quota(settings_with(tmp_path), clock=before_switch)
+    quota = Quota(settings_with(tmp_path, baidu_place_daily_budget=1600),
+                  clock=before_switch)
     quota.ledger.reserve(PLACE, 1600, cost=26)
     report = quota.balance()
     assert report["tier"] == "current" and report["matrixEnabled"] is False
@@ -396,6 +398,30 @@ def test_the_balance_reports_an_application_budget_not_an_account_balance(tmp_pa
                                         "spentToday": 26, "remainingToday": 1574}
     assert report["services"][DIRECTION]["dailyBudget"] is None
     assert report["claimsAccountBalance"] is False
+
+
+def test_default_place_pool_has_no_local_day_cap_but_keeps_task_budget(tmp_path):
+    quota = Quota(settings_with(tmp_path), clock=after_switch)
+    quota.ledger.reserve(PLACE, 80, cost=80)
+    assert quota.remaining(PLACE) is None
+    assert quota.balance()["services"][PLACE] == {
+        "qps": 2, "maxInflight": 1, "dailyBudget": None,
+        "spentToday": None, "remainingToday": None}
+    budget = quota.task_budget(isochrone=400)
+    for _ in range(60):
+        budget.consume("poi")
+    with pytest.raises(BudgetExhausted):
+        budget.consume("poi")
+    fresh = quota.task_budget(isochrone=400, poi=1)
+
+    async def run():
+        async with quota.place.attempt(time.monotonic() + 10,
+                                       budget=fresh, pool="poi") as attempt:
+            attempt.outcome(None)
+
+    asyncio.run(run())
+    assert fresh.remaining("poi") == 0
+    assert quota.ledger.spent(PLACE) == 80
 
 
 def test_the_ledger_refuses_a_nonsense_cost(tmp_path):

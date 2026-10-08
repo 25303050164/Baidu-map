@@ -107,7 +107,8 @@ function dominant(points: LayerPoint[]): LayerPoint {
 }
 
 export function CheckupMap({ center, onPick, resultCenter, layers, drawables, coverage = null,
-  serviceMode = SERVICE_COMPOSITE, densityCategory = DENSITY_ALL, water = null, selectedId, onSelect }: {
+  serviceMode = SERVICE_COMPOSITE, densityCategory = DENSITY_ALL, water = null, selectedId, onSelect,
+  categoryDirectory = [] }: {
   center: Center;
   onPick: (center: Center) => void;
   /** 已发布那一版修订的中心点；与选点分开，避免把"待分析选点"当成"结果中心"。 */
@@ -122,6 +123,7 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
   densityCategory?: string;
   /** 这一版的水系标注；null 表示这一版没有水系证据。 */
   water?: WaterView | null;
+  categoryDirectory?: Array<{ id: string; label: string; order: number }>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 }) {
@@ -192,13 +194,13 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
   useEffect(() => {
     if (!api || !map) return;
     const overlay = createServiceOverlay(api, {
-      categories: CATEGORY_ORDER,
+      categories: categoryDirectory.length ? categoryDirectory.map(item => item.id) : [...CATEGORY_ORDER],
       viewport: () => ({ width: container.current?.clientWidth ?? 0,
         height: container.current?.clientHeight ?? 0 }),
     });
     serviceHeat.current = overlay;
     return () => { overlay?.destroy(); serviceHeat.current = null; };
-  }, [api, map]);
+  }, [api, map, categoryDirectory.map(item => item.id).join(',')]);
 
   useEffect(() => {
     const overlay = serviceHeat.current;
@@ -456,7 +458,7 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
             <span className="api-legend-line">
               <i className="api-legend-ramp" style={{ background: serviceRampCss(serviceMode) }} />
               {serviceMode === SERVICE_COMPOSITE
-                ? `三类均已知处覆盖类别占比 0–${SERVICE_SCORE_MAX}%`
+                ? `全部类别均已知处覆盖类别占比 0–${SERVICE_SCORE_MAX}%`
                 : `${categoryLabel(serviceMode)}：已覆盖处最近设施步行 0–${SERVICE_DISTANCE_MAX_M} 米`}</span>
             <span className="api-legend-line">
               <i className="api-legend-dot" style={{ background: rgbCss(SERVICE_GAP_RGB) }} />服务不足
@@ -517,9 +519,10 @@ export function CheckupMap({ center, onPick, resultCenter, layers, drawables, co
         </span>
         {layers.facilities && (drawables.facilities?.points.length ?? 0) > 0
           && <span className="api-legend-line api-legend-cats">设施类别
-            {CATEGORY_ORDER.map(category => <span key={category} className="api-legend-item">
-              <i className="api-legend-dot" style={{ background: CATEGORY_COLORS[category] }} />
-              {categoryLabel(category)}</span>)}</span>}
+            {(categoryDirectory.length ? categoryDirectory : CATEGORY_ORDER.map((id, order) => ({
+              id, label: categoryLabel(id), order }))).map(item => <span key={item.id} className="api-legend-item">
+              <i className="api-legend-dot" style={{ background: CATEGORY_COLORS[item.id] }} />
+              {item.label}</span>)}</span>}
         {legend.length > 1 && <span className="api-legend-note api-legend-count">共 {legend.length} 个点，同格合并显示，数据不截断</span>}
       </div>
     </div>}

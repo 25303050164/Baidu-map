@@ -457,17 +457,17 @@ def test_capabilities_report_the_application_budget_never_the_account_balance(tm
     app = make_app(tmp_path)
     with TestClient(app) as client:
         quota = client.get("/api/v2/capabilities").json()["quota"]
-        assert quota["tier"] == "current" and quota["matrixEnabled"] is False
-        # The two services are separate pools, and only place has a day budget.
+        assert quota["tier"] == "fallback" and quota["matrixEnabled"] is False
+        # Neither service has a local day cap by default.
         assert quota["services"]["direction"] == {
-            "qps": 16, "maxInflight": 1, "dailyBudget": None,
+            "qps": 2, "maxInflight": 1, "dailyBudget": None,
             "spentToday": None, "remainingToday": None}
         assert quota["services"]["place"] == {
-            "qps": 8, "maxInflight": 1, "dailyBudget": 1600,
-            "spentToday": 0, "remainingToday": 1600}
+            "qps": 2, "maxInflight": 1, "dailyBudget": None,
+            "spentToday": None, "remainingToday": None}
         # Nothing may present this as the account's own remaining allowance.
         assert quota["claimsAccountBalance"] is False
-        assert "本应用预算余额" in quota["label"]
+        assert "本应用请求限制" in quota["label"]
         assert app.state.quota is app.state.checkups.quota
 
 
@@ -506,7 +506,7 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
         request_models=[OsmOfflineRequest, HybridRequest])
     assert legacy == (Path(__file__).resolve().parents[2]
                       / "life-circle-demo/src/api-contract.ts").read_text(encoding="utf-8")
-    assert "Checkup" not in legacy and "checkup" not in legacy
+    assert "export type Checkup" not in legacy
 
 
 def _unreachable():

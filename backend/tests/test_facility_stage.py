@@ -39,6 +39,9 @@ def square(half):
 
 
 def quota(tmp_path, **overrides):
+    overrides = {"baidu_place_daily_budget": 1600, **overrides}
+    overrides.setdefault("baidu_fallback_place_daily_budget",
+                         overrides["baidu_place_daily_budget"])
     settings = Settings(_env_file=None, baidu_map_ak=SECRET, baidu_place_qps=10000,
                         quota_ledger_path=Path(tmp_path) / 'quota.sqlite3', **overrides)
     return Quota(settings)

@@ -27,6 +27,7 @@ from shapely.geometry import Point
 
 from .. import catalog
 from ..cache import KeyedCache
+from ..cache import Entry
 from ..contracts import Issue
 from ..poi.cache import CachedPages
 from ..poi.models import PoiCollectRequest, Point as WirePoint
@@ -115,7 +116,7 @@ def _status_for(query_status: str) -> str:
 
 async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, context, quota,
                              budget, cache: KeyedCache, places_factory=None,
-                             progress=None) -> FacilityOutcome:
+                             progress=None, store=None) -> FacilityOutcome:
     """Run the one facility retrieval of a task and report it.
 
     ``places_factory`` substitutes the transport for an offline or fixture-backed
@@ -151,22 +152,44 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
         source = 'baidu_place' if places.network else 'synthetic'
         # The cache wraps the metered session, so a hit never enters the pool's
         # scheduling point and §9.2's single reservation stays the only one.
-        fetch = CachedPages(cache, attach_token(places.session(quota.place, budget=budget,
-                                                               deadline=context.deadline),
-                                                context.token),
+        session = attach_token(places.session(quota.place, budget=budget,
+                                              deadline=context.deadline), context.token)
+        async def journaled(sequence, page):
+            key = fetch.key(sequence, page)
+            budget.request_context['poi'] = {'key': key, 'sequence': sequence, 'page': page}
+            before = budget.reservations.get('poi')
+            answer, reason = await session(sequence, page)
+            reservation = budget.reservations.get('poi')
+            if store is not None and reservation is not None and reservation != before:
+                store.complete_request(reservation, answer, reason)
+            return answer, reason
+        fetch = CachedPages(cache, journaled,
                             provider=places, task_id=context.task_id)
+        checkpoint = None if store is None else store.checkpoint(context.task_id)
+        if checkpoint is not None:
+            for saved in store.saved_pages(context.task_id):
+                cache.entries[saved['key']] = Entry(saved['payload'], context.task_id, saved['obtainedAt'])
         limit = budget.remaining(POI_POOL)
+        async def pages(sequence, page):
+            major = catalog.major_of(sequence['category'])
+            label = f"检索设施 · {catalog.MAJOR_LABELS.get(major, major)}"
+            if progress is not None:
+                progress(budget.spent.get(POI_POOL, 0) - reserved, limit, label)
+            try:
+                return await fetch(sequence, page)
+            finally:
+                if progress is not None:
+                    progress(budget.spent.get(POI_POOL, 0) - reserved, limit, label)
+        pages.metadata = lambda sequence, page: fetch.uses.get(
+            (sequence['tileId'], sequence['category'], sequence['query'], page), {})
         planner = OnlinePlanner(domain=domain, origin=origin, categories=list(categories),
-                                budget=limit, source=source, token=context.token)
-        pages = fetch
+                                budget=limit, source=source, token=context.token,
+                                checkpoint=checkpoint,
+                                on_checkpoint=None if store is None else
+                                    lambda value: store.save_checkpoint(context.task_id, value),
+                                spent=lambda: budget.spent.get(POI_POOL, 0) - reserved)
         if progress is not None:
             progress(0, limit)
-
-            async def pages(sequence, page):
-                try:
-                    return await fetch(sequence, page)
-                finally:
-                    progress(budget.spent.get(POI_POOL, 0) - reserved, limit)
         result = await planner.run(pages)
     return _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
                    places, source, majors, budget, started,
@@ -212,6 +235,19 @@ def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
     accepted, review, excluded, outside_boundary, merged = merge_entities(
         inside, request, within=counted, nearby=nearby)
     coverage = result.coverage
+    major_queries = {major: sum(len(entry['pageRecords']) for entry in coverage
+                                if catalog.major_of(entry['category']) == major)
+                     for major in majors}
+    major_blocks = {major: sorted({entry['tileId'] for entry in coverage
+                                   if catalog.major_of(entry['category']) == major
+                                   and entry['pageRecords']}) for major in majors}
+    unfinished = {major: [{'tileId': entry['tileId'], 'category': entry['category'],
+                            'query': entry['query'], 'status': entry['status'],
+                            'stopReason': entry['stopReason']}
+                           for entry in coverage if catalog.major_of(entry['category']) == major
+                           and entry['status'] != 'completed'] for major in majors}
+    completeness = {major: not any(boxes for minor, boxes in result.incomplete.items()
+                                   if catalog.major_of(minor) == major) for major in majors}
     for entry in coverage:
         for record in entry['pageRecords']:
             use = fetch.uses.get((record['tileId'], record['category'], record['query'],
@@ -262,6 +298,9 @@ def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
             'excludedRecords': len(excluded),
             'possibleDuplicateGroups': len(duplicates),
             'queryAttempts': result.attempts, 'budget': result.budget,
+            'requestsByMajor': major_queries, 'touchedBlocksByMajor': major_blocks,
+            'unfinishedByMajor': unfinished, 'stopReason': result.stop_reason,
+            'queryCompleteByMajor': completeness,
             'budgetSpent': budget.spent.get(POI_POOL, 0),
             # Pages, not fetches: a page asked for twice is one page.
             'sequences': len(coverage), 'blocks': len(result.blocks),

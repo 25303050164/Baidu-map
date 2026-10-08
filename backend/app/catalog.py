@@ -108,6 +108,13 @@ def major_label(major: str) -> str:
     return MAJOR_LABELS.get(major, major)
 
 
+def major_directory(selected=None) -> list[dict]:
+    """Public, ordered view of the authoritative request-category directory."""
+    return [{"id": major, "label": major_label(major), "order": index}
+            for index, major in enumerate(majors())
+            if selected is None or major in selected]
+
+
 def minors_of(major: str) -> tuple[str, ...]:
     return tuple(category.key for category in CATEGORIES if category.major == major)
 

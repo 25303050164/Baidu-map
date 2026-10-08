@@ -43,12 +43,13 @@ class Settings(BaseSettings):
     baidu_place_qps: float = Field(default=8, gt=0, allow_inf_nan=False)
     baidu_direction_max_inflight: int = Field(default=1, ge=1, le=1)
     baidu_place_max_inflight: int = Field(default=1, ge=1, le=1)
-    baidu_place_daily_budget: int = Field(default=1600, ge=0)
+    # Optional application-side cap; the provider's own quota is independent.
+    baidu_place_daily_budget: int | None = Field(default=None, ge=0)
     baidu_matrix_enabled: Literal[False] = False
     baidu_quota_fallback_at: datetime = DEFAULT_FALLBACK_AT
     baidu_fallback_direction_qps: float = Field(default=2, gt=0, allow_inf_nan=False)
     baidu_fallback_place_qps: float = Field(default=2, gt=0, allow_inf_nan=False)
-    baidu_fallback_place_daily_budget: int = Field(default=80, ge=0)
+    baidu_fallback_place_daily_budget: int | None = Field(default=None, ge=0)
     quota_ledger_path: Path = BACKEND_DIR / ".quota/quota.sqlite3"
     hybrid_risk_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.risks.geojson"
     hybrid_obstacle_path: Path = BACKEND_DIR.parent / "data/osm/shanghai.obstacles.geojson"

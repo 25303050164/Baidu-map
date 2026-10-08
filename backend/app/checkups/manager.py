@@ -40,10 +40,11 @@ from .models import (DETAIL_ROUTE_REQUESTS, DISTANCE_RULE, RULE_VERSION, TERMINA
                      CheckupSnapshot, CheckupTaskView, EngineRef, FacilityGroup, FacilityRoute,
                      ReportEvidence, ScopeEvidence, TaskProgress, new_trace)
 from .progress import StepReporter, category_label
+from .continuation import ContinuationMixin
 from .reporting_stage import build_report
-from .routes import DETAIL_POOL, RoutesUnavailable, open_online as open_routes
+from .routes import DETAIL_POOL, ReplayRoutes, RoutesUnavailable, open_online as open_routes
 from .store import CheckupStore, RequestIdConflict, TaskNotFound
-from .verification_stage import (VerificationOutcome, carried_over, judge_route,
+from .verification_stage import (VerificationOutcome, carried_over, judge_route, compatible_verification,
                                  refusal as verification_refusal, verify_facilities)
 
 # Engines currently enforce their own internal deadline; this is the task-level
@@ -187,7 +188,7 @@ def _assessment_progress(report):
     return progress
 
 
-class CheckupManager:
+class CheckupManager(ContinuationMixin):
     def __init__(self, settings, registry, store: CheckupStore, quota, place_factory=None,
                  route_factory=None, offline=None):
         self.settings, self.registry, self.store, self.quota = settings, registry, store, quota
@@ -276,7 +277,13 @@ class CheckupManager:
         token = CancelToken()
         self.tokens[task_id] = token
         try:
-            await self._stages(task_id, payload, record, token)
+            current = self.store.round(task_id)
+            if current is not None and current['number'] > 1:
+                await self._continue_stages(task_id, payload, record, token)
+            else:
+                await self._stages(task_id, payload, record, token)
+        except AssessmentCancelled:
+            self._finish(task_id, status='cancelled')
         finally:
             self.tokens.pop(task_id, None)
 
@@ -324,6 +331,9 @@ class CheckupManager:
         # The boundary revision is frozen even when the run is then cancelled:
         # an orderly stop never discards a result that has been paid for.
         self._publish_isochrone(task_id, payload, snapshot, budget)
+        self.store.begin_round(task_id, payload.client_request_id, 0,
+                               self._round_identity(payload, snapshot), initial=True)
+        self._bind_round(task_id, budget)
         if token.cancelled:
             self._finish(task_id, status="cancelled",
                          business_status=business_status_for(snapshot.quality, "not_integrated"))
@@ -336,9 +346,9 @@ class CheckupManager:
         boundary_network = snapshot.network_requests
         outcome = await collect_facilities(
             payload, snapshot, settings=self.settings, context=context, quota=self.quota,
-            budget=budget, cache=self.cache, places_factory=self.place_factory,
-            progress=lambda sent, limit: report(
-                "places", count=sent, limit=limit, requests=boundary_network + sent,
+            budget=budget, cache=self.cache, places_factory=self.place_factory, store=self.store,
+            progress=lambda sent, limit, label=None: report(
+                "places", count=sent, limit=limit, label=label, requests=boundary_network + sent,
                 network_requests=boundary_network + sent))
         business = self._publish_facilities(task_id, payload, snapshot, budget, outcome)
         if token.cancelled:
@@ -384,6 +394,9 @@ class CheckupManager:
         of it, however many boundary samples it computed locally.
         """
         state = budget.state()
+        if getattr(budget, 'poi_prior', 0):
+            state['poi']['spent'] += budget.poi_prior
+            state['poi']['limit'] += budget.poi_prior
         state["isochrone"]["spent"] = snapshot.network_requests
         return state
 
@@ -594,7 +607,7 @@ class CheckupManager:
 
     async def _publish_verification(self, task_id: str, payload: CheckupRequest, snapshot, budget,
                                     outcome: FacilityOutcome, assessment: AccessibilityOutcome,
-                                    *, deadline: float, report=None, token=None) -> VerificationOutcome:
+                                    *, deadline: float, report=None, token=None, previous=None) -> VerificationOutcome:
         """Run and freeze the route verification (§6.3).
 
         A deployment without a walking-route service publishes the same revision
@@ -613,12 +626,15 @@ class CheckupManager:
         heatmap = (None if assessment.heatmap is None
                    else assessment.heatmap.model_dump(mode="json", by_alias=True))
         gaps = (None if assessment.service_gaps is None else assessment.service_gaps.zones)
+        carried = compatible_verification(previous, _service_sources(outcome.group), assessment.entrances)
         async with AsyncExitStack() as stack:
             try:
                 routes = (self.route_factory(self.settings) if self.route_factory is not None
                           else await open_routes(self.settings, stack))
             except RoutesUnavailable as exc:
-                result = verification_refusal(exc.reason)
+                result = (VerificationOutcome(evidence=carried, status=carried.status,
+                                               overrides=carried.local_overrides) if carried is not None
+                          else verification_refusal(exc.reason))
             else:
                 # The session takes the task's route bucket from the direction
                 # pool, so verification, both engines and the click-detail route
@@ -632,9 +648,10 @@ class CheckupManager:
                                                      for zone in gaps],
                     heatmap=heatmap, entrances=assessment.entrances,
                     origin=normalize((payload.center.lng, payload.center.lat)),
-                    session=attach_token(routes.session(self.quota.direction, budget=budget,
+                    session=ReplayRoutes(attach_token(routes.session(self.quota.direction, budget=budget,
                                                         deadline=deadline), token),
-                    progress=progress, token=token)
+                                         store=self.store, task_id=task_id, budget=budget),
+                    progress=progress, token=token, previous=carried)
         # §6.3 局部重算：覆盖抽检的冲突与实测补定只改它们所在的那几格，其余格照旧由
         # 模型判定。重算不发任何请求；没有路网或被取消时保留原评估。
         if result.overrides and assessment.accessibility is not None and not (token and token.cancelled):
@@ -714,10 +731,13 @@ class CheckupManager:
             accessibility=dump(evidence), service_gaps=dump(assessment.service_gaps),
             heatmap=dump(assessment.heatmap), scores=dump(assessment.scores),
             facilities=group,
+            requested_categories=payload.facilities.categories,
             verification=None if verification is None or verification.evidence is None
                          else verification.evidence.model_dump(mode="json", by_alias=True),
             water=dump(assessment.water))
         objects = self._analysis_objects(assessment, report, verification)
+        report.completion = self._completion(task_id, {'facilities': group, 'revision': revision,
+            'isochrone': isochrone, 'report': report.model_dump(mode='json', by_alias=True)}, frozen=True)
         result_hash = self._result_hash(isochrone, group, facilities_status=outcome.status,
                                         analysis=objects)
         business = business_status_for(snapshot.quality, outcome.status, assessment.status)
@@ -842,6 +862,7 @@ class CheckupManager:
                  result_hash: str) -> None:
         # Published files use wire naming, so a stored revision round-trips back
         # into the response model without a translation step.
+        document.completion = self._completion(task_id, document.model_dump(mode='json', by_alias=True), frozen=True)
         published = self.store.publish(task_id, stage=stage,
                                        snapshot=document.model_dump(mode="json", by_alias=True),
                                        result_hash=result_hash)
@@ -915,7 +936,11 @@ class CheckupManager:
                                f"本次没有取到路线结论（{stopped or 'unknown'}）")
         # 判定与核验阶段同一套（:func:`judge_route`）：严格层成立用路线距离，端点容差层
         # 用"路线距离＋两端偏移"的接入距离估计；两者都不成立时只留下返回的距离。
-        judged = judge_route(observation, origin, destination, item["id"])
+        prior = next((row for row in (snapshot.verification.facilities if snapshot.verification else [])
+                      if row.get('facilityId') == item['id']), None)
+        entrance_status = prior.get('entranceStatus') if prior else None
+        judged = judge_route(observation, origin, destination, item["id"],
+                             entrance_status=entrance_status)
         strict, returned = judged["strict"], judged["returned"]
         x, y = LocalProjection(origin).to_local(destination)
         return FacilityRoute(
@@ -929,6 +954,7 @@ class CheckupManager:
             verification_layer=judged["layer"],
             duration_s=observation.duration, observed_duration_s=observation.observed_duration,
             poi_status=strict.status, poi_reason=strict.reason,
+            entrance_status=entrance_status,
             evidence_grade="verified" if judged["layer"] is not None else "model",
             route_origin=_point(observation.route_origin),
             route_destination=_point(observation.route_destination),
@@ -973,6 +999,7 @@ class CheckupManager:
             error=record.error, server_time=now, started_at=record.started_at,
             finished_at=record.finished_at, stage_started_at=record.stage_started_at,
             last_activity_at=record.activity_at,
+            completion=self._completion(record.task_id),
             progress=None if record.progress is None else TaskProgress(**record.progress))
 
     def get(self, task_id: str):

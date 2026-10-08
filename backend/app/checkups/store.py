@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..persistence import atomic_dump
+from .rounds import ROUND_SCHEMA, RoundStore
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -109,7 +110,7 @@ def _record(row) -> TaskRecord:
         progress=None if row["progress"] is None else json.loads(row["progress"]))
 
 
-class CheckupStore:
+class CheckupStore(RoundStore):
     def __init__(self, root: Path):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -138,6 +139,7 @@ class CheckupStore:
         """Create the tables and add any later column. Changes no task's state."""
         with self._connection() as connection:
             connection.executescript(SCHEMA)
+            connection.executescript(ROUND_SCHEMA)
             present = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
             for name, declaration in ADDED_COLUMNS:
                 if name not in present:
@@ -181,6 +183,9 @@ class CheckupStore:
                 if existing["fingerprint"] != fingerprint:
                     raise RequestIdConflict(client_request_id)
                 return _record(existing), False
+            if connection.execute('SELECT 1 FROM checkup_rounds WHERE request_id=?',
+                                  (client_request_id,)).fetchone():
+                raise RequestIdConflict(client_request_id)
             connection.execute(
                 "INSERT INTO tasks (task_id, client_request_id, engine, fingerprint, payload,"
                 " status, stage, revision, budget, created_at, updated_at)"
@@ -205,6 +210,9 @@ class CheckupStore:
             row = connection.execute("SELECT task_id FROM tasks WHERE client_request_id=?",
                                      (client_request_id,)).fetchone()
         if row is None:
+            continuation = self.round_request(client_request_id)
+            if continuation is not None:
+                return self._get(continuation['task_id'])
             raise TaskNotFound(client_request_id)
         return self._get(row["task_id"])
 

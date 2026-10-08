@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from app.checkups.models import (CheckupCapabilities, CheckupLayer, CheckupRequest,
+from app.checkups.models import (CheckupCapabilities, CheckupLayer, CheckupRequest, ContinueCheckupRequest,
                                  CheckupSnapshot, CheckupTaskView, FacilityRoute)
 from app.contracts import (AnalysisResponse, CategoryResult, Data, Facility, Geometry, Issue,
                            Origin, Rules, TaskResultResponse, TaskStatusResponse, OsmOfflineRequest)
@@ -116,7 +116,8 @@ def export():
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         typescript([CheckupRequest, CheckupTaskView, CheckupSnapshot, CheckupLayer,
-                    FacilityRoute, CheckupCapabilities], request_models=[CheckupRequest]),
+                    FacilityRoute, CheckupCapabilities, ContinueCheckupRequest],
+                   request_models=[CheckupRequest, ContinueCheckupRequest]),
         encoding="utf-8")
 
 

@@ -269,6 +269,14 @@
 .rp-toc button:hover{color:var(--accent)}
 .rp-toc button[aria-current="true"]{border-left-color:var(--accent);background:linear-gradient(90deg,var(--accent-wash),transparent);color:var(--accent);font-weight:500}
 .rp-main{min-width:0;max-width:760px;padding:28px 40px 56px 16px}
+.rp-summary{margin:20px 0;padding:18px;border:1px solid var(--rule);border-radius:12px;background:#f5f9ff;overflow-wrap:anywhere}
+.rp-summary h2{margin:0 0 14px;font-size:18px}
+.rp-summary dl{margin:0;display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
+.rp-summary dt{font-weight:600}
+.rp-summary dd{margin:0 0 8px;line-height:1.7}
+.rp-summary-limits{border-top:1px solid var(--rule);margin-top:12px;padding-top:12px}
+.rp-summary-limits h3{font-size:14px;margin:0 0 8px}
+.rp-summary-limits ul{margin:0;padding-left:20px;line-height:1.7}
 .rp-kicker{font-size:12px;color:var(--ink-3)}
 .rp-head h1{margin:4px 0 12px;font-size:24px;font-weight:600;letter-spacing:.01em}
 .rp-head .ant-alert{margin:10px 0 0;border-radius:10px}
@@ -327,10 +335,14 @@
 .checkup-note-warning{color:#b35c00}
 @media(max-width:760px){
   .checkup-report{grid-template-columns:minmax(0,1fr)}
-  .rp-toc{display:none}
+  .rp-toc{position:static;padding:12px 16px;border-bottom:1px solid var(--rule)}
+  .rp-toc-title{margin:0 0 6px;padding:0}
+  .rp-toc ul{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:0}
   .rp-main{padding:20px 16px 36px}
 }
 
 /* 设施密度图例：色带带着与地图相同的不透明度，竖线标出单个设施中心的读数。 */
 .density-ramp{position:relative;display:inline-block;width:96px;height:10px;flex:none;border-radius:2px;box-shadow:inset 0 0 0 1px #d5dae3}
 .density-ramp i{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:#1f2329}
+.checkup-completion { margin: 12px 0; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #f8fafc; }
+.checkup-completion p { margin: 6px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }

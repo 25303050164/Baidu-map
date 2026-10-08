@@ -24,7 +24,8 @@ deadlock on the shared in-flight lock.
 Every walking-route request of the application -- both boundary engines, the
 legacy ``/api/analyses`` and ``/api/v1/analysis/hybrid`` endpoints, verification
 and click-detail routes -- paces on the one direction gate, and every place
-search on the one place gate. Each gate reads the active tier when it waits, so a
+search on the one place gate. The application-side place daily budget is optional;
+it is unset by default. Each gate reads the active tier when it waits, so a
 tier switch lowers every caller at once and two limiters can never add up on one
 key. The engines and legacy endpoints pace on the gate directly (their own
 budgets bound them), so only the stages that reserve through a pool appear in
@@ -158,7 +159,7 @@ class ServiceTier:
     """The ceilings that apply at one instant."""
     direction_qps: float
     place_qps: float
-    place_daily_budget: int
+    place_daily_budget: int | None
     label: str
 
 
@@ -170,6 +171,12 @@ class TaskBudget:
     route: int = DEFAULT_ROUTE_ATTEMPTS
     detail: int = DEFAULT_DETAIL_ATTEMPTS
     spent: dict = field(default_factory=dict)
+    # Checkup rounds attach a durable reservation journal at the existing
+    # scheduling point. Other callers retain their original in-memory budgets.
+    on_reserve: object = None
+    on_result: object = None
+    request_context: dict = field(default_factory=dict)
+    reservations: dict = field(default_factory=dict)
 
     def pools(self) -> dict:
         return {"isochrone": self.isochrone, "poi": self.poi, "route": self.route,
@@ -190,6 +197,8 @@ class TaskBudget:
         used = self.spent.get(pool, 0)
         if used >= limit:
             raise BudgetExhausted(pool, limit)
+        if self.on_reserve is not None:
+            self.reservations[pool] = self.on_reserve(pool, self.request_context.get(pool, {}))
         self.spent[pool] = used + 1
         return limit - self.spent[pool]
 
@@ -286,7 +295,7 @@ class Attempt:
 
 
 class ServicePool:
-    """One service's scheduling point: task bucket, daily budget, slot, pacing."""
+    """One service's scheduling point: task bucket, optional day cap, slot, pacing."""
 
     def __init__(self, name: str, gate: RateGate, ledger: DailyLedger, tier: QuotaTier,
                  *, max_inflight: int = 1):
@@ -411,7 +420,8 @@ class Quota:
                             "dailyBudget": None, "spentToday": None, "remainingToday": None},
                 PLACE: {"qps": active.place_qps, "maxInflight": self.place.max_inflight,
                         "dailyBudget": active.place_daily_budget,
-                        "spentToday": self.ledger.spent(PLACE, day=day),
+                        "spentToday": (self.ledger.spent(PLACE, day=day)
+                                       if active.place_daily_budget is not None else None),
                         "remainingToday": self.remaining(PLACE)},
             },
             "matrixEnabled": self.matrix_enabled,

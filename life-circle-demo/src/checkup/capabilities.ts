@@ -46,6 +46,7 @@ export type CapabilityView = {
   quota: QuotaSummary;
   /** 当前部署采用的水系复核（用来认出早于复核的旧版本）；旧后端不给时为空。 */
   waterReviews: WaterReviewRef[];
+  categoryDirectory: Array<{ id: string; label: string; order: number }>;
 };
 
 function nested(source: RecordValue, ...path: string[]): unknown {
@@ -64,15 +65,17 @@ export function quotaSummary(value: Capabilities): QuotaSummary {
   const lines: string[] = [];
   const tier = nested(quota, 'tier');
   const day = nested(quota, 'day');
-  if (text(tier)) lines.push(`本轮服务档位：${tier}`);
-  if (text(day)) lines.push(`记账日：${day}`);
-  const remaining = nested(quota, 'services', 'place', 'remainingToday');
   const daily = nested(quota, 'services', 'place', 'dailyBudget');
+  if (text(tier)) lines.push(`本轮服务档位：${tier}`);
+  if (text(day) && number(daily)) lines.push(`记账日：${day}`);
+  const remaining = nested(quota, 'services', 'place', 'remainingToday');
   if (number(remaining) && number(daily)) {
     lines.push(`设施检索今日剩余：${remaining} / ${daily}`);
   } else if (daily === null && number(nested(quota, 'services', 'place', 'qps'))) {
     // 没有日额度只有速率：说明"今天花到多少"这件事不适用于这个服务，不能写成 0。
-    lines.push('设施检索不设每日额度，仅按速率限制');
+    const taskLimit = nested(value.budgets, 'poiRequests');
+    lines.push(`设施检索不设本地每日额度；${number(taskLimit)
+      ? `单次体检最多 ${taskLimit} 次，` : ''}仍受速率限制`);
   }
   return { label, lines };
 }
@@ -99,6 +102,7 @@ export function capabilityView(value: Capabilities): CapabilityView {
     defaultBudget: first?.defaultBudget ?? null,
     quota: quotaSummary(value),
     waterReviews: waterReviewRefs(value.waterReviews),
+    categoryDirectory: value.categoryDirectory ?? [],
   };
 }
 

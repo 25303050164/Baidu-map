@@ -29,11 +29,13 @@ import { DENSITY_ALL, drawableLayer, LAYER_STYLES, serviceSamples, type LayerDra
 import { CheckupMap, DEFAULT_CHECKUP_LAYERS, layerSwatch, type CheckupLayerToggles, type HeatLayer } from './CheckupMap';
 import { CheckupReport } from './CheckupReport';
 import { Fold } from './Fold';
-import { CATEGORY_ORDER, categoryLabel, coverageItems, percent } from './report';
+import { CATEGORY_ORDER, categoryLabel, coverageItems, percent, reportDirectory, reasonLabel,
+  verificationLayerLabel, overallUnavailableText } from './report';
 import { nearestFacilities } from './nearest';
 import { WeatherCard } from './WeatherCard';
 import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
 import { outdatedText, recomputedText, versionView, waterView } from './water';
+import { CompletionSummary } from './CompletionSummary';
 import { duration, liveView, TICKING_PHASES, type LiveKind } from './live';
 import './checkup.css';
 
@@ -47,7 +49,7 @@ const HEAT_DEPENDENCIES: Record<HeatLayer, LayerId[]> = {
 };
 
 const SERVICE_MODES = [
-  { value: SERVICE_COMPOSITE, label: '综合（三类均已知处）' },
+  { value: SERVICE_COMPOSITE, label: '综合（全部类别均已知处）' },
   ...CATEGORY_ORDER.map(category => ({ value: category, label: categoryLabel(category) })),
 ];
 
@@ -109,12 +111,20 @@ function RouteDetail({ route, error }: { route: CheckupState['route']; error?: s
       { key: 'straight', label: '直线距离', children: route.straightLineM === null ? '无法确定' : `${route.straightLineM.toFixed(0)} 米` },
       // 判定跟着距离一起给；只有判定没有距离的响应在校验层就被拒了，这里不必兜底。
       { key: 'distance', label: '步行距离', children: route.routeDistanceM === null ? '无法确定' : `${route.routeDistanceM.toFixed(0)} 米` },
+      { key: 'layer', label: '证据层级', children: verificationLayerLabel(route.verificationLayer) },
+      { key: 'access', label: '接入距离估计', children: route.accessDistanceM === null
+        ? '无法确定' : `${route.accessDistanceM.toFixed(0)} 米` },
+      { key: 'offsets', label: '两端偏移', children: `${fixed(route.originOffsetM)} 米 / ${fixed(route.destinationOffsetM)} 米` },
+      { key: 'poi', label: '严格端点状态', children: ROUTE_VERDICT[route.poiStatus] ?? route.poiStatus },
+      { key: 'entrance', label: '入口状态', children: route.entranceStatus === 'unresolved'
+        ? '入口未解决' : route.entranceStatus ?? '本次详情未记录入口状态' },
       { key: 'verdict', label: '服务标准', children: route.withinRule === null ? '无法判定'
         : route.withinRule ? '在 1000 米步行范围内' : '超出 1000 米步行范围' },
       { key: 'grade', label: '证据等级', children: EVIDENCE_LABELS[route.evidenceGrade] ?? route.evidenceGrade },
       { key: 'provider', label: '来源', children: `${route.provider}${route.network ? '' : '（本地缓存）'}` },
     ]} />
-    {route.reason && <Alert type="info" title={route.reason} />}
+    {(route.poiReason || route.reason) && <Alert type="info"
+      title={reasonLabel(route.poiReason) ?? reasonLabel(route.reason) ?? '未确认'} />}
     {route.notes.length > 0 && <ul className="checkup-notes">{route.notes.map(note =>
       <li key={note}>{note}</li>)}</ul>}
   </>;
@@ -291,7 +301,12 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
 
   const task = state.task;
   const snapshot = state.snapshot;
-  const revision = task?.revision;
+  const directory = snapshot?.report ? reportDirectory(snapshot) : view?.categoryDirectory ?? [];
+  const serviceModes = directory.length ? [SERVICE_MODES[0],
+    ...directory.map(item => ({ value: item.id, label: item.label }))] : SERVICE_MODES;
+  const densityCategories = directory.length ? [DENSITY_CATEGORIES[0],
+    ...directory.map(item => ({ value: item.id, label: item.label }))] : DENSITY_CATEGORIES;
+  const revision = snapshot?.revision ?? task?.revision;
   const busy = isCheckupBusy(state);
 
   /**
@@ -304,7 +319,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
    * 失败按"层 + 修订"记账：同一版不反复重试，换了修订再试一次。
    */
   useEffect(() => {
-    if (state.phase !== 'completed' || revision === undefined) return;
+    if (!snapshot || revision === undefined) return;
     const pending = MAP_LAYERS.find(id => (toggles[id] || id === 'facilities'
       || (Object.keys(HEAT_DEPENDENCIES) as HeatLayer[])
         .some(heat => toggles[heat] && HEAT_DEPENDENCIES[heat].includes(id)))
@@ -315,7 +330,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
         ? error.message : '该图层未能加载' }));
       setFailed(previous => ({ ...previous, [pending]: revision }));
     });
-  }, [controller, state.phase, state.layers, revision, toggles, failed]);
+  }, [controller, snapshot, state.phase, state.layers, revision, toggles, failed]);
 
   const drawables = useMemo(() => {
     const result: Partial<Record<LayerId, LayerDrawable>> = {};
@@ -395,8 +410,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
 
   const overall = snapshot?.report?.overall ?? snapshot?.scores?.overall ?? null;
   const items = useMemo(() => snapshot ? coverageItems(snapshot) : [], [snapshot]);
-  const nearestGroups = useMemo(() => nearestFacilities(drawables.facilities, taskCenter ?? null),
-    [drawables.facilities, taskCenter]);
+  const nearestGroups = useMemo(() => nearestFacilities(drawables.facilities, taskCenter ?? null,
+    undefined, directory), [drawables.facilities, taskCenter, snapshot, view]);
   const weatherCenter = draft ?? taskCenter ?? null;
   const idle = state.phase === 'idle';
 
@@ -562,13 +577,13 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
                 <Checkbox checked={!!toggles.service}
                   onChange={event => toggleHeat('service', event.target.checked)}>服务覆盖热力</Checkbox>
                 {toggles.service && <Select className="wb-layer-select" size="small" aria-label="覆盖类别"
-                  value={serviceMode} onChange={setServiceMode} options={SERVICE_MODES} popupMatchSelectWidth={false} />}
+                  value={serviceMode} onChange={setServiceMode} options={serviceModes} popupMatchSelectWidth={false} />}
               </div>
               <div className="wb-layer">
                 <Checkbox checked={!!toggles.density}
                   onChange={event => toggleHeat('density', event.target.checked)}>设施密度热力</Checkbox>
                 {toggles.density && <Select className="wb-layer-select" size="small" aria-label="密度类别"
-                  value={densityCategory} onChange={setDensityCategory} options={DENSITY_CATEGORIES}
+                  value={densityCategory} onChange={setDensityCategory} options={densityCategories}
                   popupMatchSelectWidth={false} />}
               </div>
               <p className="wb-group">叠加</p>
@@ -622,6 +637,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
         .map(id => state.layers?.[id]?.revision))].join(',')}>
       <CheckupMap center={center} onPick={choose} resultCenter={taskCenter}
         layers={toggles} drawables={drawables} coverage={coverage} serviceMode={serviceMode}
+        categoryDirectory={directory}
         densityCategory={densityCategory} water={water}
         selectedId={selected} onSelect={setSelected} />
       <div className="wb-map-banners">
@@ -659,6 +675,12 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
           </div>}
           {state.phase === 'cancelled' && <Alert type="info" title="任务已取消"
             description="已发请求仍计入预算。" />}
+          <CompletionSummary value={task?.completion} />
+          {task?.completion?.canContinue && !busy && <Button block type="primary"
+            data-testid="checkup-continue" disabled={stale}
+            onClick={() => void controller.continueReport()}>
+            {task.completion.restartRetrieval ? '复用边界，重新检索（最多 60 次）' : '继续补全，最多追加 60 次检索'}
+          </Button>}
           {state.error && <Alert type="error" title={state.error} showIcon data-testid="checkup-error"
             action={<Button aria-label="重试" size="small"
               onClick={() => void controller.retry()}>{state.recovery === 'unconfirmed' ? '重新提交'
@@ -666,7 +688,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
         </section>
 
         {snapshot && <section className="wb-sec wb-summary" aria-label="覆盖区间摘要">
-          <p className="wb-label">覆盖率</p>
+          <p className="wb-label">{snapshot.completion?.evaluationStatus === 'partial' ? '阶段性总体覆盖区间' : '覆盖率'}</p>
           {overall && overall.available ? <>
             <p className="wb-range"><b>{fixed(overall.coverageLowerPct)}</b><span>～</span>
               <b>{fixed(overall.coverageUpperPct)}</b><small>%</small></p>
@@ -674,12 +696,12 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             <p className="wb-meter-key"><i className="k-known" />已知覆盖<i className="k-unknown" />未知
               <span>可评估 {percent(overall.assessablePct)}</span></p>
           </> : <Alert type="warning" showIcon
-            title="总体区间暂不给出" description={overall?.reason ?? '缺少分类结论'} />}
+            title="总体区间暂不给出" description={overallUnavailableText(snapshot)} />}
           <ul className="wb-cats">{items.map(item => <li key={item.category}>
             <span className="wb-cat-name"><i style={{ background: item.color }} />{item.label}</span>
             <RangeMeter lower={item.lowerPct} upper={item.upperPct} color={item.color} />
             <span className="wb-cat-value">{item.supported
-              ? `${fixed(item.lowerPct)}–${fixed(item.upperPct)}%` : '无法确定'}</span>
+              ? item.assessablePct === 0 ? '全部未知' : `${fixed(item.lowerPct)}–${fixed(item.upperPct)}%` : '无法确定'}</span>
           </li>)}</ul>
           <Button block type="primary" ghost onClick={() => setReportOpen(true)}>查看体检报告</Button>
         </section>}
@@ -738,7 +760,9 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
 
     <Drawer title="体检报告" open={reportOpen} onClose={() => setReportOpen(false)} size={960}
       rootClassName="rp-drawer">
-      {snapshot ? <CheckupReport snapshot={snapshot} stale={stale} waterReviews={view?.waterReviews} />
+      {snapshot ? <CheckupReport snapshot={snapshot} stale={stale} waterReviews={view?.waterReviews}
+        continuation={task?.completion} busy={busy}
+        onContinue={() => void controller.continueReport()} onCancel={() => void controller.cancel()} />
         : <p className="api-muted">体检完成后在这里显示报告。</p>}
     </Drawer>
   </main>;

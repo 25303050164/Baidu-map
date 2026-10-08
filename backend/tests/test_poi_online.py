@@ -9,6 +9,7 @@ from app.poi.models import PoiCollectRequest
 from app.poi.online import (FINEST_BLOCK_METERS, OnlinePlanner, QueryBlock, QueryDomain,
                             clip_to_domain, coarse_blocks)
 from app.poi.planner import RULES, parameters
+from app import catalog
 from app.quota import DailyBudgetExhausted
 from app.request_control import RequestStopped
 from life_circle.coordinates import LocalProjection
@@ -102,10 +103,10 @@ def test_the_first_round_issues_every_category_before_any_second_keyword():
     looked = Synthetic(default=two_pages)
     planner = build(QueryDomain.circle(1300))
     result = asyncio.run(planner.run(looked))
-    rounds = len(planner.coarse)*sum(len(RULES['queries'][category]) for category in CATEGORIES)
+    rounds = len(planner.coarse)*len(CATEGORIES)
     first_round = [call for call in looked.calls[:rounds]]
-    assert all(call[3] == 0 for call in first_round)
-    assert all(call[3] > 0 for call in looked.calls[rounds:])
+    assert all(call[3] == 0 and call[2] == RULES['queries'][call[1]][0]
+               for call in first_round)
     # The rotation is what keeps a category with more keywords from being
     # exhausted first: within each block, every category's first keyword is
     # issued before any category's second.
@@ -113,11 +114,36 @@ def test_the_first_round_issues_every_category_before_any_second_keyword():
         calls = [call[1:3] for call in first_round if call[0] == block.tile_id]
         firsts = [index for index, (category, query) in enumerate(calls)
                   if query == RULES['queries'][category][0]]
-        later = [index for index, (category, query) in enumerate(calls)
-                 if query != RULES['queries'][category][0]]
         assert len(firsts) == len(CATEGORIES)
-        assert later and max(firsts) < min(later)
+    assert all(call[2] != RULES['queries'][call[1]][0] or call[3] > 0
+               for call in looked.calls[rounds:])
     assert result.status == 'completed' and len(result.blocks) == 4
+
+
+def test_ten_majors_get_every_coarse_block_before_remaining_minors():
+    categories = tuple(catalog.poi_key(catalog.minors_of(major)[0]) for major in catalog.majors())
+    looked = Synthetic()
+    result = asyncio.run(build(QueryDomain.circle(1300), categories=categories,
+                               budget=40).run(looked))
+    assert result.attempts == 40 and result.stop_reason == 'budget_exhausted'
+    assert [catalog.major_of(call[1]) for call in looked.calls[:10]] == list(catalog.majors())
+    assert Counter(catalog.major_of(call[1]) for call in looked.calls) == dict.fromkeys(catalog.majors(), 4)
+    assert {call[0] for call in looked.calls} == {'r0c0', 'r0c1', 'r1c0', 'r1c1'}
+    assert result.status == 'partial'
+
+
+def test_sixty_attempts_are_reproducible_with_unequal_minor_counts():
+    categories = catalog.poi_keys()
+    first, second = Synthetic(), Synthetic()
+    left = asyncio.run(build(QueryDomain.circle(1300), categories=categories,
+                             budget=60).run(first))
+    right = asyncio.run(build(QueryDomain.circle(1300), categories=categories,
+                              budget=60).run(second))
+    assert first.calls == second.calls
+    assert len(first.calls) == left.attempts == right.attempts == 60
+    assert set(catalog.major_of(call[1]) for call in first.calls[:40]) == set(catalog.majors())
+    assert all(call[3] == 0 for call in first.calls)
+    assert left.status == 'partial' and left.incomplete
 
 
 def test_a_truncated_block_is_queried_again_in_smaller_circles_for_that_keyword_only():
@@ -319,7 +345,7 @@ def test_invalid_configuration_is_refused():
     with pytest.raises(ValueError, match='empty_query_domain'):
         build(QueryDomain(((0.0, 0.0), (0.0, 0.0), (0.0, 0.0))))
     with pytest.raises(ValueError, match='unknown_category'):
-        build(QueryDomain.circle(1300), categories=('supermarket',))
+        build(QueryDomain.circle(1300), categories=('not_in_catalog',))
     with pytest.raises(ValueError, match='budget must be a positive integer'):
         build(QueryDomain.circle(1300), budget=0)
     with pytest.raises(ValueError, match='at least one category required'):
