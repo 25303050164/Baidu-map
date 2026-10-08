@@ -127,6 +127,7 @@ export type FacilityGroup = {
   dataSource: "baidu_place" | "synthetic";
   queryDomain: Record<string, unknown>;
   dataObtainedAt: number | null;
+  initialPlan: Record<string, unknown> | null;
   countsByCategory: Record<string, number>;
   facilities: Array<Record<string, unknown>>;
   nearbyFacilities: Array<Record<string, unknown>>;
@@ -400,6 +401,7 @@ export type CheckupCapabilities = {
   dataVersions: Record<string, unknown>;
   coverage: Record<string, unknown>;
   budgets: Record<string, unknown>;
+  poiPlanning: Record<string, unknown>;
   cache: Record<string, unknown>;
   facilityCategories: Record<string, unknown>;
   quota: Record<string, unknown>;
@@ -426,6 +428,8 @@ export type FacilityExtensionView = {
   networkRequests: number;
   facilitiesStatus: string | null;
   countsByCategory: Record<string, number>;
+  stopReason: string | null;
+  initialPlan: Record<string, unknown> | null;
   error: string | null;
   createdAt: number;
   finishedAt: number | null;

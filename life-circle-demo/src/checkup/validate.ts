@@ -307,6 +307,11 @@ export type Capabilities = {
   waterReviews?: RecordValue[];
   /** §3.4 的跨任务复用窗口；旧后端不给这一项。 */
   cache?: RecordValue;
+  /**
+   * 检索计划口径：本地处理上限、网络额度是否与它分开、首轮计划是否预留。旧后端不给这一项，
+   * 界面缺了就不说 —— 缺项不是 0，也不是"未配置"。
+   */
+  poiPlanning?: RecordValue;
   /** 设施目录的 v2 视图：类别选择器与预算算术的唯一来源；旧后端不给这一项。 */
   facilityCategories?: RecordValue;
 };
@@ -324,10 +329,11 @@ export function validCapabilities(value: unknown): value is Capabilities {
       || typeof engine.requiresOsmGraph !== 'boolean') return false;
   }
   if (value.waterReviews !== undefined && !Array.isArray(value.waterReviews)) return false;
-  // 这两项是可选的，但给了就不能是别的形状：读成 undefined 由选择器说"后端没报这一项"，
+  // 这几项是可选的，但给了就不能是别的形状：读成 undefined 由选择器说"后端没报这一项"，
   // 读成一个数组则会静默变成"没有可选类别"。
   if (value.cache !== undefined && !object(value.cache)) return false;
   if (value.facilityCategories !== undefined && !object(value.facilityCategories)) return false;
+  if (value.poiPlanning !== undefined && !object(value.poiPlanning)) return false;
   return object(value.quota) && object(value.budgets) && object(value.coverage)
     && object(value.rules);
 }

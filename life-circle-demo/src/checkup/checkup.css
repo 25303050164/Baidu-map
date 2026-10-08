@@ -55,6 +55,9 @@
 .wb-engine .wb-hint{margin:0}
 .wb-quota{margin-top:4px;padding-top:10px;border-top:1px solid var(--rule);font-size:11.5px;line-height:1.6;color:var(--ink-3)}
 .wb-quota p+p{margin-top:3px}
+/* 检索计划与缓存的口径跟在余额下面：同一种字号，但不重复那条分隔线。 */
+.wb-planning{margin-top:2px;font-size:11.5px;line-height:1.6;color:var(--ink-3)}
+.wb-planning p+p{margin-top:3px}
 
 /* 主操作固定在左侧面板底部。 */
 .wb-setup{display:grid;gap:10px;padding-bottom:12px}
@@ -349,3 +352,5 @@
   border:1px solid var(--rule);border-radius:8px}
 .wb-extension-list li[data-status="failed"],.wb-extension-list li[data-status="cancelled"]{color:var(--ink-3)}
 .wb-extension-counts{color:var(--ink-3)}
+/* 诊断行各占一行：它们是几个不同的数，挤在一行里会被读成一个数。 */
+.wb-extension-facts{flex-basis:100%;margin:0;color:var(--ink-3)}

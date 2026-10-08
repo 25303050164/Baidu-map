@@ -188,13 +188,18 @@ export function capabilities(overrides: Partial<Capabilities> = {}): Capabilitie
       matrixEnabled: false, claimsAccountBalance: false },
     budgets: { poiRequests: 60, routeRequests: 120, detailRouteRequests: 20,
       poiMinorCategories: { default: 14, all: 31 }, poiBlocksUpperBound: 4,
-      poiRequestsIsLowerBound: true },
+      // "分块上界 × 小类数"是冷启动首轮的**估计**：实际分块数由圈面决定（更少），
+      // 翻页与细分还要更多页。旧字段保留但报 false —— 它曾把这个乘积说成下界。
+      poiRequestsIsLowerBound: false, poiFirstRoundIsAnEstimate: true },
+    // 本地处理上限与网络额度是两本账；首轮计划只是执行前的估算，不是额度预留。
+    poiPlanning: { processingStepLimit: 4096, networkBudgetIsSeparate: true,
+      initialPlanReportsCacheReuse: true, initialPlanIsReservation: false },
     coverage: { metricCrs: 'EPSG:3857', queryPaddingM: 50, graphConfigured: true,
       coverageBoundaryConfigured: true, completeDirectory: false },
     rules: { ruleVersion: 'walk-distance-1000-v1', statusThresholdSeconds: 900,
       assessmentScope: 'isochrone' },
     waterReviews: [],
-    cache: { freshnessSeconds: null, crossTaskReuse: false },
+    cache: { freshnessSeconds: null, crossTaskReuse: false, processLocal: true },
     facilityCategories: facilityCatalogFixture(),
     ...overrides,
   };
@@ -232,14 +237,24 @@ export function facilityCatalogFixture(): Record<string, unknown> {
   };
 }
 
-/** 一次按需补查的状态：默认是"查完了、五个小类里取到三家"。 */
+/**
+ * 一次按需补查的状态：默认是"查完了、五个小类里取到三家"。
+ *
+ * 首轮估算与用量对齐：20 页处理里 16 页命中缓存，只有 4 次新增网络调用 —— 把这两本账
+ * 混成一个数，就看不出缓存到底省下了什么。`stopReason` 默认 null（正常结束），需要诊断
+ * 文案的用例自己覆盖它。
+ */
 export function extensionView(overrides: Partial<FacilityExtensionView> = {}): FacilityExtensionView {
   return {
     extensionId: 'extension-1', taskId: 'task-1', baseRevision: 5, clientRequestId: 'ext-request-1',
     status: 'completed', stage: 'ready', categories: ['dining', 'leisure'],
-    budget: { limit: 60, spent: 20, remaining: 40 }, requests: 20, networkRequests: 20,
-    facilitiesStatus: 'complete', countsByCategory: { dining: 1, leisure: 2 }, error: null,
-    createdAt: CREATED_AT, finishedAt: CREATED_AT + 3, ...overrides,
+    budget: { limit: 60, spent: 20, remaining: 40 }, requests: 20, networkRequests: 4,
+    facilitiesStatus: 'complete', countsByCategory: { dining: 1, leisure: 2 },
+    stopReason: null,
+    initialPlan: { initialPageCount: 20, reusableInitialPageCount: 16, estimatedNewInitialCalls: 4,
+      remainingTaskBudget: 60, remainingDailyBudget: 1450, blocks: 4, minorCategories: 5,
+      primaryQueriesOnly: true, isReservation: false },
+    error: null, createdAt: CREATED_AT, finishedAt: CREATED_AT + 3, ...overrides,
   };
 }
 
@@ -256,6 +271,8 @@ export function extensionDocument(
         widened: false, envelopeLocalMeters: [-1300, -1300, 1300, 1300],
         polygonLocalMeters: [] },
       dataObtainedAt: CREATED_AT + 2, countsByCategory: { dining: 1, leisure: 2 },
+      // 结果文档沿用 FacilityGroup 的形状；这里按"旧修订没记过首轮计划"来，读作 null。
+      initialPlan: null,
       facilities: [], nearbyFacilities: [], reviewCandidates: [], excludedCandidates: [],
       quarantine: [], queryCoverage: [], queryIncompleteRegions: {}, statistics: {},
       warnings: [], stopReason: null },

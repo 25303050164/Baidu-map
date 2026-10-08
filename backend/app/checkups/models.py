@@ -136,6 +136,10 @@ class FacilityGroup(CheckupModel):
     data_source: Literal["baidu_place", "synthetic"]
     query_domain: dict
     data_obtained_at: float | None = None
+    #: 首轮检索计划与缓存复用估算（§四）：初始页数、可复用页数、预计新增调用数与当时的
+    #: 预算。它是一次估算、不是额度预留，也不承诺翻页与细分能在其中跑完。
+    #: 旧修订没有这一项，读作"未记录"。
+    initial_plan: dict | None = None
     counts_by_category: dict[str, int] = Field(default_factory=dict)
     facilities: list[dict] = Field(default_factory=list)
     #: Accepted facilities outside the boundary but inside the query range (§2.3):
@@ -190,6 +194,13 @@ class FacilityExtensionView(CheckupModel):
     network_requests: int = Field(default=0, ge=0)
     facilities_status: str | None = None
     counts_by_category: dict[str, int] = Field(default_factory=dict)
+    #: 这次补查停在哪里：``completed`` 之外的具名原因（额度、限流、本地上限、取消……）。
+    #: 旧行没有记录时读作 null，不猜一个。
+    stop_reason: str | None = None
+    #: 执行前算出、随结果一起定稿的首轮估算：首轮页数、缓存可复用页数、预计新增调用数与
+    #: 当时的预算。它是在派发第一页**之前**算的（不是提交时冻结的承诺），也不要求翻页与
+    #: 细分跑在其中；旧行读作 null。
+    initial_plan: dict | None = None
     error: str | None = None
     created_at: float
     finished_at: float | None = None
@@ -659,6 +670,9 @@ class CheckupCapabilities(CheckupModel):
     data_versions: dict
     coverage: dict
     budgets: dict
+    #: 设施检索的预检口径：本地处理步数上限、网络预算与它分开、首轮计划会报缓存复用。
+    #: 旧后端不给这一项，界面据此说"这一版不报预检口径"，而不是显示一个 0。
+    poi_planning: dict = Field(default_factory=dict)
     #: §3.4 的跨任务复用窗口：``freshnessSeconds`` 为 null 表示缓存只在同一个任务内复用，
     #: 所以重复体检同一片区域不会省下任何请求。这个开关要让用户看得见。
     cache: dict = Field(default_factory=dict)

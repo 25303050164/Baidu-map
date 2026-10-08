@@ -28,14 +28,16 @@ from shapely.geometry import Point
 from .. import catalog
 from ..cache import KeyedCache
 from ..contracts import Issue
+from ..poi import plan as poi_plan
 from ..poi.cache import CachedPages
 from ..poi.models import PoiCollectRequest, Point as WirePoint
 from ..poi.normalize import merge_entities, normalize
-from ..poi.online import OnlinePlanner, clip_to_domain, coarse_blocks
-from ..quota import attach_token
+from ..poi.online import (PROCESSING_STEP_LIMIT, OnlinePlanner, RunLimits, clip_to_domain,
+                          coarse_blocks)
+from ..quota import PLACE, attach_token
 from .facility_stage import local_region, query_domain
 from .models import QUERY_PADDING_M, CheckupRequest, FacilityGroup
-from .places import POI_POOL, PlacesUnavailable, open_online
+from .places import POI_POOL, PlacesUnavailable, declared_identity, open_online
 
 # Budgets the request itself cannot raise (``models.MAX_POI_REQUESTS``), which is
 # why the stage reads its limit from the request object rather than from here.
@@ -44,6 +46,11 @@ from .places import POI_POOL, PlacesUnavailable, open_online
 # from. The page's ``source`` stays the data source of the run; the cache's view
 # of the same page is a different question and gets its own key.
 FETCH_SOURCE = 'fetchSource'
+
+#: The reasons a page was never sent because this application may not send more:
+#: the task's own bucket or the day's allowance. Named here so the report says how
+#: many pages that cost, instead of leaving a reader to count stop reasons.
+ALLOWANCE_REFUSALS = frozenset({'task_budget_exhausted', 'daily_budget_exhausted'})
 
 
 @dataclass(frozen=True)
@@ -122,6 +129,39 @@ def _status_for(query_status: str) -> str:
     return {'completed': 'complete', 'cancelled': 'partial'}.get(query_status, query_status)
 
 
+def budget_refusal(estimate: poi_plan.InitialEstimate, majors) -> FacilityOutcome | None:
+    """Whether the first round needs more new calls than this retrieval may make.
+
+    The decision is made on *new* calls, never on the cold page count: a first
+    round the cache can already answer is not a series of requests, and refusing
+    it because the day's allowance is spent would refuse work this deployment does
+    not have to do. For the same reason a retrieval the cache can *partly* answer
+    is never refused: those pages are evidence already paid for, and what may
+    actually be sent is still bounded by the pool at the moment of dispatch.
+
+    Only a cold retrieval — nothing reusable at all — is refused up front, and it
+    is refused with its numbers, so the caller can reduce categories or raise the
+    budget instead of watching a retrieval that cannot start.
+    """
+    reason = poi_plan.admission_refusal(estimate)
+    if reason is None:
+        # Either nothing has to leave the process, or part of the first round is already
+        # cached and is worth running for: what may actually be sent stays bounded by
+        # the pool at the moment of dispatch (§4.2.5).
+        return None
+    detail = (
+        f'本次检索首轮需要 {estimate.initial_page_count} 页地点检索'
+        f'（{estimate.blocks} 个查询分块 × {estimate.minor_categories} 个检索小类，'
+        f'每类先取主关键词一次），缓存可复用 {estimate.reusable_initial_page_count} 页，'
+        f'还需新增 {estimate.estimated_new_initial_calls} 次网络调用，'
+        f'而本任务预算只剩 {estimate.remaining_task_budget} 次'
+        + ('' if estimate.remaining_daily_budget is None
+           else f'、本应用今天还剩 {estimate.remaining_daily_budget} 次')
+        + '。请减少设施类别或提高本任务预算后重试；'
+          '翻页与细分还需要更多次数，首轮够用不代表一定查完。')
+    return _refusal(reason, majors, detail=detail)
+
+
 async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, context, quota,
                              budget, cache: KeyedCache, places_factory=None,
                              progress=None) -> FacilityOutcome:
@@ -145,19 +185,18 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
         boundary = local_region(snapshot.geometry, origin)
     except ValueError as exc:
         return _refusal(str(exc), majors)
-    if budget.remaining(POI_POOL) <= 0:
-        return _refusal('task_budget_exhausted', majors)
-    remaining = budget.remaining(POI_POOL)
-    blocks = len(coarse_blocks(domain))
-    minimum_requests = blocks * len(categories)
-    if minimum_requests > remaining:
-        return _refusal(
-            'budget_too_small', majors,
-            detail=(f'设施类别过多：本次检索至少需要 {minimum_requests} 次地点检索'
-                    f'（{blocks} 个查询分块 × {len(categories)} 个检索小类，每类先取主关键词一次），'
-                    f'但本任务预算只剩 {remaining} 次。请减少设施类别或提高本任务预算后重试；'
-                    f'这是下界，密集区域的翻页与细分还需要更多次数。'),
-        )
+    # What this retrieval will ask for, and what of it the cache can answer, from
+    # the planner's own first round and the cache's own keys — not from a second,
+    # approximately equal count. No transport is opened and nothing is sent.
+    provider, api_version = declared_identity(settings, places_factory)
+    plan = poi_plan.initial_plan(domain, origin, categories, provider=provider,
+                                 api_version=api_version)
+    estimate = poi_plan.estimate(plan, cache, task_id=context.task_id,
+                                 remaining_task_budget=budget.remaining(POI_POOL),
+                                 remaining_daily_budget=quota.remaining(PLACE))
+    refusal = budget_refusal(estimate, majors)
+    if refusal is not None:
+        return refusal
     started = time.time()
     # What this stage sends is what it reserves: the pool counts the attempt
     # before the request goes out, so a refused or unclear one is part of it.
@@ -176,13 +215,17 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
                                                 context.token),
                             provider=places, task_id=context.task_id)
         limit = budget.remaining(POI_POOL)
-        primary_queries = {
-            category: tuple(catalog.poi_rules()['queries'][category][:1])
-            for category in categories
-        }
         planner = OnlinePlanner(domain=domain, origin=origin, categories=list(categories),
-                                queries=primary_queries, budget=limit, source=source,
-                                token=context.token)
+                                queries=poi_plan.primary_queries(categories), budget=limit,
+                                source=source, token=context.token,
+                                deadline=context.deadline,
+                                # Two ceilings: the task bucket and the day bound what
+                                # may be *sent*; this one bounds local scheduling, so a
+                                # cached page can never spend the allowance the missing
+                                # pages need, and a spent allowance cannot discard the
+                                # pages the cache can still answer.
+                                limits=RunLimits(processing_steps=PROCESSING_STEP_LIMIT,
+                                                 drain_after_budget_refusal=True))
         pages = fetch
         if progress is not None:
             progress(0, limit)
@@ -194,7 +237,7 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
                     progress(budget.spent.get(POI_POOL, 0) - reserved, limit)
         result = await planner.run(pages)
     return _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
-                   places, source, majors, budget, started,
+                   places, source, majors, budget, started, estimate,
                    network=budget.spent.get(POI_POOL, 0) - reserved)
 
 
@@ -213,7 +256,7 @@ def _incomplete_regions(incomplete: dict, projection) -> dict:
 
 
 def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin, places,
-            source, majors, budget, started, *, network: int) -> FacilityOutcome:
+            source, majors, budget, started, estimate, *, network: int) -> FacilityOutcome:
     categories = catalog.poi_keys(majors)
     records, quarantine = [], []
     for observation in result.observations:
@@ -265,6 +308,11 @@ def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
             'polygonLocalMeters': [list(point) for point in domain.polygon],
         },
         data_obtained_at=min(data_times) if data_times else None,
+        # The first round this run was planned from, and what of it the cache
+        # answered. It is an estimate taken before the first page, published so a
+        # reader can see why the retrieval was allowed to start — and it is not a
+        # promise that paging and subdivision finish within it.
+        initial_plan=estimate.as_contract(),
         counts_by_category={major: sum(1 for item in accepted
                                        if catalog.major_of(item['category']) == major)
                             for major in majors},
@@ -291,6 +339,14 @@ def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
             # Pages, not fetches: a page asked for twice is one page.
             'sequences': len(coverage), 'blocks': len(result.blocks),
             'livePages': live, 'cachedPages': len(fetch.uses) - live, 'pageAttempts': network,
+            # ``processedPages`` is what the planner scheduled — a cached replay is
+            # one of those — while ``networkCalls`` is what actually left the
+            # process. Keeping both is what makes "the allowance bounded the *new*
+            # calls, not the work" checkable rather than asserted.
+            'processedPages': result.attempts, 'networkCalls': result.network_calls,
+            'processingLimit': PROCESSING_STEP_LIMIT,
+            'allowanceRefusedPages': sum(1 for entry in coverage for record in entry['pageRecords']
+                                         if record.get('reason') in ALLOWANCE_REFUSALS),
             'engineQuality': snapshot.quality, 'elapsedSeconds': round(time.time() - started, 6),
         },
         warnings=warnings, stop_reason=result.stop_reason)

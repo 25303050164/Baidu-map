@@ -30,7 +30,8 @@ import { CheckupMap, DEFAULT_CHECKUP_LAYERS, layerSwatch, type CheckupLayerToggl
 import { CheckupReport } from './CheckupReport';
 import { Fold } from './Fold';
 import { CATEGORY_ORDER, categoryLabel, coverageItems, percent } from './report';
-import { missingCoreMajors, requiredRequests, splitScope } from './categories';
+import { missingCoreMajors, estimatedFirstRoundPages, splitScope } from './categories';
+import { extensionLines } from './extensions';
 import type { MajorCategory } from './contract';
 import { nearestFacilities } from './nearest';
 import { WeatherCard } from './WeatherCard';
@@ -326,7 +327,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   const scopeMinors = useMemo(() => (catalog ? scopeParts.core.reduce(
     (total, key) => total + (catalog.majors.find(major => major.key === key)?.minorCategories ?? 0),
     0) : 0), [catalog, scopeParts.core]);
-  const scopeNeeded = catalog ? requiredRequests(catalog, scopeParts.core) : null;
+  const scopeFirstRoundPages = catalog ? estimatedFirstRoundPages(catalog, scopeParts.core) : null;
   const scopeMissingCore = catalog ? missingCoreMajors(catalog, scopeParts.core) : [];
 
   function toggleScope(key: MajorCategory, on: boolean) {
@@ -615,9 +616,10 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
                   {major.label}{major.core ? '（核心）' : ''}
                 </Checkbox>)}
               </fieldset>)}
-              {scopeNeeded !== null && <p className="wb-hint" data-testid="checkup-scope-budget">
-                核心口径首轮至少 {scopeNeeded} 次地点检索
-                （{catalog.blocksUpperBound} 个查询分块 × {scopeMinors} 个检索小类）；翻页与细分还要更多。
+              {scopeFirstRoundPages !== null && <p className="wb-hint" data-testid="checkup-scope-budget">
+                核心口径冷启动首轮约 {scopeFirstRoundPages} 页地点检索（按最多 {catalog.blocksUpperBound} 个
+                查询分块 × {scopeMinors} 个检索小类估计）；实际分块由圈面决定，翻页、细分与重试
+                还要更多页，命中缓存的页面不消耗网络额度。
               </p>}
               {scopeMissingCore.length > 0 && <Alert type="warning" showIcon
                 data-testid="checkup-scope-missing"
@@ -632,6 +634,12 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             {(view?.quota.label || (view?.quota.lines.length ?? 0) > 0) && <div className="wb-quota">
               {view?.quota.label && <p data-testid="quota-label">{view.quota.label}</p>}
               {view?.quota.lines.map(line => <p key={line}>{line}</p>)}
+            </div>}
+            {/* 检索计划的口径：本地处理上限与网络额度是两本账，首轮计划只是估算。
+                旧后端缺哪一项就不显示哪一项，不写 0 也不写"(未配置)"。 */}
+            {(view?.planningLines.length ?? 0) > 0 && <div className="wb-planning"
+              data-testid="checkup-planning">
+              {view?.planningLines.map(line => <p key={line}>{line}</p>)}
             </div>}
           </section>
         </div>
@@ -777,6 +785,10 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
                   {' · '}{Object.entries(item.countsByCategory)
                     .map(([key, value]) => `${categoryLabel(key)} ${value} 处`).join('，')}
                 </span>}
+                {/* 两本账分开报：页面处理含缓存重放，新增网络才是花掉额度的部分。
+                    后端没记的项（旧记录）整行省略，不补 0。 */}
+                {extensionLines(item).map(line => <p key={line} className="wb-extension-facts"
+                  data-testid="checkup-extension-facts">{line}</p>)}
                 {!EXTENSION_DONE.has(item.status) && <Button type="link" size="small"
                   onClick={() => void controller.cancelExtension(item.extensionId)}>取消</Button>}
               </li>)}

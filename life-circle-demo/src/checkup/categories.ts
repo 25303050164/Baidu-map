@@ -10,8 +10,9 @@
  *
  * * **核心口径**（`:class:`MajorOption.core`）是总体区间分的范围。选中的核心大类不齐备时
  *   总体分是"给不出"，不是把剩下的类别重新加权。
- * * **小类数**是预算算术的分子：首轮检索的下界 = 查询分块数 × 检索小类数。界面在提交前
- *   用它判断选的类别够不够预算。
+ * * **小类数**是首轮页数估计的分子：按最多分块数算出的"分块数 × 小类数"是**冷启动首轮
+ *   页数**的估计，不是总请求数的下界（实际分块由圈面包络决定，翻页、细分与重试还要更多
+ *   页）。界面在提交前用它估计选的类别够不够预算。
  * * **扩展大类**不进主请求，走按需补查（`facility-extensions`）：主请求只带核心口径，
  *   扩展类别复用已经算出的圈面再查一次，既不改评分也不让主请求变重。
  */
@@ -45,8 +46,9 @@ export type FacilityCatalogView = {
   groups: MajorGroup[];
   majors: MajorOption[];
   /**
-   * 首轮检索的查询分块数上界（当前实现是 2×2，最多 4 块）。真实分块数由圈面包络决定，
-   * 所以按它算出来的是**上界**：界面要用"至少需要"的说法，不能承诺一个精确值。
+   * 首轮检索的查询分块数上界（当前实现是 2×2，最多 4 块）。真实分块数由算出的圈面包络
+   * 决定（≤ 这个上界），所以按它算出的是**冷启动首轮页数**的估计：翻页、细分与重试还要
+   * 更多页，首轮够用**不代表**一定查得完。
    */
   blocksUpperBound: number | null;
 };
@@ -117,10 +119,17 @@ export function facilityCatalogView(capabilities: {
 }
 
 /**
- * 选中一类时首轮检索**至少**要发多少次，或 null（后端没给分块上界，或出现了目录里
- * 没有的大类）。刻意不给"够/不够"的结论：那是调用方拿本任务的预算去比的。
+ * 选中的类别按"最多分块数 × 小类数"估出的**冷启动首轮页数**，或 null（后端没给分块上界，
+ * 或出现了目录里没有的大类）。
+ *
+ * 它是估计，既不是下界也不是承诺：后端每块每小类先取主关键词一次，所以一次检索的首轮页数
+ * 约为"分块数 × 小类数"；实际分块数由算出的圈面包络决定（最多 `blocksUpperBound` 块），
+ * 而翻页、细分与重试一定需要更多页 —— 首轮装得下**不代表**一定查得完。命中缓存的页面不
+ * 消耗网络额度，所以真正新增的网络调用通常比这个数少（见补查面板的首轮估算）。
+ * 刻意不给"够/不够"的结论：那是调用方拿本任务的预算去比的。
  */
-export function requiredRequests(view: FacilityCatalogView, selected: readonly MajorCategory[]): number | null {
+export function estimatedFirstRoundPages(
+  view: FacilityCatalogView, selected: readonly MajorCategory[]): number | null {
   if (view.blocksUpperBound === null) return null;
   let minors = 0;
   for (const key of selected) {

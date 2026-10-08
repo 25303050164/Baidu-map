@@ -6,6 +6,7 @@ from ..algorithms.hybrid_isochrone.water_review import review_catalog
 from .. import catalog
 from ..catalog import major_of
 from ..engines import STATUS_THRESHOLD_S
+from ..poi.online import PROCESSING_STEP_LIMIT
 from .manager import CheckupError, CheckupManager
 from .models import (DEFAULT_POI_REQUESTS, DEFAULT_ROUTE_REQUESTS, DETAIL_ROUTE_REQUESTS,
                      DISTANCE_RULE, MAX_POI_REQUESTS, MAX_ROUTE_REQUESTS, QUERY_PADDING_M,
@@ -313,19 +314,30 @@ def capabilities_router(manager: CheckupManager, settings, offline=None):
             budgets={"poiRequests": DEFAULT_POI_REQUESTS, "routeRequests": DEFAULT_ROUTE_REQUESTS,
                      "detailRouteRequests": DETAIL_ROUTE_REQUESTS,
                      "maxPoiRequests": MAX_POI_REQUESTS, "maxRouteRequests": MAX_ROUTE_REQUESTS,
-                     # 每块每小类先取主关键词一次，所以一次检索的下界是"分块数 × 小类数"。
-                     # 分块数由圈面包络决定（最多 4），请求体里算不出来，这里给出小类数，
-                     # 客户端据此在提交前判断预算够不够，而不是提交后拿到一个失败任务。
+                     # 每块每小类先取主关键词一次，所以一次检索的首轮页数是"分块数 × 小类数"。
+                     # 分块数由圈面包络决定（最多 4），请求体里算不出来，这里给出小类数与块数
+                     # 上界，客户端据此在提交前估计够不够，而不是提交后拿到一个失败任务。
                      "poiMinorCategories": {
                          "default": len(catalog.poi_keys(catalog.default_analysis_majors())),
                          "all": len(catalog.poi_keys(catalog.majors())),
                      },
                      "poiBlocksUpperBound": 4,
-                     "poiRequestsIsLowerBound": True},
+                     # 这个乘积是**首轮估计**，不是总请求数的下界：几何确定后实际分块数可能
+                     # 更少，而翻页、细分与重试一定需要更多。旧字段保留下来但报 false —— 它
+                     # 此前把估计说成了下界，那正是要修掉的说法。
+                     "poiRequestsIsLowerBound": False,
+                     "poiFirstRoundIsAnEstimate": True},
+            # 预检与执行共用的口径：首轮页数怎么估、可复用多少、什么在限制新增调用。
+            poi_planning={"processingStepLimit": PROCESSING_STEP_LIMIT,
+                          "networkBudgetIsSeparate": True,
+                          "initialPlanReportsCacheReuse": True,
+                          "initialPlanIsReservation": False},
             # §3.4 的跨任务复用窗口。未配置时缓存只在同一个任务内复用，
             # 所以重复体检同一片区域不会省下任何请求；这个值要能被客户端看到。
             cache={"freshnessSeconds": settings.cache_freshness_seconds,
-                   "crossTaskReuse": settings.cache_freshness_seconds is not None},
+                   "crossTaskReuse": settings.cache_freshness_seconds is not None,
+                   # 页面缓存是进程内存：重启即失效，也不跨进程共享。
+                   "processLocal": True},
             # 类别选择器的唯一来源：展示组、十个大类、每类检索小类数、核心口径。
             facility_categories=catalog.facility_categories(),
             # Reported per request rather than cached: the tier switches at a

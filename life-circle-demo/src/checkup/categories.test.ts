@@ -1,13 +1,16 @@
 /**
- * 类别选择器测三件事：**读不出来的时候有没有说实话**、**预算算术算的是下界而不是承诺**，
+ * 类别选择器测三件事：**读不出来的时候有没有说实话**、**首轮页数算的是估计而不是承诺**，
  * 以及**核心口径与扩展类别的拆分**。
  *
+ * 第二条的措辞是这份文件的一部分：`4 × 小类数` 是冷启动首轮页数的估计（实际分块由圈面
+ * 决定，翻页、细分与重试还要更多页），把它说成"下界"会让人以为清单一交就一定能查完。
+ *
  * 第三条是这个文件里最要紧的一条：把扩展大类塞进主请求，会让一次正常的三类体检变成
- * 一次预算必拒的十类检索（31 个小类 × 4 块 = 124 > 默认 60）；把核心大类漏在主请求外，
- * 则会让总体区间分永远"给不出"。两者的表现都是"体检看起来能跑，但结果是错的"。
+ * 一次预算必拒的十类检索（31 个小类 × 4 块 = 124 页首轮估计 > 默认 60）；把核心大类漏在
+ * 主请求外，则会让总体区间分永远"给不出"。两者的表现都是"体检看起来能跑，但结果是错的"。
  */
 import { describe, expect, it } from 'vitest';
-import { facilityCatalogView, missingCoreMajors, requiredRequests, splitScope } from './categories';
+import { estimatedFirstRoundPages, facilityCatalogView, missingCoreMajors, splitScope } from './categories';
 import type { MajorCategory } from './contract';
 
 /** 与后端 `catalog.facility_categories()` 同一形状：五个展示组、十个大类、31 个小类。 */
@@ -77,24 +80,24 @@ describe('facility catalog view', () => {
   it('reports that the block count is unknown rather than assuming four', () => {
     const view = facilityCatalogView({ ...catalog(), budgets: {} })!;
     expect(view.blocksUpperBound).toBeNull();
-    expect(requiredRequests(view, ['shopping'])).toBeNull();
+    expect(estimatedFirstRoundPages(view, ['shopping'])).toBeNull();
   });
 });
 
-describe('budget arithmetic', () => {
-  it('counts blocks times minor categories, and says it is a lower bound', () => {
+describe('first-round estimate', () => {
+  it('counts blocks times minor categories as the cold-start first round', () => {
     const view = facilityCatalogView(catalog())!;
     // 核心三类 14 个小类 × 4 块 = 56，正好是默认 60 预算里塞得下的那一档。
-    expect(requiredRequests(view, ['shopping', 'medical', 'education'])).toBe(56);
+    expect(estimatedFirstRoundPages(view, ['shopping', 'medical', 'education'])).toBe(56);
     // 全部十类 31 个小类 × 4 块 = 124：默认 60 装不下，日额度 80 也装不下。
-    expect(requiredRequests(view, ALL)).toBe(124);
-    expect(requiredRequests(view, ['dining', 'leisure'])).toBe(20);
-    expect(requiredRequests(view, [])).toBe(0);
+    expect(estimatedFirstRoundPages(view, ALL)).toBe(124);
+    expect(estimatedFirstRoundPages(view, ['dining', 'leisure'])).toBe(20);
+    expect(estimatedFirstRoundPages(view, [])).toBe(0);
   });
 
   it('refuses to price a major the catalog does not describe', () => {
     const view = facilityCatalogView(catalog())!;
-    expect(requiredRequests(view, ['medical', 'not_a_major' as MajorCategory])).toBeNull();
+    expect(estimatedFirstRoundPages(view, ['medical', 'not_a_major' as MajorCategory])).toBeNull();
   });
 });
 

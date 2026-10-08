@@ -6,8 +6,16 @@ counter: the pool's scheduling point is simply never entered. Everything else is
 §4.2.6's accounting, which this leaves alone: a replayed page produces the same
 coverage record it produced live, so a page that came from a partial run stays
 partial evidence. A cache cannot complete a set.
+
+What the wrapper adds to the caller's accounting is one explicit fact per page:
+whether this call dispatched an upstream request, read a stored page, or awaited
+an identical in-flight request someone else paid for. The planner cannot tell
+those apart from the payload — all three return the same page — and inferring it
+from a counter that a concurrent run also moves is exactly the guess this record
+replaces.
 """
 from ..cache import cache_key
+from .online import CACHED, LIVE, SHARED, PageResponse
 from .planner import parameters
 
 DEFAULT_COORDINATE_SYSTEM = 'bd09ll'
@@ -52,7 +60,8 @@ class CachedPages:
     async def __call__(self, sequence, page):
         answer = await self.cache.resolve(self.key(sequence, page),
                                          lambda: self.fetch(sequence, page), task_id=self.task_id)
+        manner = LIVE if not answer.cached else (SHARED if answer.shared else CACHED)
         self.uses[(sequence['tileId'], sequence['category'], sequence['query'], page)] = {
             'sequenceId': sequence['sequenceId'], 'source': 'cache' if answer.cached else 'live',
-            'obtainedAt': answer.obtained_at}
-        return answer.value, answer.reason
+            'obtainedAt': answer.obtained_at, 'delivery': manner}
+        return PageResponse(answer.value, answer.reason, manner)

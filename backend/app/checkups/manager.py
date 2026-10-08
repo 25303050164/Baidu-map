@@ -19,6 +19,7 @@ import asyncio
 import json
 import math
 import time
+from dataclasses import dataclass
 from contextlib import AsyncExitStack
 from types import SimpleNamespace
 from uuid import uuid4
@@ -33,6 +34,7 @@ from ..catalog import major_of, poi_keys
 from ..contracts import Issue, Origin
 from ..engines import EngineContext, IsochroneAsk, IsochroneSnapshot, canonical_hash
 from ..engines.protocol import EngineCancelled
+from ..poi import plan as poi_plan
 from ..poi.online import coarse_blocks
 from ..poi.planner import RULES as POI_RULES
 from ..quota import PLACE, attach_token
@@ -45,10 +47,12 @@ from .models import (DEFAULT_POI_REQUESTS, DETAIL_ROUTE_REQUESTS, DISTANCE_RULE,
                      FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView,
                      FacilityGroup, FacilityRoute, ReportEvidence, ScopeEvidence, TaskProgress,
                      new_trace)
+from .places import declared_identity
 from .progress import StepReporter, category_label
 from .reporting_stage import build_report
 from .routes import DETAIL_POOL, RoutesUnavailable, open_online as open_routes
-from .store import CheckupStore, ExtensionNotFound, RequestIdConflict, TaskNotFound
+from .store import (CheckupStore, ExtensionNotFound, RequestIdConflict, TaskNotFound,
+                    extension_identity, extension_matches)
 from .verification_stage import (VerificationOutcome, carried_over, judge_route,
                                  refusal as verification_refusal, verify_facilities)
 
@@ -201,6 +205,24 @@ def _assessment_progress(report):
     return progress
 
 
+@dataclass(frozen=True)
+class _ExtensionBoundary:
+    """What a new extension over one task would search, resolved on demand.
+
+    ``revision`` is the revision the new request binds to; ``requested`` is the
+    budget it will be given. Both are read only for a genuinely new request, so an
+    already-accepted request id can be answered without the parent's newest revision
+    being usable at all.
+    """
+
+    domain: object
+    origin: tuple
+    minors: tuple
+    blocks: int
+    requested: int
+    revision: int
+
+
 class CheckupManager:
     def __init__(self, settings, registry, store: CheckupStore, quota, place_factory=None,
                  route_factory=None, offline=None):
@@ -276,7 +298,12 @@ class CheckupManager:
     # -- execution ---------------------------------------------------------
 
     async def _serve(self) -> None:
-        while True:
+        # The condition, not just the cancellation, ends this loop. A stage may absorb
+        # the CancelledError delivered while it was running — a planner reports a
+        # cancelled run as an outcome, with the evidence it already had — and a worker
+        # that only relied on the exception would then block here forever, holding up
+        # shutdown on a queue nothing will fill again.
+        while not self.closing:
             task_id = await self.queue.get()
             try:
                 if not self.closing:
@@ -1031,10 +1058,87 @@ class CheckupManager:
     def submit_extension(self, task_id: str, payload: FacilityExtensionRequest) -> FacilityExtensionView:
         """为一次已完成的体检补查若干设施大类。
 
-        发请求之前先把"够不够"算清楚：预算不足或今天额度不够就带数字拒绝，而不是
-        先收下一个注定查不完的补查，再让用户看到一个没有原因的失败。
+        这里的顺序就是这件事本身：先认领资源、再认请求，最后才算额度。
+
+        * 同一个请求标识回来是**取回原来那次补查** —— 不重新排队、不发请求、不扣额度，
+          哪怕今天已经没有余额，也不管父任务后来发过几版修订。
+        * 同一个标识带不同参数是冲突（409），而且这个结论优先于任何余额判断：额度不足
+          不该掩盖"你换了参数"。
+        * 只有确实的新请求才做首轮计划与预算检查，且检查用的是**预计新增网络调用数**：
+          完全命中缓存的补查在日余额为 0 时也能提交，因为那一次不会联网。
         """
         parent = self.get(task_id)
+        categories = list(payload.categories)
+        identity = extension_identity(categories=categories,
+                                      max_poi_requests=payload.max_poi_requests)
+        # 幂等先于预算，也先于"最新修订"。这一行存在就说明这次补查受理过：合法重试拿回
+        # 原记录与原 baseRevision、与原圈面 —— 父任务后来发过几版修订、那一版的几何是否
+        # 还可用，都不该让一次已经受理过的请求失败。参数不同则是冲突，同样与余额无关。
+        existing = self.store.find_extension(task_id, payload.client_request_id)
+        if existing is not None:
+            if not extension_matches(
+                    existing, identity=identity,
+                    resolved_budget=lambda: self._extension_boundary(
+                        task_id, payload).requested):
+                raise CheckupError(409, "checkup_extension_request_id_conflict",
+                                   "该请求标识已用于不同参数的补查")
+            return self.extension_view(existing)
+        # 新请求才需要当前可用的圈面与几何。
+        boundary = self._extension_boundary(task_id, payload)
+        domain, origin, minors = boundary.domain, boundary.origin, boundary.minors
+        blocks, requested = boundary.blocks, boundary.requested
+        # 先看首轮要什么、缓存能回答多少，再决定够不够。这一步与设施阶段共用同一条
+        # 准入规则：全缓存放行、部分缓存按缺页放行、只有冷启动缺额才具名拒绝。检查本身
+        # 不发请求、不预扣额度、不刷新缓存数据时间；额度仍由服务池在派发前最终裁定。
+        provider, api_version = declared_identity(self.settings, self.place_factory)
+        plan = poi_plan.initial_plan(domain, origin, minors, provider=provider,
+                                     api_version=api_version)
+        estimate = poi_plan.estimate(plan, self.cache, task_id=task_id,
+                                     remaining_task_budget=requested,
+                                     remaining_daily_budget=self.quota.remaining(PLACE))
+        refusal = poi_plan.admission_refusal(estimate)
+        if refusal == "daily_budget_exhausted":
+            remaining_today = estimate.remaining_daily_budget
+            raise CheckupError(
+                429, "checkup_extension_daily_budget",
+                f"今天的地点检索额度不足以完成这次补查：首轮 {estimate.initial_page_count} 页里"
+                f"缓存可复用 {estimate.reusable_initial_page_count} 页，"
+                f"还需新增 {estimate.estimated_new_initial_calls} 次网络调用，"
+                f"本应用今天还剩 {remaining_today} 次。请减少类别，"
+                f"或在次日（北京时间）额度恢复后再补查；"
+                f"完全命中缓存的补查不受余额影响。")
+        if refusal is not None:
+            raise CheckupError(
+                422, "checkup_extension_budget_too_small",
+                f"补查 {len(categories)} 个设施大类首轮需要 {estimate.initial_page_count} 页"
+                f"地点检索（{blocks} 个查询分块 × {len(minors)} 个检索小类，每类先取主关键词一次），"
+                f"缓存可复用 {estimate.reusable_initial_page_count} 页，"
+                f"还需新增 {estimate.estimated_new_initial_calls} 次网络调用，"
+                f"但这次只给了 {requested} 次。请提高补查预算或减少类别；"
+                f"翻页与细分还需要更多次数，首轮够用不代表一定查完。")
+        try:
+            record, created = self.store.create_extension(
+                extension_id=str(uuid4()), task_id=task_id,
+                client_request_id=payload.client_request_id, identity=identity,
+                fingerprint=canonical_hash(identity), base_revision=boundary.revision,
+                categories=categories, budget=requested)
+        except RequestIdConflict:
+            raise CheckupError(409, "checkup_extension_request_id_conflict",
+                               "该请求标识已用于不同参数的补查") from None
+        if created:
+            self.extension_queue.put_nowait(record.extension_id)
+            self.start()
+        # 落败的一方（并发里先被别人建出来）只是取回那一行：不入队，也不重复跑一遍
+        # 已经做过的预算判断。
+        return self.extension_view(record)
+
+    def _extension_boundary(self, task_id: str, payload: FacilityExtensionRequest):
+        """The boundary a *new* extension over this task would search, and its budget.
+
+        只在真正需要时调用：既回答一次已有记录的等价判断（那时需要的只是解析出来的
+        预算），也供新请求构造首轮计划。圈面不可用时按既有规则拒绝，且这个拒绝不会
+        波及"只是取回原记录"的重试。
+        """
         stored = self.store.revision(task_id)
         if stored is None:
             raise CheckupError(409, "checkup_extension_boundary_unavailable",
@@ -1044,47 +1148,19 @@ class CheckupManager:
         if geometry is None:
             raise CheckupError(409, "checkup_extension_boundary_unavailable",
                                "原体检的圈面没有可用几何，无法补查设施")
+        parent = self.get(task_id)
         origin = normalize((parent.payload["center"]["lng"], parent.payload["center"]["lat"]))
         try:
             domain, _widened = query_domain(geometry, origin, QUERY_PADDING_M)
         except ValueError:
             raise CheckupError(409, "checkup_extension_boundary_unavailable",
                                "原体检的圈面无法转成查询范围，无法补查设施") from None
+        minors = poi_keys(list(payload.categories))
         blocks = len(coarse_blocks(domain))
-        minors = poi_keys(payload.categories)
-        required = blocks * len(minors)
         requested = payload.max_poi_requests or min(MAX_POI_REQUESTS,
-                                                    max(DEFAULT_POI_REQUESTS, required))
-        if required > requested:
-            raise CheckupError(
-                422, "checkup_extension_budget_too_small",
-                f"补查 {len(payload.categories)} 个设施大类至少需要 {required} 次地点检索"
-                f"（{blocks} 个查询分块 × {len(minors)} 个检索小类，每类先取主关键词一次），"
-                f"但这次只给了 {requested} 次。请提高补查预算或减少类别。"
-                f"这是下界，密集区域的翻页与细分还需要更多次数。")
-        remaining_today = self.quota.remaining(PLACE)
-        if remaining_today is not None and remaining_today < required:
-            raise CheckupError(
-                429, "checkup_extension_daily_budget",
-                f"今天的地点检索额度不足以完成这次补查：至少需要 {required} 次，"
-                f"本应用今天还剩 {remaining_today} 次。请减少类别，"
-                f"或在次日（北京时间）额度恢复后再补查。")
-        fingerprint = canonical_hash({
-            "taskId": task_id, "baseRevision": stored["revision"],
-            "categories": sorted(payload.categories), "maxPoiRequests": requested})
-        try:
-            record, created = self.store.create_extension(
-                extension_id=str(uuid4()), task_id=task_id,
-                client_request_id=payload.client_request_id, fingerprint=fingerprint,
-                base_revision=stored["revision"], categories=list(payload.categories),
-                budget=requested)
-        except RequestIdConflict:
-            raise CheckupError(409, "checkup_extension_request_id_conflict",
-                               "该请求标识已用于不同参数的补查") from None
-        if created:
-            self.extension_queue.put_nowait(record.extension_id)
-            self.start()
-        return self.extension_view(record)
+                                                    max(DEFAULT_POI_REQUESTS, blocks * len(minors)))
+        return _ExtensionBoundary(domain=domain, origin=origin, minors=minors, blocks=blocks,
+                                  requested=requested, revision=stored["revision"])
 
     def extensions(self, task_id: str) -> list[FacilityExtensionView]:
         self.get(task_id)
@@ -1134,10 +1210,13 @@ class CheckupManager:
             requests=record.requests, network_requests=spent,
             facilities_status=record.facilities_status,
             counts_by_category=record.counts_by_category, error=record.error,
+            stop_reason=record.stop_reason, initial_plan=record.initial_plan,
             created_at=record.created_at, finished_at=record.finished_at)
 
     async def _serve_extensions(self) -> None:
-        while True:
+        # Same reason as ``_serve``: the flag has to be able to end this loop, because
+        # a cancelled run swallows the cancellation and returns its partial evidence.
+        while not self.closing:
             extension_id = await self.extension_queue.get()
             try:
                 if not self.closing:
@@ -1200,6 +1279,8 @@ class CheckupManager:
                                 if outcome.group is not None else {}),
             facilities_status=document.facilities_status, requests=outcome.requests,
             network_requests=outcome.network_requests,
+            stop_reason=(None if outcome.group is None else outcome.group.stop_reason),
+            initial_plan=(None if outcome.group is None else outcome.group.initial_plan),
             error=None if outcome.group is not None else "no_facilities_retrieved")
 
     async def close(self) -> None:

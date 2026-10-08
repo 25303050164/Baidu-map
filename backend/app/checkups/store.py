@@ -10,6 +10,7 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Callable
 from pathlib import Path
 
 from ..persistence import atomic_dump
@@ -66,6 +67,9 @@ CREATE TABLE IF NOT EXISTS facility_extensions (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     finished_at REAL,
+    intent TEXT,
+    stop_reason TEXT,
+    initial_plan TEXT,
     UNIQUE (task_id, client_request_id)
 );
 """
@@ -73,8 +77,12 @@ CREATE TABLE IF NOT EXISTS facility_extensions (
 #: created before them is migrated in place; existing rows read them as NULL,
 #: which the view reports as "not recorded" rather than inventing a time.
 ADDED_COLUMNS = (("stage_started_at", "REAL"), ("activity_at", "REAL"), ("progress", "TEXT"))
-#: 补查表同理：早于它的库按原样读回，不编造缺的字段。
-EXTENSION_ADDED_COLUMNS = (("facilities_status", "TEXT"),)
+#: 补查表同理：早于它的库按原样读回，不编造缺的字段。``intent`` 记的是客户端当时声明的
+#: 请求身份（类别与是否显式给了预算）；旧行没有它，按旧版的解析结果判定，见
+#: :func:`extension_matches`。``stop_reason``/``initial_plan`` 是定稿时冻结的诊断：
+#: 界面读状态就能看到停在哪、缓存帮了多少，不必再取结果文件。
+EXTENSION_ADDED_COLUMNS = (("facilities_status", "TEXT"), ("intent", "TEXT"),
+                           ("stop_reason", "TEXT"), ("initial_plan", "TEXT"))
 #: What ``update`` may write. ``progress`` is the worker's in-stage step (a JSON
 #: object); ``stage_started_at`` and ``activity_at`` are maintained here, never
 #: passed in.
@@ -83,7 +91,7 @@ UPDATABLE = frozenset({"status", "stage", "business_status", "requests", "networ
 #: 补查行可以改的字段。``document`` 是结果文件的相对路径，写入即意味着这次补查定稿。
 EXTENSION_UPDATABLE = frozenset({"status", "stage", "requests", "network_requests",
                                  "document", "counts_by_category", "facilities_status",
-                                 "error", "finished_at"})
+                                 "error", "finished_at", "stop_reason", "initial_plan"})
 
 
 class RequestIdConflict(Exception):
@@ -161,6 +169,17 @@ class ExtensionRecord:
     created_at: float
     updated_at: float
     finished_at: float | None
+    #: 客户端当时声明的身份（``categories`` 与 ``maxPoiRequests``）。旧行没有它，
+    #: 读作 None —— 那意味着"这一行只冻了当时解析出来的预算"。
+    intent: dict | None = None
+    #: 定稿时冻结的停止原因与首轮估算：它们是读这次补查时必须知道的事。
+    stop_reason: str | None = None
+    initial_plan: dict | None = None
+
+    @property
+    def declared_max_poi_requests(self) -> int | None:
+        """客户端显式给出的预算，或 None：它当时把预算留给了部署默认值。"""
+        return None if self.intent is None else self.intent.get('maxPoiRequests')
 
 
 def _extension_record(row) -> ExtensionRecord:
@@ -173,8 +192,62 @@ def _extension_record(row) -> ExtensionRecord:
         document_path=row["document"], error=row["error"], created_at=row["created_at"],
         updated_at=row["updated_at"], finished_at=row["finished_at"],
         facilities_status=row["facilities_status"],
+        intent=(None if row["intent"] is None else json.loads(row["intent"])),
+        stop_reason=row["stop_reason"],
+        initial_plan=(None if row["initial_plan"] is None else json.loads(row["initial_plan"])),
         counts_by_category=({} if not row["counts_by_category"]
                             else json.loads(row["counts_by_category"])))
+
+
+def extension_identity(*, categories, max_poi_requests) -> dict:
+    """What the client asked for, as an identity nothing else may widen.
+
+    It is deliberately the *declared* request and not what the deployment resolved
+    it to: a retry that leaves the budget out must stay the same request after the
+    default, the boundary geometry or the day's balance has moved. Only the two
+    things that change what is being asked for take part.
+    """
+    return {"categories": sorted(set(categories)), "maxPoiRequests": max_poi_requests}
+
+
+def extension_matches(record: ExtensionRecord, *, identity: dict,
+                      resolved_budget: int | Callable[[], int]) -> bool:
+    """Whether ``identity`` is the request ``record`` was created from.
+
+    The stored row keeps the client's own declaration, so a repeat matches on it
+    directly. Two equivalences are preserved rather than invented:
+
+    * A request that left the budget out resolves to the deployment default, so it
+      is the same request as one that named exactly that number — in either
+      direction, which is what the older release compared.
+    * A row written before ``intent`` existed froze only its resolved budget, so it
+      is judged the way it was created: by the number this request resolves to now.
+
+    ``resolved_budget`` is therefore only ever consulted for those two cases, and
+    never for two rows that both declared what they wanted. It may be a callable so a
+    caller can pass something expensive — the deployment's current default, which needs
+    the parent's boundary — without reading it to answer a question that does not use it.
+    """
+    def resolved() -> int:
+        return resolved_budget() if callable(resolved_budget) else resolved_budget
+
+    if sorted(set(identity["categories"])) != sorted(set(record.categories)):
+        return False
+    declared_now = identity["maxPoiRequests"]
+    if record.intent is None:
+        return resolved() == record.budget
+    declared_then = record.declared_max_poi_requests
+    if declared_now is None:
+        # Omitted: it resolves to the deployment default, so it is the same request
+        # as one that named exactly that number — and only that number. A row that
+        # declared its own budget is not matched just because the omission happens
+        # to resolve to the same figure it froze.
+        return declared_then is None or resolved() == declared_then
+    if declared_then is None:
+        # The row left the budget out, so it froze the default it applied: naming
+        # that number is the same request, naming another one is not.
+        return declared_now == record.budget
+    return declared_now == declared_then
 
 
 class CheckupStore:
@@ -385,12 +458,20 @@ class CheckupStore:
     # -- 按需补查 -----------------------------------------------------------
 
     def create_extension(self, *, extension_id: str, task_id: str, client_request_id: str,
-                         fingerprint: str, base_revision: int, categories, budget: int):
+                         identity: dict, fingerprint: str, base_revision: int, categories, budget: int):
         """Insert once per (task, client request id); identical repeats return the same row.
 
         幂等键按任务隔离：两个任务里的同一个客户端请求标识是两次不同的补查。
+
+        The check happens inside the same ``BEGIN IMMEDIATE`` transaction as the
+        insert, so two callers racing on one request id cannot both create a row:
+        the loser reads the winner's row back and is told it did not create
+        anything, and only a creator is enqueued. ``fingerprint`` is kept as the
+        audit value of the declared identity; the decision itself is
+        :func:`extension_matches`, which is the one rule both callers share.
         """
         now = time.time()
+        encoded = json.dumps(identity, sort_keys=True, ensure_ascii=False)
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
@@ -398,17 +479,34 @@ class CheckupStore:
                 (task_id, client_request_id)).fetchone()
             if existing is not None:
                 connection.execute("COMMIT")
-                if existing["fingerprint"] != fingerprint:
+                # ``budget`` here is the resolution the caller already computed for this
+                # request; the comparison consults it only when the stored row cannot
+                # answer the question on its own declaration alone.
+                if not extension_matches(_extension_record(existing), identity=identity,
+                                         resolved_budget=budget):
                     raise RequestIdConflict(client_request_id)
                 return _extension_record(existing), False
             connection.execute(
                 "INSERT INTO facility_extensions (extension_id, task_id, client_request_id,"
-                " fingerprint, base_revision, categories, budget, status, created_at, updated_at)"
-                " VALUES (?,?,?,?,?,?,?,'queued',?,?)",
+                " fingerprint, base_revision, categories, budget, status, created_at, updated_at,"
+                " intent) VALUES (?,?,?,?,?,?,?,'queued',?,?,?)",
                 (extension_id, task_id, client_request_id, fingerprint, base_revision,
-                 json.dumps(list(categories), ensure_ascii=False), budget, now, now))
+                 json.dumps(list(categories), ensure_ascii=False), budget, now, now, encoded))
             connection.execute("COMMIT")
             return self._extension(extension_id), True
+
+    def find_extension(self, task_id: str, client_request_id: str) -> ExtensionRecord | None:
+        """The row this request id already names, if any. Read-only, no side effects.
+
+        A lookup and not a create: answering a repeat must not enqueue, reserve or
+        run anything, and it must not need the parent's boundary or the day's
+        balance to have been consulted first.
+        """
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM facility_extensions WHERE task_id=? AND client_request_id=?",
+                (task_id, client_request_id)).fetchone()
+        return None if row is None else _extension_record(row)
 
     def _extension(self, extension_id: str) -> ExtensionRecord:
         with self._connection() as connection:
@@ -456,13 +554,17 @@ class CheckupStore:
     def finish_extension(self, extension_id: str, *, status: str, document_path: str | None,
                          counts_by_category: dict | None = None, requests: int = 0,
                          network_requests: int = 0, facilities_status: str | None = None,
-                         error: str | None = None) -> ExtensionRecord:
+                         error: str | None = None, stop_reason: str | None = None,
+                         initial_plan: dict | None = None) -> ExtensionRecord:
         """定稿一次补查。``document_path`` 在行上出现就意味着结果已经落到磁盘。"""
         return self.update_extension(
             extension_id, status=status, stage="ready" if document_path else None,
             document=document_path, counts_by_category=counts_by_category,
             requests=requests, network_requests=network_requests,
-            facilities_status=facilities_status, error=error, finished_at=time.time())
+            facilities_status=facilities_status, error=error, finished_at=time.time(),
+            stop_reason=stop_reason,
+            initial_plan=(None if initial_plan is None
+                          else json.dumps(initial_plan, ensure_ascii=False, sort_keys=True)))
 
     def extension_document(self, extension_id: str) -> dict | None:
         record = self._extension(extension_id)

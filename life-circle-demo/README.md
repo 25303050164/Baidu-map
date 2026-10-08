@@ -67,7 +67,7 @@ npm run dev
 ```powershell
 npm test
 npm run build
-npm run test:analysis-ui # 前端 HTTP 契约/地图替身回归，无需 Python 或真实 AK
+npm run test:checkup-ui # v2 体检工作台界面回归，无需 Python 或真实 AK
 npm run test:integration  # 真实 FastAPI + 合成 Provider + 模拟 SDK，禁止外部网络
 npm run test:e2e          # 原演示入口回归
 ```

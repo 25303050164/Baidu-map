@@ -90,11 +90,37 @@ class Answer:
     ``cached`` is True when this call did not itself build the value: it read a
     stored entry, or it awaited an identical in-flight query. It is the flag a
     caller uses to decide whether it owes an upstream request.
+
+    ``shared`` separates the two ways that can happen, because they are not the
+    same fact: a stored entry is a page this deployment already obtained, while a
+    shared in-flight query is a page *being* obtained right now, and whose result
+    is not evidence until it succeeds. A precheck may read the first; it must not
+    treat the second as one.
     """
     value: object
     reason: str | None
     obtained_at: float
     cached: bool
+    shared: bool = False
+
+
+class SharedBuildFailed(Exception):
+    """An in-flight build this caller waited on failed, and it was not this caller's call.
+
+    Awaited sharing is only an optimisation for the *caller*: someone else already
+    reserved and dispatched the request, so the outcome — success or failure — is
+    theirs to account for. Without this distinction the failure reaches the waiter
+    as a plain transport exception, and a caller that classifies exceptions by type
+    reads it as "I dispatched and it timed out", which is a call it never made.
+
+    The original exception is kept as ``cause`` so the caller can still name the
+    reason it ended in, and so an exception this layer does not classify keeps
+    propagating exactly as it did before.
+    """
+
+    def __init__(self, cause: BaseException):
+        self.cause = cause
+        super().__init__(f'shared build failed: {cause}')
 
 
 class KeyedCache:
@@ -154,8 +180,13 @@ class KeyedCache:
             self.hits += 1
             # Shielded: a cancelled waiter must not cancel the attempt whose
             # result the other waiters are still owed.
-            shared = await asyncio.shield(pending)
-            return Answer(shared.value, shared.reason, shared.obtained_at, True)
+            try:
+                shared = await asyncio.shield(pending)
+            except Exception as exc:  # CancelledError is not this: a cancelled waiter leaves.
+                # The builder owns this attempt — including its failure. Reported as a
+                # shared outcome so the waiter cannot count a call it did not make.
+                raise SharedBuildFailed(exc) from None
+            return Answer(shared.value, shared.reason, shared.obtained_at, True, True)
         future = asyncio.ensure_future(self._build(key, build, task_id))
         self.inflight[key] = future
         return await asyncio.shield(future)
