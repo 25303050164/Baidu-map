@@ -10,6 +10,13 @@ from app.hybrid_contracts import HybridRequest, HybridResultResponse, HybridErro
 from app.rules import DistanceRule
 from app.catalog import display_group_keys, keys as catalog_keys, majors as catalog_majors
 
+ANALYSIS_MODELS = (AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest,
+                   FacilityCatalog, HybridRequest, HybridResultResponse, HybridError)
+ANALYSIS_REQUEST_MODELS = (OsmOfflineRequest, HybridRequest)
+CHECKUP_MODELS = (CheckupRequest, CheckupTaskView, CheckupSnapshot, CheckupLayer,
+                 FacilityRoute, CheckupCapabilities, ContinueCheckupRequest)
+CHECKUP_REQUEST_MODELS = (CheckupRequest, ContinueCheckupRequest)
+
 ROOT = Path(__file__).resolve().parents[1]
 EMPTY = Geometry(type="MultiPolygon", coordinates=[])
 AREA = Geometry(type="Polygon", coordinates=[[
@@ -111,18 +118,13 @@ def export():
     openapi = app.openapi()
     (ROOT / "docs" / "openapi.json").write_text(json.dumps(openapi, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (ROOT.parent / "life-circle-demo/src/api-contract.ts").write_text(
-        typescript([AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest,
-                    FacilityCatalog,
-                    HybridRequest, HybridResultResponse, HybridError],
-                   request_models=[OsmOfflineRequest, HybridRequest]), encoding="utf-8")
+        typescript(ANALYSIS_MODELS, request_models=ANALYSIS_REQUEST_MODELS), encoding="utf-8")
     # v2 体检契约单独一份文件：它和上面那份不共用类型名，也不共用文件，所以旧的严格
     # POI 证据类型保持逐字节不变 —— 新字段加进旧契约就会改掉旧响应的序列化语义（§10）。
     target = ROOT.parent / "life-circle-demo/src/checkup/contract.ts"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
-        typescript([CheckupRequest, CheckupTaskView, CheckupSnapshot, CheckupLayer,
-                    FacilityRoute, CheckupCapabilities, ContinueCheckupRequest],
-                   request_models=[CheckupRequest, ContinueCheckupRequest]),
+        typescript(CHECKUP_MODELS, request_models=CHECKUP_REQUEST_MODELS),
         encoding="utf-8")
 
 

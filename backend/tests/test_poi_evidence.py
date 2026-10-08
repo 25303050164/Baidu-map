@@ -1,3 +1,4 @@
+from tools.export_contract import ANALYSIS_MODELS, ANALYSIS_REQUEST_MODELS
 from dataclasses import replace
 from pathlib import Path
 
@@ -81,9 +82,7 @@ def test_route_assembly_retains_both_diagnostics_and_legacy_invalid_duration():
 
 
 def test_typescript_matches_current_serialization_contract():
-    expected = typescript([AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest,
-        HybridRequest, HybridResultResponse, HybridError],
-        request_models=[OsmOfflineRequest, HybridRequest])
+    expected = typescript(ANALYSIS_MODELS, request_models=ANALYSIS_REQUEST_MODELS)
     actual = Path(__file__).resolve().parents[2] / "life-circle-demo/src/api-contract.ts"
     assert actual.read_text(encoding="utf-8") == expected
 

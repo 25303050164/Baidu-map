@@ -7,6 +7,7 @@ request is ever issued by this file.
 import asyncio
 import math
 import time
+from tools.export_contract import ANALYSIS_MODELS, ANALYSIS_REQUEST_MODELS
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -500,10 +501,7 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
         schemas["CheckupRequest"]["properties"])
     # v2 adds no model to the generated demo contract, so the strict POI
     # evidence types keep the serialization test_poi_evidence locks down.
-    legacy = typescript(
-        [AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest,
-         HybridRequest, HybridResultResponse, HybridError],
-        request_models=[OsmOfflineRequest, HybridRequest])
+    legacy = typescript(ANALYSIS_MODELS, request_models=ANALYSIS_REQUEST_MODELS)
     assert legacy == (Path(__file__).resolve().parents[2]
                       / "life-circle-demo/src/api-contract.ts").read_text(encoding="utf-8")
     assert "export type Checkup" not in legacy
