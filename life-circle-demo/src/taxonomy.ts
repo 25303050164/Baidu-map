@@ -35,6 +35,22 @@ export const majorMeta: Record<MajorCategory, { label: string; order: number }> 
 
 export const majorCategories: MajorCategory[] = Object.keys(majorMeta) as MajorCategory[];
 
+export type DisplayGroup = 'healthcare' | 'education' | 'daily_life' | 'public_mobility' | 'leisure';
+
+export const displayGroupMeta: Record<DisplayGroup, { label: string; order: number; majors: MajorCategory[] }> = {
+  healthcare: { label: '健康照护', order: 1, majors: ['medical', 'care'] },
+  education: { label: '教育成长', order: 2, majors: ['education'] },
+  daily_life: { label: '生活消费', order: 3, majors: ['shopping', 'dining', 'finance', 'life'] },
+  public_mobility: { label: '公共出行', order: 4, majors: ['public', 'transport'] },
+  leisure: { label: '文体休闲', order: 5, majors: ['leisure'] },
+};
+
+export const displayGroups: DisplayGroup[] = Object.keys(displayGroupMeta) as DisplayGroup[];
+
+export function displayGroupForMajor(major: MajorCategory | string): DisplayGroup | undefined {
+  return displayGroups.find(group => displayGroupMeta[group].majors.includes(major as MajorCategory));
+}
+
 export type SubCategoryDef = {
   key: string;
   label: string;
