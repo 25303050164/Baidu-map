@@ -423,3 +423,30 @@ def test_the_obstacle_layer_reaches_the_merge_and_its_absence_is_stated(tmp_path
         assert document_["businessStatus"] == "partial"
         assert "hard_obstacle_layer_unavailable" not in "\n".join(gaps["notes"])
         assert document_["report"]["evidence"]["obstacleLayerAvailable"] is True
+
+
+def test_the_report_states_which_scope_the_overall_score_covers():
+    """总体分的口径必须被渲染出来，不能只留在一个没人读的字段里。
+
+    三种情形各有各的说法：只列核心范围时不需要额外说明；列了扩展类别时必须写明
+    那个总分没把它们算进去；给不出总体分时必须点名缺了哪几类。
+    """
+    from app.checkups.reporting_stage import _scope_limitations
+
+    core = ("shopping", "medical", "education")
+    core_rows = [{"category": category} for category in core]
+    assert _scope_limitations({"categories": core_rows,
+                               "overall": {"available": True}}) == ()
+
+    widened = _scope_limitations({
+        "categories": core_rows + [{"category": "dining"}],
+        "overall": {"available": True, "weights": {name: 1 / 3 for name in core}}})
+    assert len(widened) == 1
+    assert "不进入总体分" in widened[0] and "各占 1/3" in widened[0]
+
+    refused = _scope_limitations({
+        "categories": [{"category": "shopping"}, {"category": "medical"}],
+        "overall": {"available": False, "reason": "categories_not_analysed",
+                    "missingCategories": ["education"]}})
+    assert len(refused) == 1
+    assert "教育" in refused[0] and "不能由已分析的类别重新加权得到" in refused[0]

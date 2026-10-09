@@ -123,6 +123,36 @@ def test_missing_cache_api_not_empty(tmp_path):
         assert response.json()["algorithm"]["stopReason"] == "graph_cache_missing"
 
 
+def test_configured_graph_is_preloaded_during_app_startup(tmp_path):
+    cfg, _, _ = fixture(tmp_path)
+    with TestClient(create_app(cfg)) as client:
+        offline = client.app.state.osm_offline
+        assert offline.state in {"loading", "ready"}
+        assert offline.store is not None
+        assert offline.state == "ready"
+        assert offline.loading is None
+
+
+def test_health_is_available_while_configured_graph_preloads(tmp_path, monkeypatch):
+    cfg, _, _ = fixture(tmp_path)
+    from app.algorithms.osm_offline import engine as offline_engine
+    started, release = threading.Event(), threading.Event()
+    real = offline_engine.OsmOfflineEngine.load.__func__
+
+    def slow_load(cls, settings, progress=None):
+        started.set()
+        assert release.wait(5)
+        return real(cls, settings, progress)
+
+    monkeypatch.setattr(offline_engine.OsmOfflineEngine, "load", classmethod(slow_load))
+    with TestClient(create_app(cfg)) as client:
+        assert started.wait(5)
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["osm_state"] == "loading"
+        release.set()
+
+
 def test_load_once_concurrent_graph_immutability(tmp_path, monkeypatch):
     cfg, store, coverage = fixture(tmp_path)
     import app.algorithms.osm_offline.engine as module

@@ -10,8 +10,8 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { installMapSdk } from './mapSdk';
-import { capabilities, collection, feature, layer, point, polygon, report, snapshot, task, zone }
-  from '../src/checkup/fixtures';
+import { capabilities, collection, feature, layer, point, polygon, report, retainedView,
+  retentionView, retryView, snapshot, task, zone } from '../src/checkup/fixtures';
 
 const REVISION = 5;
 const HASH = 'hash-5';
@@ -36,12 +36,19 @@ type Options = {
   holedGaps?: boolean;
   gapsNotReady?: boolean;
   graphConfigured?: boolean;
+  graphState?: 'unloaded' | 'loading' | 'ready' | 'unavailable';
   runningFirst?: boolean;
+  /** 设施检索没达标：面板上要出现"继续检索缺口"的入口，并且点得动。 */
+  unmetCoverage?: boolean;
+  /** 明细已到期：任务视图说明细不可用，明细接口一律 410，保留汇总仍可读。 */
+  detailsExpired?: boolean;
 };
 
 async function setup(page: Page, options: Options = {}) {
   let submitted: { center: { lng: number; lat: number }; engine: string } | undefined;
   let statusCalls = 0;
+  /** 每一次重试请求带上来的标识：用例靠它证明"提交的是同一次重试"。 */
+  const retries: string[] = [];
   await installMapSdk(page);
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
@@ -54,8 +61,10 @@ async function setup(page: Page, options: Options = {}) {
     if (!url.pathname.startsWith('/api/v2/')) return route.continue();
 
     if (url.pathname === '/api/v2/capabilities') {
-      return route.fulfill({ json: capabilities({
-        coverage: { graphConfigured: options.graphConfigured ?? true } }) });
+      return route.fulfill({ json: capabilities({ coverage: {
+        graphConfigured: options.graphConfigured ?? true,
+        graphState: options.graphState ?? (options.graphConfigured === false ? 'unavailable' : 'ready'),
+      } }) });
     }
     if (url.pathname === '/api/v2/checkups') {
       const body = route.request().postDataJSON() as { center: { lng: number; lat: number };
@@ -65,15 +74,52 @@ async function setup(page: Page, options: Options = {}) {
       return route.fulfill({ status: 202, json: task({ status: 'queued', stage: null, revision: 1,
         budget: 400, engine: body.engine, clientRequestId: body.clientRequestId }) });
     }
+    // §5 B2 决策 1 的重试：同一张任务上的另一个资源。
+    const retryMatch = url.pathname.match(/\/checkups\/([^/]+)\/retries(\/([^/]+))?(\/cancel)?$/);
+    if (retryMatch) {
+      if (route.request().method() === 'POST' && retryMatch[2] === undefined) {
+        const body = route.request().postDataJSON() as { clientRequestId: string };
+        retries.push(body.clientRequestId);
+        return route.fulfill({ status: 202, json: retryView({ clientRequestId: body.clientRequestId,
+          taskId: retryMatch[1], status: 'running', stage: 'poi', finishedAt: null,
+          facilitiesStatus: null, stopReason: null, requests: 12, networkRequests: 5,
+          budget: { limit: 240, spent: 12, remaining: 228 } }) });
+      }
+      if (retryMatch[4] !== undefined) {
+        return route.fulfill({ json: retryView({ retryId: retryMatch[3], taskId: retryMatch[1],
+          status: 'cancelled' }) });
+      }
+      if (retryMatch[3] !== undefined) {
+        // 第一轮已经跑完：任务由此发布了新修订，界面必须跟着换版。
+        return route.fulfill({ json: retryView({ retryId: retryMatch[3], taskId: retryMatch[1],
+          status: 'partial', facilitiesStatus: 'partial', stopReason: 'network_budget_exhausted' }) });
+      }
+      return route.fulfill({ json: [] });
+    }
     const layerMatch = url.pathname.match(/\/layers\/([a-z_]+)$/);
     if (layerMatch) {
+      if (options.detailsExpired) {
+        return route.fulfill({ status: 410, json: { code: 'checkup_details_expired',
+          message: '这次体检的明细已按保留期到期。' } });
+      }
       if (layerMatch[1] === 'service_gaps' && options.gapsNotReady) {
         return route.fulfill({ status: 409, json: { code: 'checkup_service_gaps_not_ready',
           message: '服务灰区图层尚未生成，请等待该阶段完成' } });
       }
       return route.fulfill({ json: layerFor(layerMatch[1], options) });
     }
+    if (url.pathname.endsWith('/retained-result')) {
+      // 任务视图与保留汇总报的是**同一条**期限：它们在后端出自同一个 retention_of，
+      // 这里也必须一致，否则用例会去验证一个真实后端不会产生的组合。
+      return route.fulfill({ json: retainedView({ retention: retentionView({
+        detailsAvailable: false, reason: 'legacy', cleared: true }) }) });
+    }
     if (url.pathname.endsWith('/result')) {
+      if (options.detailsExpired) {
+        return route.fulfill({ status: 410, json: { code: 'checkup_details_expired',
+          message: '这次体检的明细已按保留期到期（它是保留期开始之前的数据）：设施名称、UID、'
+            + '地址与坐标不再提供。' } });
+      }
       return route.fulfill({ json: snapshotFor(options, submitted!) });
     }
     if (url.pathname.endsWith('/cancel')) {
@@ -97,8 +143,11 @@ async function setup(page: Page, options: Options = {}) {
         budget: 400, engine: submitted?.engine ?? 'baidu_e82' }) });
     }
     return route.fulfill({ json: task({ status: 'completed', stage: 'ready', revision: REVISION,
-      businessStatus: 'partial', budget: 400, engine: submitted?.engine ?? 'baidu_e82' }) });
+      businessStatus: 'partial', budget: 400, engine: submitted?.engine ?? 'baidu_e82',
+      ...(options.detailsExpired ? { retention: retentionView({ detailsAvailable: false,
+        reason: 'legacy', cleared: true }) } : {}) }) });
   });
+  return { retries };
 }
 
 /** 每层的载荷都按后端实际返回的形态给：等时圈是单个面，其余五层是要素集合。 */
@@ -172,11 +221,18 @@ function snapshotFor(options: Options, submitted: { center: { lng: number; lat: 
     : [zone({ id: 'zone-1', index: 1, queryStatus: 'partial', geometry: polygon(0.05),
       displayGeometry: polygon(0.05), suggestion: '设施检索未完成，先补采再判定。' })];
   const base = snapshot();
+  const facilities = options.unmetCoverage
+    ? { ...base.facilities!, queryStatus: 'partial' as const, stopReason: 'network_budget_exhausted',
+      queryAreaCoverage: { target: 0.8, status: 'unmet', boundaryAreaM2: 1000,
+        sharedCompletedAreaM2: 500, sharedCompletionRatio: 0.5, residualRatio: 0.5,
+        categories: ['market', 'pharmacy', 'school'] } }
+    : base.facilities!;
   return snapshot({
     center: { lng: submitted.center.lng, lat: submitted.center.lat },
     serviceGaps: { ...base.serviceGaps!, zones },
     report: report({ gaps: { ...report().gaps, zones } }),
     accessibility: { ...base.accessibility!, domain: polygon(0.03) },
+    facilities,
   });
 }
 
@@ -195,10 +251,16 @@ function counted(markers: { options: { title: string } }[]): number {
 const openTab = (page: Page, tab: '我的位置' | '采样与引擎' | '图层备注') =>
   page.getByRole('tab', { name: tab }).click();
 
-const pickAndStart = async (page: Page) => {
+const pickAndStart = async (page: Page,
+  options: { serviceGaps?: boolean; done?: string } = {}) => {
+  if (options.serviceGaps) {
+    await openTab(page, '图层备注');
+    await page.getByRole('checkbox', { name: '服务灰区', exact: true }).check();
+  }
   await page.getByTestId('checkup-map').click();
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
-  await expect(page.getByTestId('checkup-report')).toBeVisible();
+  // 等这一轮结束：默认等报告，明细到期的用例等的是那一栏说明 —— 那时候没有报告可等。
+  await expect(page.getByTestId(options.done ?? 'checkup-report')).toBeVisible();
   await page.keyboard.press('Escape');
 };
 
@@ -302,6 +364,7 @@ test('服务覆盖热力默认打开：评估格连成渐变面，圈外与孔�
   await openTab(page, '图层备注');
   // 模型网格采样点位本身不勾：热力仍须取到模型网格（与密度热力取设施同理）。
   await expect(page.getByRole('checkbox', { name: '模型网格采样', exact: true })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: '服务灰区', exact: true })).not.toBeChecked();
   await expect(page.getByRole('checkbox', { name: '服务覆盖热力', exact: true })).toBeChecked();
   await pickAndStart(page);
   const canvas = page.getByTestId('service-heat-canvas');
@@ -363,7 +426,7 @@ test('a published revision draws its layers, opens the report and keeps the view
   await expect(page.getByTestId('quota-label'))
     .toHaveText('本应用预算余额（不含浏览器 SDK、其他应用及旧接口流量）');
   // 选点：只会平移这一次；后面取图层、画标记都不再动视角。
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   const report = page.getByTestId('checkup-report');
   await expect(report).toContainText('15 分钟生活圈体检报告');
   await expect(report).toContainText('task-1 · 第 5 版');
@@ -385,7 +448,7 @@ test('layers are independent: unchecking one leaves the others on the map', asyn
   await setup(page, { facilityCount: 3 });
   await page.goto('/');
   await openTab(page, '图层备注');
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   await pathsAre(page, 3);
   // 3 处设施合成 1 枚 + 2 处核验 + 1 枚中心标记。
   await markersAre(page, 4);
@@ -415,7 +478,7 @@ test('hundreds of facilities are merged by cell, never truncated', async ({ page
 test('a grey zone keeps its hole, and the partial one is drawn as a different conclusion', async ({ page }) => {
   await setup(page, { holedGaps: true });
   await page.goto('/');
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   // 等时圈 1 + 评估域 1 + 两个灰区 = 4 个覆盖物，其中带洞的那个有两圈。
   await pathsAre(page, 4);
   const drawn = await audit(page);
@@ -426,7 +489,7 @@ test('a grey zone keeps its hole, and the partial one is drawn as a different co
 test('zoom and pan end re-project the points without moving the view or dropping layers', async ({ page }) => {
   await setup(page, { facilityCount: 40 });
   await page.goto('/');
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   await pathsAre(page, 3);
   // 等到全部点都画上：40 处设施 + 2 处核验 + 1 枚中心标记。按点数等而不按标记枚数等 ——
   // 这一簇合成几枚取决于格线落在哪，而格线随地图容器的宽度移动，与这里要测的事无关。
@@ -578,7 +641,7 @@ test('左右面板可拖动和缩放，且保持在地图范围内', async ({ pa
 test('a layer that is not ready says so by name, and the rest still draw', async ({ page }) => {
   await setup(page, { gapsNotReady: true });
   await page.goto('/');
-  await pickAndStart(page);
+  await pickAndStart(page, { serviceGaps: true });
   await openTab(page, '图层备注');
   // 后端的原话照登：把 409 说成"这一层是空的"，读者会以为灰区已经查过了。
   await expect(page.getByText('服务灰区图层尚未生成，请等待该阶段完成', { exact: true })).toBeVisible();
@@ -599,12 +662,12 @@ test('stages advance as the backend reports them, and the engines come from the 
   }
   // 档位是引擎自己带来的，不是界面写死的三档。
   // antd 的下拉项由虚拟列表渲染，可见性判定不稳，这里断言挂载与文本 —— 那才是"能选什么"。
-  await expect(page.getByTestId('checkup-time-estimate')).toHaveAttribute('data-budget', '400');
-  await expect(page.getByTestId('checkup-time-estimate')).toContainText('全程约 3–14 分钟');
+  await expect(page.getByTestId('checkup-time-estimate')).toHaveCount(0);
+  await expect(page.getByText('实际用时受网络影响', { exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: '调用预算' }).click();
-  await expect(page.getByRole('option', { name: /200 次.*2–7 分钟/ })).toBeAttached();
-  await expect(page.getByRole('option', { name: /400 次.*3–14 分钟/ })).toBeAttached();
-  await expect(page.getByRole('option', { name: /800 次.*6–28 分钟/ })).toBeAttached();
+  await expect(page.getByRole('option', { name: '200 次', exact: true })).toBeAttached();
+  await expect(page.getByRole('option', { name: '400 次', exact: true })).toBeAttached();
+  await expect(page.getByRole('option', { name: '800 次', exact: true })).toBeAttached();
   await page.keyboard.press('Escape');
   // 两个引擎都列着：路网没配好只影响后端的取舍，界面不替它隐藏其中一个。
   // 引擎名取自能力表，不是界面写死的。
@@ -612,5 +675,86 @@ test('stages advance as the backend reports them, and the engines come from the 
   await page.getByTestId('algorithm-hybrid').click();
   await expect(page).toHaveURL(/#\/checkup\/hybrid$/);
   await expect(page.getByTestId('checkup-engine')).toContainText('引擎：OSM＋百度');
+  await expect(page.getByTestId('checkup-time-estimate')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '开始体检', exact: true })).toBeEnabled();
+});
+
+test('hybrid shows its historical runtime guide only when the graph is ready', async ({ page }) => {
+  await setup(page);
+  await page.goto('/');
+  await openTab(page, '采样与引擎');
+  await page.getByTestId('algorithm-hybrid').click();
+  await expect(page).toHaveURL(/#\/checkup\/hybrid$/);
+  await expect(page.getByTestId('checkup-time-estimate')).toHaveText(/3–7 分钟/);
+});
+
+test('hybrid hides the runtime guide while the graph is still loading', async ({ page }) => {
+  await setup(page, { graphState: 'loading' });
+  await page.goto('/');
+  await openTab(page, '采样与引擎');
+  await page.getByTestId('algorithm-hybrid').click();
+  await expect(page).toHaveURL(/#\/checkup\/hybrid$/);
+  await expect(page.getByTestId('checkup-time-estimate')).toHaveCount(0);
+});
+
+/**
+ * §5 B2 决策 1 的重试入口。单元测试与控制器测试各自钉住了判决文案和时序，这里钉的是
+ * **它真的出现在面板上、真的点得动**：未达标时给出下一步，点一次就提交一次重试，
+ * 而且提交的请求体里只有标识 —— 类别与圈面由后端从被冻结的那一版取。
+ */
+test('未达标时给出继续检索入口，点一次就提交一次重试', async ({ page }) => {
+  const errors: string[] = [];
+  const harness = await setup(page, { unmetCoverage: true });
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await pickAndStart(page);
+
+  // 先说清"查完了多少"，再说下一步：达标线是 80%，实测 50%。
+  await expect(page.getByTestId('checkup-query-coverage'))
+    .toContainText('共同完成圈面 50.0%（合格线 80.0%）');
+  await expect(page.getByTestId('checkup-query-coverage')).toContainText('未达标');
+  // 原因按真实停止原因区分：本轮额度用尽可以再点一次，今日额度用尽要等次日。
+  await expect(page.getByTestId('checkup-query-coverage-next'))
+    .toContainText('本轮请求额度已用完，可重试继续');
+
+  await page.getByTestId('checkup-retry-run').click();
+  // 这一轮**自己的**账目：预算属于这次重试，不是原任务的。
+  await expect(page.getByTestId('checkup-retry-facts').first()).toContainText('本轮预算 240');
+  expect(harness.retries).toHaveLength(1);
+  expect(harness.retries[0]).toMatch(/^[0-9a-f-]{36}$/);
+  expect(errors).toEqual([]);
+});
+
+/**
+ * §5 B2 决策 2 的到期反应。单元测试钉住了时序，这里钉的是**屏幕上真的没有明细**：
+ * 到期之后不能再有任何设施、图层或报告，只剩说明与保留汇总 —— 而且"到期"不是"体检失败"。
+ */
+test('明细到期后只剩结论与汇总，一个设施都不显示', async ({ page }) => {
+  const errors: string[] = [];
+  await setup(page, { detailsExpired: true });
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await pickAndStart(page, { done: 'checkup-expired' });
+
+  // 说清是哪条期限，而不是一句"数据过期"。
+  await expect(page.getByTestId('checkup-expired-notice'))
+    .toContainText('开始记录保留期之前');
+  await expect(page.getByTestId('checkup-expired-notice')).toContainText('不再提供');
+  // 到期之后仍然看得到结论与关键数字，并且被告知没有重算。
+  await expect(page.getByTestId('checkup-retained-revision')).toContainText('第 5 版');
+  await expect(page.getByTestId('checkup-retained-facts')).toContainText('检索到的设施：3 处');
+  await expect(page.getByTestId('checkup-retained-note')).toContainText('未重算');
+
+  // 明细一个都不在：设施清单、地图图层、报告抽屉都不该出现。
+  await expect(page.getByTestId('checkup-nearest')).toHaveCount(0);
+  await expect(page.getByTestId('checkup-query-coverage')).toHaveCount(0);
+  // 图上不该有设施标记（"N 个点"那种）。中心标记仍在，它不是明细 —— 地图总得有一个中心。
+  const drawn = await audit(page);
+  expect(drawn.markers.map(marker => marker.options.title)
+    .filter(title => /^\d+ 个点/.test(title))).toEqual([]);
+  expect(drawn.paths).toHaveLength(0);
+
+  // 到期不是可重试错误：没有"继续检索缺口"，也不该冒出一句体检失败。
+  await expect(page.getByTestId('checkup-retry-run')).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

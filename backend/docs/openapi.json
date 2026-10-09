@@ -779,6 +779,149 @@
         }
       }
     },
+    "/api/v2/checkups/sessions": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Open Session",
+        "operationId": "open_session_api_v2_checkups_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionOpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/sessions/{session_id}/tabs/{tab_id}/heartbeat": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Heartbeat",
+        "operationId": "heartbeat_api_v2_checkups_sessions__session_id__tabs__tab_id__heartbeat_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "tab_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tab Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/sessions/{session_id}/tabs/{tab_id}/close": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Close Tab",
+        "operationId": "close_tab_api_v2_checkups_sessions__session_id__tabs__tab_id__close_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "tab_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tab Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/checkups/by-request/{client_request_id}": {
       "get": {
         "tags": [
@@ -879,6 +1022,22 @@
               "type": "string",
               "title": "Task Id"
             }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision"
+            }
           }
         ],
         "responses": {
@@ -888,6 +1047,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CheckupSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/retained-result": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Retained Result",
+        "operationId": "retained_result_api_v2_checkups__task_id__retained_result_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetainedCheckupView"
                 }
               }
             }
@@ -995,6 +1212,453 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CheckupTaskView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/facility-extensions": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Create Extension",
+        "operationId": "create_extension_api_v2_checkups__task_id__facility_extensions_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacilityExtensionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacilityExtensionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "List Extensions",
+        "operationId": "list_extensions_api_v2_checkups__task_id__facility_extensions_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FacilityExtensionView"
+                  },
+                  "title": "Response List Extensions Api V2 Checkups  Task Id  Facility Extensions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/retries": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Create Retry",
+        "operationId": "create_retry_api_v2_checkups__task_id__retries_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacilityRetryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacilityRetryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "List Retries",
+        "operationId": "list_retries_api_v2_checkups__task_id__retries_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FacilityRetryView"
+                  },
+                  "title": "Response List Retries Api V2 Checkups  Task Id  Retries Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/retries/{retry_id}": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Retry Status",
+        "operationId": "retry_status_api_v2_checkups__task_id__retries__retry_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "retry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Retry Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacilityRetryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/retries/{retry_id}/cancel": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Cancel Retry",
+        "operationId": "cancel_retry_api_v2_checkups__task_id__retries__retry_id__cancel_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "retry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Retry Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacilityRetryView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/facility-extensions/{extension_id}": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Extension Status",
+        "operationId": "extension_status_api_v2_checkups__task_id__facility_extensions__extension_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "extension_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Extension Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacilityExtensionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/facility-extensions/{extension_id}/result": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Extension Result",
+        "operationId": "extension_result_api_v2_checkups__task_id__facility_extensions__extension_id__result_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "extension_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Extension Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacilityExtensionDocument"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/{task_id}/facility-extensions/{extension_id}/cancel": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Cancel Extension",
+        "operationId": "cancel_extension_api_v2_checkups__task_id__facility_extensions__extension_id__cancel_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "extension_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Extension Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacilityExtensionView"
                 }
               }
             }
@@ -1416,16 +2080,9 @@
             "type": "array",
             "title": "Facilitycategories",
             "default": [
-              "medical",
               "shopping",
-              "education",
-              "care",
-              "dining",
-              "finance",
-              "public",
-              "leisure",
-              "transport",
-              "life"
+              "medical",
+              "education"
             ]
           }
         },
@@ -2153,6 +2810,21 @@
             "type": "object",
             "title": "Budgets"
           },
+          "poiPlanning": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Poiplanning"
+          },
+          "cache": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cache"
+          },
+          "facilityCategories": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Facilitycategories"
+          },
           "quota": {
             "additionalProperties": true,
             "type": "object",
@@ -2200,24 +2872,17 @@
             "type": "array",
             "title": "Categories",
             "default": [
-              "medical",
               "shopping",
-              "education",
-              "care",
-              "dining",
-              "finance",
-              "public",
-              "leisure",
-              "transport",
-              "life"
+              "medical",
+              "education"
             ]
           },
           "maxPoiRequests": {
             "type": "integer",
-            "maximum": 60.0,
+            "maximum": 1600.0,
             "minimum": 1.0,
             "title": "Maxpoirequests",
-            "default": 60
+            "default": 240
           },
           "maxRouteRequests": {
             "type": "integer",
@@ -2652,6 +3317,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/TaskProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retention": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetentionView"
               },
               {
                 "type": "null"
@@ -3497,6 +4172,336 @@
         ],
         "title": "FacilityCatalog"
       },
+      "FacilityExtensionDocument": {
+        "properties": {
+          "extensionId": {
+            "type": "string",
+            "title": "Extensionid"
+          },
+          "taskId": {
+            "type": "string",
+            "title": "Taskid"
+          },
+          "baseRevision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Baserevision"
+          },
+          "categories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "medical",
+                "shopping",
+                "education",
+                "care",
+                "dining",
+                "finance",
+                "public",
+                "leisure",
+                "transport",
+                "life"
+              ]
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "partial",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "facilitiesStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facilitiesstatus"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FacilityGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requests": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Requests",
+            "default": 0
+          },
+          "networkRequests": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Networkrequests",
+            "default": 0
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/Issue"
+            },
+            "type": "array",
+            "title": "Issues"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "extensionId",
+          "taskId",
+          "baseRevision",
+          "categories",
+          "status"
+        ],
+        "title": "FacilityExtensionDocument",
+        "description": "一次补查的完整结果。\n\n``group`` 为 null 只有一个意思：这次检索没有产出可用结果（具名原因在\n``issues`` 里）。它绝不是\"这片区域没有这类设施\"，空清单与空目录是两件事。"
+      },
+      "FacilityExtensionRequest": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "checkup-v1",
+            "title": "Schemaversion",
+            "default": "checkup-v1"
+          },
+          "clientRequestId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Clientrequestid"
+          },
+          "categories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "medical",
+                "shopping",
+                "education",
+                "care",
+                "dining",
+                "finance",
+                "public",
+                "leisure",
+                "transport",
+                "life"
+              ]
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "maxPoiRequests": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1600.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxpoirequests"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "clientRequestId",
+          "categories"
+        ],
+        "title": "FacilityExtensionRequest",
+        "description": "按需补查：复用原体检已经算出的圈面，只再跑一次设施检索。\n\n扩展类别产出点位、数量和分类统计，**不**进入核心综合分，也不进入综合灰区：\n原体检的修订、评分和报告不因为一次补查而改变。这样\"十类设施\"是加出来的，\n不是把有业务依据的三类口径换掉。"
+      },
+      "FacilityExtensionView": {
+        "properties": {
+          "extensionId": {
+            "type": "string",
+            "title": "Extensionid"
+          },
+          "taskId": {
+            "type": "string",
+            "title": "Taskid"
+          },
+          "baseRevision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Baserevision"
+          },
+          "clientRequestId": {
+            "type": "string",
+            "title": "Clientrequestid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "partial",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "poi",
+                  "ready"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "categories": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "medical",
+                "shopping",
+                "education",
+                "care",
+                "dining",
+                "finance",
+                "public",
+                "leisure",
+                "transport",
+                "life"
+              ]
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          },
+          "requests": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Requests",
+            "default": 0
+          },
+          "networkRequests": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Networkrequests",
+            "default": 0
+          },
+          "facilitiesStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facilitiesstatus"
+          },
+          "countsByCategory": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Countsbycategory"
+          },
+          "stopReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopreason"
+          },
+          "initialPlan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initialplan"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "createdAt": {
+            "type": "number",
+            "title": "Createdat"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishedat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "extensionId",
+          "taskId",
+          "baseRevision",
+          "clientRequestId",
+          "status",
+          "categories",
+          "createdAt"
+        ],
+        "title": "FacilityExtensionView",
+        "description": "一次补查的状态。它有自己的标识和预算，不占用原任务的设施额度。"
+      },
       "FacilityGroup": {
         "properties": {
           "queryStatus": {
@@ -3546,6 +4551,18 @@
               }
             ],
             "title": "Dataobtainedat"
+          },
+          "initialPlan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initialplan"
           },
           "countsByCategory": {
             "additionalProperties": {
@@ -3620,6 +4637,33 @@
             ],
             "title": "Queryincompleteregions"
           },
+          "queryAreaCoverage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queryareacoverage"
+          },
+          "sourceTasks": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcetasks"
+          },
           "statistics": {
             "additionalProperties": true,
             "type": "object",
@@ -3655,6 +4699,180 @@
         ],
         "title": "FacilityGroup",
         "description": "§4.4's two quality axes, reported side by side and never conflated.\n\n``query_status`` is what the planned queries and their spatial range\nestablished; ``catalog_completeness`` is whether the real directory was\nindependently verified, which a keyword search can never establish, so it is\n``unverified`` here by construction and not by omission.\n\n``counts_by_category`` is what the run *retrieved* inside the computed\nboundary, keyed by the request's major categories. A zero is an observed\nzero: it must be read with ``query_status``, never as \"none exist\" (§4.4)."
+      },
+      "FacilityRetryRequest": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "checkup-v1",
+            "title": "Schemaversion",
+            "default": "checkup-v1"
+          },
+          "clientRequestId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Clientrequestid"
+          },
+          "maxPoiRequests": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1600.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxpoirequests"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "clientRequestId"
+        ],
+        "title": "FacilityRetryRequest",
+        "description": "§5 B2 决策 1：同一次体检的**重试**，用新预算接着把没查完的地段查下去。\n\n与补查的区别只有一条，但它是本质的一条：补查产出的是**并列**的一份结果，原体检的\n修订、评分和报告一个字都不变；重试产出的是**这一次体检自己的新修订**，因为运营者的\n要求是\"普通体检必须查到完整结果\" —— 那必须体现在这一份报告里，而不是旁边多一个文件。\n\n类别不在这里给：重试沿用原体检已经冻结的类别集合。允许改类别就等于允许悄悄换掉\n这次体检问的问题，\"这次查完了没有\"随之失去意义。"
+      },
+      "FacilityRetryView": {
+        "properties": {
+          "retryId": {
+            "type": "string",
+            "title": "Retryid"
+          },
+          "taskId": {
+            "type": "string",
+            "title": "Taskid"
+          },
+          "baseRevision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Baserevision"
+          },
+          "clientRequestId": {
+            "type": "string",
+            "title": "Clientrequestid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "partial",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "poi",
+                  "ready"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "budget": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Budget"
+          },
+          "requests": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Requests",
+            "default": 0
+          },
+          "networkRequests": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Networkrequests",
+            "default": 0
+          },
+          "facilitiesStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facilitiesstatus"
+          },
+          "stopReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopreason"
+          },
+          "initialPlan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initialplan"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "createdAt": {
+            "type": "number",
+            "title": "Createdat"
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finishedat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "retryId",
+          "taskId",
+          "baseRevision",
+          "clientRequestId",
+          "status",
+          "createdAt"
+        ],
+        "title": "FacilityRetryView",
+        "description": "一次重试的状态：它自己的预算、它到达的修订，以及它剩下的缺口。"
       },
       "FacilityRoute": {
         "properties": {
@@ -5523,6 +6741,126 @@
         "title": "ReportVerification",
         "description": "报告的核验栏目。``available`` 与 ``status`` 是两件事：这个部署有没有核验服务\n（available），以及核验跑到什么程度（status）。把 ``not_integrated`` 读成\n``available: True`` 会让\"没有核验\"看起来像\"核验过、没发现问题\"。"
       },
+      "RetainedCheckupView": {
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "title": "Taskid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "isochrone",
+              "poi",
+              "accessibility",
+              "verification",
+              "reporting",
+              "ready"
+            ],
+            "title": "Stage"
+          },
+          "businessStatus": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "insufficient"
+            ],
+            "title": "Businessstatus"
+          },
+          "resultHash": {
+            "type": "string",
+            "title": "Resulthash"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "retention": {
+            "$ref": "#/components/schemas/RetentionView"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "taskId",
+          "revision",
+          "stage",
+          "businessStatus",
+          "resultHash",
+          "retention"
+        ],
+        "title": "RetainedCheckupView",
+        "description": "明细到期之后仍然给得出的那一部分（§5 B2 决策 2）。\n\n``summary`` 是定稿时冻结的白名单汇总：结论、分数区间、面积、计数、停止原因。它里面\n**没有**设施名称、UID、地址、坐标或几何 —— 到期之后还能看到什么，由这份白名单定义，\n而不是由\"原文件里还剩什么\"定义。"
+      },
+      "RetentionView": {
+        "properties": {
+          "detailsAvailable": {
+            "type": "boolean",
+            "title": "Detailsavailable"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "session_closed",
+                  "superseded",
+                  "legacy",
+                  "cleared"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "cleared": {
+            "type": "boolean",
+            "title": "Cleared",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detailsAvailable"
+        ],
+        "title": "RetentionView",
+        "description": "这份结果的明细还能不能提供、什么时候到期、为什么。\n\n``details_available`` 为假时**不等于**\"没有这个任务\"：任务、评分与汇总都还在，\n缺的是含设施名称、UID 与坐标的那部分明细（`evidence/06` §2 决策 2）。"
+      },
       "RouteEvidence": {
         "properties": {
           "distance_m": {
@@ -6029,6 +7367,93 @@
         "title": "ServiceZone",
         "description": "一片灰区在冻结修订里的样子（§6.5）。\n\n``zones`` 曾经是裸 dict，于是\"这一片有多大、为什么是灰区、建议查什么\"只存在于\n``Zone.as_dict()`` 的写法里：写错了没有一处会报错，读的人也没有类型可依。把它写成\n模型之后，冻结出来的清单自带校验，前端契约也从同一份定义生成。\n\n两份几何必须来自同一个对象：``geometry`` 是**统计几何**（米制，面积以它为准），\n``displayGeometry`` 是同一对象的 bd09ll 形态。展示简化改变统计几何是 §6.5 明令禁止的。"
       },
+      "SessionOpenRequest": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "checkup-v1",
+            "title": "Schemaversion",
+            "default": "checkup-v1"
+          },
+          "sessionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sessionid"
+          },
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tabid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SessionOpenRequest",
+        "description": "开一个浏览会话，或回到已有的那一个（§5 B2 决策 2 的第一条期限）。\n\n两个标识分两处存，因为它们的寿命不一样：**会话**属于这个浏览器（同一浏览器的两个\n标签页共用一个），**标签页**属于一个标签页（刷新要接着用同一个，关掉就该消失）。\n客户端负责保管它们，服务端只回答\"这个会话现在还算数吗\"。"
+      },
+      "SessionView": {
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "title": "Sessionid"
+          },
+          "tabId": {
+            "type": "string",
+            "title": "Tabid"
+          },
+          "leaseSeconds": {
+            "type": "number",
+            "title": "Leaseseconds"
+          },
+          "expiresAt": {
+            "type": "number",
+            "title": "Expiresat"
+          },
+          "resumed": {
+            "type": "boolean",
+            "title": "Resumed"
+          },
+          "openTabs": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Opentabs",
+            "default": 1
+          },
+          "tasks": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Tasks",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sessionId",
+          "tabId",
+          "leaseSeconds",
+          "expiresAt",
+          "resumed"
+        ],
+        "title": "SessionView",
+        "description": "一个会话此刻的状态：租约还剩多久、有几个标签页还开着。\n\n``expires_at`` 是**租约到期时刻**，不是\"数据已经删了\"：到期之后还有一段可判定的\n时间用来拒绝迟到的心跳，但明细的可用性由 ``RetentionView`` 单独回答。"
+      },
       "SyntheticRequest": {
         "properties": {
           "origin": {
@@ -6422,6 +7847,18 @@
               }
             ],
             "title": "Recomputed"
+          },
+          "retried": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retried"
           }
         },
         "additionalProperties": false,

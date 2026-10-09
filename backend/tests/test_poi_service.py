@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 from life_circle.coordinates import LocalProjection
 
-from app.poi.models import PoiCollectRequest, RuntimeConfig
+from app.poi.models import CATEGORIES, PoiCollectRequest, RuntimeConfig
 from app.poi.normalize import coordinate, classify, inside, merge_entities, normalize
 from app.poi.planner import build_plan, parameters
 from app.poi.provider import ReplayProvider
@@ -63,7 +63,11 @@ def test_total_budget_and_category_budget_preserve_other_categories():
     result, _ = collect(totalBudget=1)
     assert result.query_status == 'partial' and result.stop_reason == 'total_budget'
     assert result.statistics['attempts'] == 1
-    result, _ = collect(categoryBudgets={'market': 1, 'pharmacy': 100, 'primary_school': 100})
+    # 预算必须逐类给全（RuntimeConfig.budgets 的契约），所以从词典派生默认，
+    # 只把 market 压低：断言逐条看的是"某类被压到 1 之后别的类不受影响"。
+    budgets = dict.fromkeys(CATEGORIES, 100)
+    budgets['market'] = 1
+    result, _ = collect(categoryBudgets=budgets)
     assert result.query_status == 'partial'
     assert result.counts_by_category['primary_school'] == 1
     assert result.statistics['countsByCategory']['market'] == 1

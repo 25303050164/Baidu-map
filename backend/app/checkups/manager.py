@@ -16,10 +16,13 @@ reader never has to join two files to see what was established, and the result
 hash of the later revision covers every group it repeats.
 """
 import asyncio
+import logging
 import json
 import math
 import time
+from dataclasses import dataclass
 from contextlib import AsyncExitStack
+from types import SimpleNamespace
 from uuid import uuid4
 
 from life_circle.coordinates import LocalProjection, normalize
@@ -28,27 +31,50 @@ from life_circle.models import CancelToken
 from ..accessibility.grid import AssessmentCancelled
 from ..algorithms.osm_offline.lazy import resolve
 from ..cache import KeyedCache
-from ..catalog import major_of
+from ..catalog import major_of, poi_keys
 from ..contracts import Issue, Origin
 from ..engines import EngineContext, IsochroneAsk, IsochroneSnapshot, canonical_hash
 from ..engines.protocol import EngineCancelled
+from ..poi import plan as poi_plan
+from ..poi.online import coarse_blocks
 from ..poi.planner import RULES as POI_RULES
-from ..quota import attach_token
+from ..quota import PLACE, attach_token
 from .accessibility_stage import AccessibilityOutcome, assess_accessibility
 from .facilities import FacilityOutcome, collect_facilities, stale_for
-from .models import (DETAIL_ROUTE_REQUESTS, DISTANCE_RULE, RULE_VERSION, TERMINAL, CheckupRequest,
-                     CheckupSnapshot, CheckupTaskView, EngineRef, FacilityGroup, FacilityRoute,
-                     ReportEvidence, ScopeEvidence, TaskProgress, new_trace)
+from .facility_stage import query_domain
+from .models import (DEFAULT_POI_REQUESTS, DETAIL_ROUTE_REQUESTS, DISTANCE_RULE,
+                     EXTENSION_TERMINAL, MAX_POI_REQUESTS, QUERY_PADDING_M, RULE_VERSION, TERMINAL,
+                     CheckupFacilities, CheckupRequest, CheckupSnapshot, CheckupTaskView, EngineRef,
+                     FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView,
+                     FacilityGroup, FacilityRetryRequest, FacilityRetryView, FacilityRoute,
+                     ReportEvidence, RetainedCheckupView, RetentionView, ScopeEvidence,
+                     SessionOpenRequest, SessionView, TaskProgress, new_trace)
+from . import retention
+from .places import declared_identity
 from .progress import StepReporter, category_label
 from .reporting_stage import build_report
 from .routes import DETAIL_POOL, RoutesUnavailable, open_online as open_routes
-from .store import CheckupStore, RequestIdConflict, TaskNotFound
+from .store import (CheckupStore, ExtensionNotFound, RequestIdConflict, TaskNotFound,
+                    extension_identity, extension_matches)
 from .verification_stage import (VerificationOutcome, carried_over, judge_route,
                                  refusal as verification_refusal, verify_facilities)
+
+logger = logging.getLogger(__name__)
 
 # Engines currently enforce their own internal deadline; this is the task-level
 # bound every stage shares.
 DEADLINE_SECONDS = 1800
+# §5 B2 决策 2：会话租约。最后一个标签页离开后给这么多时间（刷新、短暂断网、多标签页
+# 共享会话都不该被误判成"关掉了浏览器"），之后这个会话的数据就到期。
+SESSION_LEASE_SECONDS = 300.0
+#: 该次体检之后的第几次新体检结束就算它到期。失败与取消也计数；幂等重发、重试、补查
+#: 都不新建任务行，因此不计数。
+CHECKUPS_BEFORE_EXPIRY = 3
+#: 后台巡检的间隔。到期是一个**事件**（最后一次心跳、第三次后续体检结束），没有请求会
+#: 因为它的到来而发生 —— 所以必须有人定期去看，不能只在读取时判定。
+MAINTENANCE_SECONDS = 60.0
+RETENTION_NOTE = ("明细（设施名称、UID、地址与坐标）已按保留期到期不再提供；"
+                  "这里的结论、分数与汇总是到期前定稿的那一份，未重算。")
 ENGINE_UNAVAILABLE = {
     "walking_ak_not_configured": "后端未配置百度步行服务 AK，百度边界搜索（E8.2）无法成圈。",
 }
@@ -65,6 +91,14 @@ OPTIONAL_ANALYSIS_FIELDS = ("water",)
 #: 重启或淘汰之后这个任务的详情额度从 20 重新计起，账本上的消耗不会被抹掉。任务记录的
 #: 累计计数写的是整趟流水线的用量，点击详情不改写它 —— 让它和正在跑的阶段互相覆盖，
 #: 只会把两边都算错。
+#: 按需补查自带的三条口径，随结果一起冻结：它们是读这份结果时必须知道的事。
+EXTENSION_NOTES = (
+    "按需补查：复用原体检已经算出的圈面，只再跑一次设施检索，不重新成圈。",
+    "扩展类别只做点位、数量和分类展示：不进入核心综合分，也不进入综合灰区，"
+    "原体检的修订、评分与报告不因一次补查而改变。",
+    "关键词检索查完不等于现实目录完整：这里的数量是本次检索到的记录，不是设施总量。",
+)
+
 DETAIL_BUCKETS = 256
 
 
@@ -187,6 +221,24 @@ def _assessment_progress(report):
     return progress
 
 
+@dataclass(frozen=True)
+class _ExtensionBoundary:
+    """What a new extension over one task would search, resolved on demand.
+
+    ``revision`` is the revision the new request binds to; ``requested`` is the
+    budget it will be given. Both are read only for a genuinely new request, so an
+    already-accepted request id can be answered without the parent's newest revision
+    being usable at all.
+    """
+
+    domain: object
+    origin: tuple
+    minors: tuple
+    blocks: int
+    requested: int
+    revision: int
+
+
 class CheckupManager:
     def __init__(self, settings, registry, store: CheckupStore, quota, place_factory=None,
                  route_factory=None, offline=None):
@@ -194,7 +246,8 @@ class CheckupManager:
         # §3.4: a page is reusable across tasks only inside the configured window,
         # and inside its own task when no window is configured. One cache for the
         # process, outside every quota pool, so a hit costs no attempt.
-        self.cache = KeyedCache(freshness_seconds=settings.cache_freshness_seconds)
+        self.cache = KeyedCache(freshness_seconds=settings.cache_freshness_seconds,
+                                reused=self._source_still_retained)
         # The seam a deployment without a key, or an offline run, substitutes at.
         # ``route_factory`` is the same seam for the walking routes the
         # verification stage and the facility-detail endpoint ask for.
@@ -210,9 +263,244 @@ class CheckupManager:
         self.tokens: dict[str, CancelToken] = {}
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.worker: asyncio.Task | None = None
+        # 按需补查有自己的队列和 worker：它不进主流程的修订链，所以一次补查失败或
+        # 被取消都不会碰到已经发布的报告。它和主流程共用同一个 place 服务池，
+        # 两者加起来仍然只有一个调度点、一本日账。
+        self.extension_queue: asyncio.Queue[str] = asyncio.Queue()
+        self.extension_worker: asyncio.Task | None = None
+        self.extension_tokens: dict[str, CancelToken] = {}
         self.closing = False
+        #: 后台巡检任务（见 ``start_maintenance``）：由部署的启动钩子启动，关闭时取消。
+        self.maintenance: asyncio.Task | None = None
 
-    # -- admission ---------------------------------------------------------
+    # -- 会话与保留期（§5 B2 决策 2）------------------------------------------
+
+    def open_session(self, payload: SessionOpenRequest) -> SessionView:
+        """开一个会话或回到它；带上已有的会话标识时，**已到期就是一堵墙**。
+
+        这条规则是整个期限的地基：迟到的心跳若能复活一个已到期的会话，那么"关闭浏览器
+        （或三次后续体检）即到期"就只剩一个说法 —— 数据还在，而且随时可以被重新认领。
+        """
+        now = time.time()
+        if payload.session_id is None:
+            session_id = str(uuid4())
+            row = self.store.start_session(session_id=session_id,
+                                           tab_id=payload.tab_id or str(uuid4()), now=now)
+            return self._session_view(row, tab_id=payload.tab_id or self._only_tab(session_id),
+                                      resumed=False, now=now)
+        row = self.store.session_row(payload.session_id)
+        if row is None:
+            # 服务端不认识这个标识（换了后端、清了库）：新开一个，而不是假装续上了。
+            session_id = str(uuid4())
+            row = self.store.start_session(session_id=session_id,
+                                           tab_id=payload.tab_id or str(uuid4()), now=now)
+            return self._session_view(row, tab_id=payload.tab_id or self._only_tab(session_id),
+                                      resumed=False, now=now)
+        if self._session_expired(row, now=now):
+            self.store.expire_session(session_id=payload.session_id, now=now)
+            raise CheckupError(
+                409, "checkup_session_expired",
+                "这个浏览会话已经到期（关闭浏览器或后续体检已超过期限），它的数据不再保留；"
+                "请刷新页面开始一个新的会话。")
+        tab_id = payload.tab_id or str(uuid4())
+        self.store.touch_session(session_id=payload.session_id, tab_id=tab_id, now=now, reopen=True)
+        self.store.open_tab(session_id=payload.session_id, tab_id=tab_id, now=now)
+        return self._session_view(self.store.session_row(payload.session_id), tab_id=tab_id,
+                                  resumed=True, now=now)
+
+    def heartbeat(self, session_id: str, tab_id: str) -> SessionView:
+        """标签页续租。已到期的会话不能被迟到的心跳复活。"""
+        now = time.time()
+        row = self.store.session_row(session_id)
+        if row is None:
+            raise CheckupError(404, "checkup_session_not_found", "这个浏览会话不存在或已被清理")
+        if self._session_expired(row, now=now):
+            self.store.expire_session(session_id=session_id, now=now)
+            raise CheckupError(409, "checkup_session_expired",
+                               "这个浏览会话已经到期，它的数据不再保留；请刷新页面开始新的会话。")
+        if self.store.touch_session(session_id=session_id, tab_id=tab_id, now=now,
+                                    reopen=False) is None:
+            raise CheckupError(404, "checkup_session_not_found", "这个浏览会话不存在或已被清理")
+        return self._session_view(self.store.session_row(session_id), tab_id=tab_id,
+                                  resumed=True, now=now)
+
+    def close_tab(self, session_id: str, tab_id: str) -> SessionView:
+        """一个标签页离开。它是**记录**，不是判决：会话是否到期由最后离开的时刻加宽限决定。"""
+        now = time.time()
+        row = self.store.session_row(session_id)
+        if row is None:
+            raise CheckupError(404, "checkup_session_not_found", "这个浏览会话不存在或已被清理")
+        self.store.close_tab(session_id=session_id, tab_id=tab_id, now=now)
+        return self._session_view(self.store.session_row(session_id), tab_id=tab_id,
+                                  resumed=True, now=now)
+
+    def _only_tab(self, session_id: str) -> str:
+        tabs = self.store.session_tabs(session_id)
+        return tabs[0]["tab_id"] if tabs else ""
+
+    def _session_view(self, row, *, tab_id: str, resumed: bool, now: float) -> SessionView:
+        tabs = self.store.session_tabs(row["session_id"])
+        return SessionView(
+            session_id=row["session_id"], tab_id=tab_id, lease_seconds=SESSION_LEASE_SECONDS,
+            expires_at=self._lease_end(row, tabs=tabs) + SESSION_LEASE_SECONDS,
+            resumed=resumed,
+            open_tabs=sum(1 for tab in tabs if tab["closed_at"] is None),
+            tasks=len(self.store.session_ids_of_tasks(row["session_id"])))
+
+    @staticmethod
+    def _lease_end(row, *, tabs) -> float:
+        """最后一个标签页**还在**的时刻：它离开的时刻，或它最后一次续租的时刻。"""
+        instants = [tab["closed_at"] if tab["closed_at"] is not None else tab["last_seen_at"]
+                    for tab in tabs]
+        return max([row["created_at"], *instants])
+
+    def _session_expired(self, row, *, now: float) -> bool:
+        if row["expired_at"] is not None:
+            return True
+        return now >= self._lease_end(row, tabs=self.store.session_tabs(row["session_id"])) \
+            + SESSION_LEASE_SECONDS
+
+    def sweep_retention(self, *, now: float | None = None) -> dict:
+        """把已经到期的明细删掉：先落墓碑，再删文件，最后丢掉内存里的那一份。
+
+        顺序是刻意的。墓碑先写：它让两个并发的巡检者里只有一个真的去删，而"已经清理过"
+        这件事在删到一半失败之后仍然成立、仍然可以重试。文件只删
+        ``checkup_dir/tasks/<task_id>`` 这一个目录 —— 额度账本、OSM 数据、用户文件都不在
+        这个根下，也一个都不碰。
+
+        只处理**终态**任务：正在跑的体检当然也已经到期（会话关闭时它就被取消了），
+        但它的明细是这一轮正在写的东西，删除要先等它停下来。
+        """
+        now = time.time() if now is None else now
+        cleared, failed = [], []
+        for record in self.store.terminal_tasks():
+            if record.details_cleared_at is not None:
+                continue
+            if self.retention_of(record, now=now).details_available:
+                continue
+            if not self.store.mark_details_cleared(record.task_id, now=now):
+                continue
+            leftovers = retention.delete_details(self.store.root, record.task_id)
+            self.cache.drop_task(record.task_id)
+            self.detail_budgets.pop(record.task_id, None)
+            (failed if leftovers else cleared).append(record.task_id)
+        return {"cleared": cleared, "failed": failed}
+
+    def start_maintenance(self, interval: float = MAINTENANCE_SECONDS) -> asyncio.Task:
+        """定期做两件没有请求会来触发的事：判会话到期、清到期的明细。
+
+        它必须由部署的启动钩子启动，而不是靠某次读取顺手做：到期恰恰发生在**没有人看**
+        的时候（最后一个标签页关掉之后），只靠读取触发就等于"没人看就永远不清"。
+        """
+        async def loop():
+            while not self.closing:
+                try:
+                    self.expire_due_sessions()
+                    self.sweep_retention()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("checkup retention maintenance failed")
+                await asyncio.sleep(interval)
+
+        self.maintenance = asyncio.create_task(loop())
+        return self.maintenance
+
+    def retained(self, task_id: str, revision: int | None = None) -> RetainedCheckupView:
+        """明细到期之后仍然可以给出的东西：结论、汇总与到期原因。
+
+        它从**冻结的汇总**读，不回头去读那份可能已经删掉的修订文件：到期之后还能不能
+        回答这个问题，不能取决于文件还在不在。
+        """
+        record = self.get(task_id)
+        stored = self.store.revision_row(task_id, revision)
+        if stored is None:
+            if revision is not None:
+                raise CheckupError(409, "checkup_revision_not_found",
+                                   f"这次体检没有第 {revision} 版修订")
+            raise CheckupError(409, "checkup_result_not_ready", "尚无可用结果快照")
+        summary = self.store.summary(task_id, stored["revision"])
+        if summary is None:
+            raise CheckupError(409, "checkup_retained_summary_missing",
+                               "这次体检的那一版没有留存汇总，只有任务层面的状态可用")
+        return RetainedCheckupView(
+            task_id=task_id, revision=stored["revision"], stage=stored["stage"],
+            business_status=record.business_status or "partial", result_hash=stored["result_hash"],
+            summary=summary, retention=self.retention_of(record),
+            notes=[RETENTION_NOTE])
+
+    def retention_of(self, record, *, now: float | None = None) -> RetentionView:
+        """这份结果的明细还能不能提供（§5 B2 决策 2）。
+
+        两条期限**任一先到即过期**：会话租约（最后标签页离开 + 宽限），以及"这次体检
+        之后的第三次新体检结束"。另外两条是历史口径：早于本库保留期基线的记录视为已过期；
+        已经清理过的记录按墓碑回答。
+
+        `expires_at` 报的是**两个期限里更早的那个**：界面上"还能看到什么时候"这个问题
+        只有一个答案。
+        """
+        now = time.time() if now is None else now
+        if record.details_cleared_at is not None:
+            return RetentionView(details_available=False, reason="cleared", cleared=True)
+        if record.created_at < self.store.retention_baseline_at():
+            # 运营者的口径：已经落盘、没有会话归属的历史报告视为已过期（明细清除，
+            # 保留不含明细的汇总）。判据是"比本库开始记录保留期的时刻早"，所以一个
+            # 新建的库（测试、临时部署）里不会有任务被当成历史数据。
+            return RetentionView(details_available=False, reason="legacy")
+        arms: list[tuple[str, float]] = []
+        if record.session_id is not None:
+            row = self.store.session_row(record.session_id)
+            if row is None:
+                arms.append(("session_closed", record.created_at))
+            else:
+                tabs = self.store.session_tabs(record.session_id)
+                arms.append(("session_closed",
+                             self._lease_end(row, tabs=tabs) + SESSION_LEASE_SECONDS))
+        try:
+            later = self.store.later_terminal_instants(record.task_id,
+                                                       limit=CHECKUPS_BEFORE_EXPIRY)
+        except TaskNotFound:
+            # 手里这个记录在库里没有对应行（构造出来的记录、或者一行被清掉的库）：
+            # 没有提交顺序可数，这一条期限就**不成立**，而不是让整个视图报错。
+            later = []
+        if len(later) == CHECKUPS_BEFORE_EXPIRY and later[-1] is not None:
+            arms.append(("superseded", later[-1]))
+        if not arms:
+            # 没有人认领、也还没有第三次后续体检：没有期限可言，如实报"未记录"。
+            return RetentionView(details_available=True)
+        reason, expires_at = min(arms, key=lambda arm: arm[1])
+        return RetentionView(details_available=now < expires_at, expires_at=expires_at,
+                             reason=None if now < expires_at else reason)
+
+    def expire_due_sessions(self, *, now: float | None = None) -> list[str]:
+        """把"最后一个标签页离开已经超过宽限"的会话判成过期，并停掉它们正在跑的工作。
+
+        停止是必须的，不是顺手做的：会话到期说的是"这个人不再被授权看这些数据了"，
+        那么继续为它花额度、往它名下写新明细都违反了同一条规则。
+        """
+        now = time.time() if now is None else now
+        expired = self.store.expire_sessions_without_live_tabs(now=now, grace=SESSION_LEASE_SECONDS)
+        for session_id in expired:
+            for task_id in self.store.session_ids_of_tasks(session_id):
+                record = self.store.get(task_id)
+                if record.status in ("queued", "running", "cancelling"):
+                    self.cancel(task_id)
+        return expired
+
+
+
+    def _source_still_retained(self, task_id: str) -> bool:
+        """跨任务复用的一票否决：来源任务的明细还在期限内吗（§5 B2 决策 2）。
+
+        这是"复用不重置来源期限"唯一能被执行的时刻。放进缓存而不是每个调用方各判一次，
+        是因为缓存是唯一知道"这一页是谁的"的地方；调用方只看得到页面内容，而内容不会说
+        自己是谁取回来的。
+        """
+        try:
+            return self.retention_of(self.store.get(task_id)).details_available
+        except TaskNotFound:
+            # 任务行都没了（被清理过的库）：没有期限可继承，也没有数据可复用。
+            return False
 
     def interrupt_unfinished(self) -> int:
         """Sweep tasks this process did not finish, as a restart does.
@@ -228,8 +516,11 @@ class CheckupManager:
         if self.worker is None or self.worker.done():
             self.closing = False
             self.worker = asyncio.create_task(self._serve())
+        if self.extension_worker is None or self.extension_worker.done():
+            self.extension_worker = asyncio.create_task(self._serve_extensions())
 
-    def submit(self, payload: CheckupRequest) -> tuple[CheckupTaskView, bool]:
+    def submit(self, payload: CheckupRequest, *, session_id: str | None = None
+               ) -> tuple[CheckupTaskView, bool]:
         engine = self.registry.get(payload.engine)
         capabilities = engine.capabilities()
         budget = resolve_budget(capabilities, payload.isochrone.budget)
@@ -242,7 +533,10 @@ class CheckupManager:
             record, created = self.store.create(
                 task_id=str(uuid4()), client_request_id=payload.client_request_id,
                 engine=payload.engine, fingerprint=canonical_hash(payload.fingerprint()),
-                payload=payload.model_dump(mode="json"), budget=budget)
+                payload=payload.model_dump(mode="json"), budget=budget,
+                # 会话归属是**这一次体检**的保留期限之一（§5 B2 决策 2）。没有它也能建
+                # 任务（命令行、脚本、旧客户端），但那样只剩"三次后续体检"这一条期限。
+                session_id=session_id)
         except RequestIdConflict:
             raise CheckupError(409, "checkup_request_id_conflict",
                                "该请求标识已用于不同参数的体检") from None
@@ -254,7 +548,12 @@ class CheckupManager:
     # -- execution ---------------------------------------------------------
 
     async def _serve(self) -> None:
-        while True:
+        # The condition, not just the cancellation, ends this loop. A stage may absorb
+        # the CancelledError delivered while it was running — a planner reports a
+        # cancelled run as an outcome, with the evidence it already had — and a worker
+        # that only relied on the exception would then block here forever, holding up
+        # shutdown on a queue nothing will fill again.
+        while not self.closing:
             task_id = await self.queue.get()
             try:
                 if not self.closing:
@@ -264,6 +563,10 @@ class CheckupManager:
             except Exception:
                 # A task must reach a terminal state even when orchestration
                 # itself fails; the reason is recorded, never the raw exception.
+                # The traceback still goes to the log: without it, "orchestration
+                # failed" is the only thing anyone can ever see, and the failing
+                # line is unreachable by any test that goes through HTTP.
+                logger.exception("checkup orchestration failed: %s", task_id)
                 self._finish(task_id, status="failed", error="orchestration_failed")
             finally:
                 self.queue.task_done()
@@ -390,7 +693,8 @@ class CheckupManager:
     def _base(self, task_id: str, payload: CheckupRequest, snapshot, *, revision: int, stage: str,
               business: str, budgets: dict, result_hash: str, warnings: list,
               facilities: dict | None, facilities_status: str, analysis: dict | None = None,
-              extra_rules: dict | None = None, recomputed: dict | None = None) -> dict:
+              extra_rules: dict | None = None, recomputed: dict | None = None,
+              retried: dict | None = None) -> dict:
         """The part of a revision that does not depend on which stage published it.
 
         ``analysis`` is the group of spatial objects this revision carries; the
@@ -401,6 +705,11 @@ class CheckupManager:
         so a revision cannot forget to say which part of the checkup it does not
         contain — that notice is the difference between "nothing is missing" and
         "nobody looked".
+
+        ``recomputed`` and ``retried`` are kept apart because they are not the same
+        fact: a recompute spends nothing and changes the data behind the same
+        evidence, while a retry spends new requests and adds evidence. A reader who
+        cannot tell them apart cannot tell whether a revision cost money.
         """
         analysis = analysis or {}
         document = _analysis_document(analysis)
@@ -411,6 +720,8 @@ class CheckupManager:
                           budgets=budgets, extra_rule_versions=extra_rules)
         if recomputed is not None:
             trace = trace.model_copy(update={"recomputed": recomputed})
+        if retried is not None:
+            trace = trace.model_copy(update={"retried": retried})
         return dict(
             task_id=task_id, revision=revision, generated_at=time.time(), center=payload.center,
             stage=stage, business_status=business,
@@ -671,7 +982,8 @@ class CheckupManager:
 
     def _freeze_verification(self, task_id: str, payload: CheckupRequest, snapshot, budget,
                              outcome: FacilityOutcome, assessment: AccessibilityOutcome,
-                             result: VerificationOutcome, *, recomputed: dict | None = None) -> None:
+                             result: VerificationOutcome, *, recomputed: dict | None = None,
+                             retried: dict | None = None) -> None:
         group = (None if outcome.group is None
                  else outcome.group.model_dump(mode="json", by_alias=True))
         objects = self._analysis_objects(assessment, verification=result)
@@ -690,13 +1002,14 @@ class CheckupManager:
                          facilities=group, facilities_status=outcome.status, analysis=objects,
                          extra_rules={"classification": POI_RULES["version"],
                                       "accessibility": RULE_VERSION},
-                         recomputed=recomputed)), revision,
+                         recomputed=recomputed, retried=retried)), revision,
             result_hash)
 
     def _publish_reporting(self, task_id: str, payload: CheckupRequest, snapshot, budget,
                            outcome: FacilityOutcome, assessment: AccessibilityOutcome,
                            verification: VerificationOutcome | None = None, *,
-                           recomputed: dict | None = None) -> str:
+                           recomputed: dict | None = None,
+                           retried: dict | None = None) -> str:
         """Freeze the report revision: the same assessment, assembled for readers."""
         revision = self.store.get(task_id).revision + 1
         isochrone = snapshot.model_dump(mode="json", by_alias=True)
@@ -731,7 +1044,7 @@ class CheckupManager:
                          facilities=group, facilities_status=outcome.status, analysis=objects,
                          extra_rules={"classification": POI_RULES["version"],
                                       "accessibility": RULE_VERSION},
-                         recomputed=recomputed)), revision,
+                         recomputed=recomputed, retried=retried)), revision,
             result_hash)
         return business
 
@@ -842,9 +1155,12 @@ class CheckupManager:
                  result_hash: str) -> None:
         # Published files use wire naming, so a stored revision round-trips back
         # into the response model without a translation step.
-        published = self.store.publish(task_id, stage=stage,
-                                       snapshot=document.model_dump(mode="json", by_alias=True),
-                                       result_hash=result_hash)
+        wire = document.model_dump(mode="json", by_alias=True)
+        published = self.store.publish(task_id, stage=stage, snapshot=wire,
+                                       result_hash=result_hash,
+                                       # §5 B2 决策 2：汇总与修订同一笔定稿 —— 明细删掉之后，
+                                       # 它就是这份结论唯一还留下来的东西。
+                                       summary=retention.summary_of(wire))
         if published != revision:
             raise RuntimeError("revision counter diverged")
 
@@ -945,10 +1261,20 @@ class CheckupManager:
     # -- reads and cancellation -------------------------------------------
 
     def snapshot(self, task_id: str, revision: int | None = None):
-        """The newest published revision, or a named not-ready refusal."""
+        """The newest published revision, or a named not-ready refusal.
+
+        An explicit revision that does not exist is refused **by name**: "no result
+        yet" and "that revision is gone" are different answers, and a client that
+        asked for a version to keep its own view consistent must be told which one
+        it got rather than silently served something else.
+        """
         self.get(task_id)
         stored = self.store.revision(task_id, revision)
         if stored is None:
+            if revision is not None:
+                raise CheckupError(409, "checkup_revision_not_found",
+                                   f"这次体检没有第 {revision} 版修订（可能是另一版已发布，"
+                                   f"或它已被清理）；请读取当前最新版本。")
             raise CheckupError(409, "checkup_result_not_ready", "尚无可用结果快照")
         # Re-validated from the stored mapping so a hand-edited file cannot widen
         # the contract; serialization always goes through the model.
@@ -973,7 +1299,8 @@ class CheckupManager:
             error=record.error, server_time=now, started_at=record.started_at,
             finished_at=record.finished_at, stage_started_at=record.stage_started_at,
             last_activity_at=record.activity_at,
-            progress=None if record.progress is None else TaskProgress(**record.progress))
+            progress=None if record.progress is None else TaskProgress(**record.progress),
+            retention=self.retention_of(record, now=now))
 
     def get(self, task_id: str):
         try:
@@ -1004,10 +1331,470 @@ class CheckupManager:
                 token.cancel()
         return self.view(self.store.get(task_id)), True
 
+    # -- 按需补查 ----------------------------------------------------------
+
+    def submit_extension(self, task_id: str, payload: FacilityExtensionRequest) -> FacilityExtensionView:
+        """为一次已完成的体检补查若干设施大类。
+
+        这里的顺序就是这件事本身：先认领资源、再认请求，最后才算额度。
+
+        * 同一个请求标识回来是**取回原来那次补查** —— 不重新排队、不发请求、不扣额度，
+          哪怕今天已经没有余额，也不管父任务后来发过几版修订。
+        * 同一个标识带不同参数是冲突（409），而且这个结论优先于任何余额判断：额度不足
+          不该掩盖"你换了参数"。
+        * 只有确实的新请求才做首轮计划与预算检查，且检查用的是**预计新增网络调用数**：
+          完全命中缓存的补查在日余额为 0 时也能提交，因为那一次不会联网。
+        """
+        parent = self.get(task_id)
+        categories = list(payload.categories)
+        identity = extension_identity(categories=categories,
+                                      max_poi_requests=payload.max_poi_requests)
+        # 幂等先于预算，也先于"最新修订"。这一行存在就说明这次补查受理过：合法重试拿回
+        # 原记录与原 baseRevision、与原圈面 —— 父任务后来发过几版修订、那一版的几何是否
+        # 还可用，都不该让一次已经受理过的请求失败。参数不同则是冲突，同样与余额无关。
+        existing = self.store.find_extension(task_id, payload.client_request_id)
+        if existing is not None:
+            if not extension_matches(
+                    existing, identity=identity,
+                    resolved_budget=lambda: self._extension_boundary(
+                        task_id, payload).requested):
+                raise CheckupError(409, "checkup_extension_request_id_conflict",
+                                   "该请求标识已用于不同参数的补查")
+            return self.extension_view(existing)
+        # 新请求才需要当前可用的圈面与几何。
+        boundary = self._extension_boundary(task_id, payload)
+        domain, origin, minors = boundary.domain, boundary.origin, boundary.minors
+        blocks, requested = boundary.blocks, boundary.requested
+        # 先看首轮要什么、缓存能回答多少，再决定够不够。这一步与设施阶段共用同一条
+        # 准入规则：全缓存放行、部分缓存按缺页放行、只有冷启动缺额才具名拒绝。检查本身
+        # 不发请求、不预扣额度、不刷新缓存数据时间；额度仍由服务池在派发前最终裁定。
+        provider, api_version = declared_identity(self.settings, self.place_factory)
+        plan = poi_plan.initial_plan(domain, origin, minors, provider=provider,
+                                     api_version=api_version)
+        estimate = poi_plan.estimate(plan, self.cache, task_id=task_id,
+                                     remaining_task_budget=requested,
+                                     remaining_daily_budget=self.quota.remaining(PLACE))
+        refusal = poi_plan.admission_refusal(estimate)
+        if refusal == "daily_budget_exhausted":
+            remaining_today = estimate.remaining_daily_budget
+            raise CheckupError(
+                429, "checkup_extension_daily_budget",
+                f"今天的地点检索额度不足以完成这次补查：首轮 {estimate.initial_page_count} 页里"
+                f"缓存可复用 {estimate.reusable_initial_page_count} 页，"
+                f"还需新增 {estimate.estimated_new_initial_calls} 次网络调用，"
+                f"本应用今天还剩 {remaining_today} 次。请减少类别，"
+                f"或在次日（北京时间）额度恢复后再补查；"
+                f"完全命中缓存的补查不受余额影响。")
+        if refusal is not None:
+            raise CheckupError(
+                422, "checkup_extension_budget_too_small",
+                f"补查 {len(categories)} 个设施大类首轮需要 {estimate.initial_page_count} 页"
+                f"地点检索（{blocks} 个查询分块 × {len(minors)} 个检索小类，每类先取主关键词一次），"
+                f"缓存可复用 {estimate.reusable_initial_page_count} 页，"
+                f"还需新增 {estimate.estimated_new_initial_calls} 次网络调用，"
+                f"但这次只给了 {requested} 次。请提高补查预算或减少类别；"
+                f"翻页与细分还需要更多次数，首轮够用不代表一定查完。")
+        try:
+            record, created = self.store.create_extension(
+                extension_id=str(uuid4()), task_id=task_id,
+                client_request_id=payload.client_request_id, identity=identity,
+                fingerprint=canonical_hash(identity), base_revision=boundary.revision,
+                categories=categories, budget=requested)
+        except RequestIdConflict:
+            raise CheckupError(409, "checkup_extension_request_id_conflict",
+                               "该请求标识已用于不同参数的补查") from None
+        if created:
+            self.extension_queue.put_nowait(record.extension_id)
+            self.start()
+        # 落败的一方（并发里先被别人建出来）只是取回那一行：不入队，也不重复跑一遍
+        # 已经做过的预算判断。
+        return self.extension_view(record)
+
+    def _extension_boundary(self, task_id: str, payload: FacilityExtensionRequest):
+        """The boundary a *new* extension over this task would search, and its budget.
+
+        只在真正需要时调用：既回答一次已有记录的等价判断（那时需要的只是解析出来的
+        预算），也供新请求构造首轮计划。圈面不可用时按既有规则拒绝，且这个拒绝不会
+        波及"只是取回原记录"的重试。
+        """
+        stored = self.store.revision(task_id)
+        if stored is None:
+            raise CheckupError(409, "checkup_extension_boundary_unavailable",
+                               "原体检还没有可用的圈面，暂时无法补查设施")
+        isochrone = stored["snapshot"].get("isochrone") or {}
+        geometry = isochrone.get("geometry")
+        if geometry is None:
+            raise CheckupError(409, "checkup_extension_boundary_unavailable",
+                               "原体检的圈面没有可用几何，无法补查设施")
+        parent = self.get(task_id)
+        origin = normalize((parent.payload["center"]["lng"], parent.payload["center"]["lat"]))
+        try:
+            domain, _widened = query_domain(geometry, origin, QUERY_PADDING_M)
+        except ValueError:
+            raise CheckupError(409, "checkup_extension_boundary_unavailable",
+                               "原体检的圈面无法转成查询范围，无法补查设施") from None
+        minors = poi_keys(list(payload.categories))
+        blocks = len(coarse_blocks(domain))
+        requested = payload.max_poi_requests or min(MAX_POI_REQUESTS,
+                                                    max(DEFAULT_POI_REQUESTS, blocks * len(minors)))
+        return _ExtensionBoundary(domain=domain, origin=origin, minors=minors, blocks=blocks,
+                                  requested=requested, revision=stored["revision"])
+
+    def extensions(self, task_id: str) -> list[FacilityExtensionView]:
+        self.get(task_id)
+        return [self.extension_view(record) for record in self.store.extensions_of(task_id)]
+
+    def extension(self, task_id: str, extension_id: str) -> FacilityExtensionView:
+        return self.extension_view(self._extension_of(task_id, extension_id))
+
+    def extension_document(self, task_id: str, extension_id: str) -> FacilityExtensionDocument:
+        record = self._extension_of(task_id, extension_id)
+        document = self.store.extension_document(extension_id)
+        if document is None:
+            raise CheckupError(409, "checkup_extension_result_not_ready", "补查结果尚未就绪")
+        return FacilityExtensionDocument(**document)
+
+    def cancel_extension(self, task_id: str, extension_id: str) -> FacilityExtensionView:
+        """取消一次补查。原体检不受影响 —— 它从来没有等过这次补查。"""
+        record = self._extension_of(task_id, extension_id)
+        if record.status in EXTENSION_TERMINAL:
+            return self.extension_view(record)
+        if record.status == "queued":
+            self.store.update_extension(extension_id, status="cancelled", finished_at=time.time())
+        else:
+            token = self.extension_tokens.get(extension_id)
+            if token is not None:
+                token.cancel()
+        return self.extension_view(self.store.extension(extension_id))
+
+    def _extension_of(self, task_id: str, extension_id: str):
+        try:
+            record = self.store.extension(extension_id)
+        except ExtensionNotFound:
+            raise CheckupError(404, "checkup_extension_not_found", "补查不存在或已过期") from None
+        if record.task_id != task_id:
+            # 一个任务读不到另一个任务的补查：这是一次越权的数据访问，不是一个空结果。
+            raise CheckupError(404, "checkup_extension_not_found", "该补查不属于这个任务") from None
+        return record
+
+    def extension_view(self, record) -> FacilityExtensionView:
+        spent = record.network_requests
+        return FacilityExtensionView(
+            extension_id=record.extension_id, task_id=record.task_id,
+            base_revision=record.base_revision, client_request_id=record.client_request_id,
+            status=record.status, stage=record.stage, categories=list(record.categories),
+            budget={"limit": record.budget, "spent": spent,
+                    "remaining": max(0, record.budget - spent)},
+            requests=record.requests, network_requests=spent,
+            facilities_status=record.facilities_status,
+            counts_by_category=record.counts_by_category, error=record.error,
+            stop_reason=record.stop_reason, initial_plan=record.initial_plan,
+            created_at=record.created_at, finished_at=record.finished_at)
+
+    # -- 同一次体检的重试（§5 B2 决策 1）------------------------------------
+
+    def submit_retry(self, task_id: str, payload: FacilityRetryRequest) -> FacilityRetryView:
+        """用新预算，接着把这次体检没查完的地段查下去。
+
+        与补查共用同一张表、同一套幂等/冲突/队列/取消规则，只有定稿之后做的事不同：
+        补查产出的是**并列**的一份结果，重试**为这次体检发布新修订** —— 运营者要的是
+        "普通体检必须查到完整结果"，那必须体现在这一份报告里，而不是旁边多一个文件。
+
+        **类别由原体检决定，不在这个请求里给。** 允许重试改类别，就等于允许悄悄换掉
+        这次体检问的问题，"这次查完了没有"这句话随之失去意义。
+
+        顺序与补查一致：先认领资源、再认请求、最后算额度。
+        """
+        parent = self.get(task_id)
+        if parent.status not in TERMINAL or task_id in self.tokens:
+            raise CheckupError(409, "checkup_task_running", "任务仍在运行，不能重试")
+        request = CheckupRequest(**parent.payload)
+        categories = list(request.facilities.categories)
+        identity = extension_identity(categories=categories,
+                                      max_poi_requests=payload.max_poi_requests)
+        # 幂等先于"还没查完"：同一个标识回来必须取回原记录。一次成功的重试会把这次体检
+        # 变成"已查完"，如果先判"无需重试"，那个标识的第二次请求就会拿到 409 —— 而它
+        # 明明是同一次请求。这与补查的规则一致：先认请求，再判条件。
+        existing = self.store.find_extension(task_id, payload.client_request_id)
+        if existing is not None:
+            if existing.kind != "retry" or not extension_matches(
+                    existing, identity=identity,
+                    resolved_budget=lambda: self._retry_budget(payload)):
+                raise CheckupError(409, "checkup_retry_request_id_conflict",
+                                   "该请求标识已用于另一次不同的请求")
+            return self.retry_view(existing)
+        stored = self.store.revision(task_id)
+        if stored is None:
+            raise CheckupError(409, "checkup_retry_boundary_unavailable",
+                               "原体检还没有可用的修订，暂时无法重试")
+        isochrone = (stored["snapshot"] or {}).get("isochrone") or {}
+        # 「这次查完了」的证据在这份修订自己身上：查询未结束，或者共同完成面积没到线。
+        group = (stored["snapshot"] or {}).get("facilities")
+        if group is None:
+            raise CheckupError(409, "checkup_retry_nothing_to_continue",
+                               "这次体检没有可继续的设施检索结果")
+        if group.get("queryStatus") == "completed":
+            raise CheckupError(409, "checkup_retry_not_needed",
+                               "这次体检的设施检索已经查完，无需重试")
+        # 同一体检不允许并行发布两条重试修订：它们会各自读同一份基线，后一条会把前一条
+        # 的结果盖掉，而两条都真的花了额度。串行队列本来就一次只跑一条，这里把这条
+        # 不变量写成明面规则，而不是依赖"恰好只有一个 worker"。
+        for other in self.store.extensions_of(task_id):
+            if other.kind == "retry" and other.status in ("queued", "running"):
+                raise CheckupError(409, "checkup_retry_in_progress",
+                                   "这次体检已经有一次重试在进行中，请等它结束")
+        geometry = isochrone.get("geometry")
+        if geometry is None:
+            raise CheckupError(409, "checkup_retry_boundary_unavailable",
+                               "原体检的圈面没有可用几何，无法重试")
+        origin = normalize((request.center.lng, request.center.lat))
+        try:
+            domain, _widened = query_domain(geometry, origin, QUERY_PADDING_M)
+        except ValueError:
+            raise CheckupError(409, "checkup_retry_boundary_unavailable",
+                               "原体检的圈面无法转成查询范围，无法重试") from None
+        minors = poi_keys(categories)
+        requested = self._retry_budget(payload)
+        # 与设施阶段、补查共用同一条准入规则：全缓存放行、部分缓存按缺页放行、只有冷启动
+        # 缺额才具名拒绝。检查本身不发请求、不预扣额度；额度仍由服务池在派发前最终裁定。
+        provider, api_version = declared_identity(self.settings, self.place_factory)
+        plan = poi_plan.initial_plan(domain, origin, minors, provider=provider,
+                                     api_version=api_version)
+        estimate = poi_plan.estimate(plan, self.cache, task_id=task_id,
+                                     remaining_task_budget=requested,
+                                     remaining_daily_budget=self.quota.remaining(PLACE))
+        refusal = poi_plan.admission_refusal(estimate)
+        if refusal == "daily_budget_exhausted":
+            raise CheckupError(
+                429, "checkup_retry_daily_budget",
+                f"今天的地点检索额度不足以继续这次重试：首轮 {estimate.initial_page_count} 页里"
+                f"缓存可复用 {estimate.reusable_initial_page_count} 页，"
+                f"还需新增 {estimate.estimated_new_initial_calls} 次网络调用，"
+                f"本应用今天还剩 {estimate.remaining_daily_budget} 次。"
+                f"请在次日（北京时间）额度恢复后重试；已取得的证据都保留在报告里。")
+        if refusal is not None:
+            raise CheckupError(
+                422, "checkup_retry_budget_too_small",
+                f"重试首轮需要 {estimate.initial_page_count} 页地点检索"
+                f"（{estimate.blocks} 个查询分块 × {len(minors)} 个检索小类），"
+                f"缓存可复用 {estimate.reusable_initial_page_count} 页，"
+                f"还需新增 {estimate.estimated_new_initial_calls} 次网络调用，"
+                f"但这次只给了 {requested} 次。请提高本轮的 maxPoiRequests；"
+                f"翻页与细分还需要更多次数，首轮够用不代表一定查完。")
+        try:
+            record, created = self.store.create_extension(
+                extension_id=str(uuid4()), task_id=task_id,
+                client_request_id=payload.client_request_id, identity=identity,
+                fingerprint=canonical_hash(identity), base_revision=stored["revision"],
+                categories=categories, budget=requested, kind="retry")
+        except RequestIdConflict:
+            raise CheckupError(409, "checkup_retry_request_id_conflict",
+                               "该请求标识已用于另一次不同的请求") from None
+        if created:
+            self.extension_queue.put_nowait(record.extension_id)
+            self.start()
+        return self.retry_view(record)
+
+    @staticmethod
+    def _retry_budget(payload: FacilityRetryRequest) -> int:
+        """本轮预算：请求给了就用它，否则用部署默认值。每轮各有一份，互不占用。"""
+        return payload.max_poi_requests or DEFAULT_POI_REQUESTS
+
+    def retry_view(self, record) -> FacilityRetryView:
+        """一次重试的状态。
+
+        它**不**报"发布了第几版"：那一版是任务自己的最新修订，客户端照常读任务即可
+        （重试结束 → 任务出现新修订）。在这里再存一份修订号，只会多出一份可能与任务
+        不一致的副本。
+        """
+        return FacilityRetryView(
+            retry_id=record.extension_id, task_id=record.task_id,
+            base_revision=record.base_revision, client_request_id=record.client_request_id,
+            status=record.status, stage=record.stage,
+            budget={"limit": record.budget, "spent": record.requests,
+                    "remaining": max(0, record.budget - record.requests)},
+            requests=record.requests, network_requests=record.network_requests,
+            facilities_status=record.facilities_status, stop_reason=record.stop_reason,
+            initial_plan=record.initial_plan, error=record.error,
+            created_at=record.created_at, finished_at=record.finished_at)
+
+    def retries(self, task_id: str) -> list[FacilityRetryView]:
+        self.get(task_id)
+        return [self.retry_view(record) for record in self.store.extensions_of(task_id)
+                if record.kind == "retry"]
+
+    def retry(self, task_id: str, retry_id: str) -> FacilityRetryView:
+        return self.retry_view(self._retry_of(task_id, retry_id))
+
+    def _retry_of(self, task_id: str, retry_id: str):
+        record = self._extension_of(task_id, retry_id)
+        if record.kind != "retry":
+            raise CheckupError(404, "checkup_retry_not_found", "该标识不是一次重试")
+        return record
+
+    def cancel_retry(self, task_id: str, retry_id: str) -> FacilityRetryView:
+        record = self._retry_of(task_id, retry_id)
+        if record.status not in ("queued", "running"):
+            return self.retry_view(record)
+        if record.status == "queued":
+            self.store.update_extension(retry_id, status="cancelled", finished_at=time.time())
+        else:
+            token = self.extension_tokens.get(retry_id)
+            if token is not None:
+                token.cancel()
+        return self.retry_view(self.store.extension(retry_id))
+
+    async def _finish_retry(self, record, outcome: FacilityOutcome, token: CancelToken,
+                            budget) -> None:
+        """把这一轮的新证据发布成**这次体检自己的新修订**。
+
+        圈面与类别都取自被冻结的那一版，所以重试不会移动评估范围，也不会换掉问题；
+        变的是设施证据本身 —— 这正是"这次查完了没有"的答案所在。评分由同一套
+        ``assess_accessibility`` 重算，权重一个字没改：差异只能来自证据。
+        """
+        task_id = record.task_id
+        if outcome.group is None:
+            self.store.finish_extension(record.extension_id, status="failed", document_path=None,
+                                        error="no_facilities_retrieved",
+                                        requests=outcome.requests,
+                                        network_requests=outcome.network_requests)
+            return
+        previous, _ = self.snapshot(task_id)
+        stored = self.store.revision(task_id, record.base_revision)
+        isochrone = (stored or {}).get("snapshot", {}).get("isochrone") or {}
+        frozen = IsochroneSnapshot(**isochrone)
+        payload = CheckupRequest(**self.store.get(task_id).payload)
+        resolved = await self._resolve_offline()
+        overrides = ([] if previous.verification is None
+                     else list(previous.verification.local_overrides))
+        assessment = await asyncio.to_thread(
+            assess_accessibility, geometry=frozen.geometry,
+            unknown_region=frozen.unknown_region, facilities=_service_sources(outcome.group),
+            query_status=outcome.status, majors=tuple(payload.facilities.categories),
+            store=None if resolved is None else resolved.store,
+            coverage=None if resolved is None else resolved.coverage,
+            version=self.settings.osm_data_version, settings=self.settings,
+            verified=overrides or None, incomplete=_incomplete(outcome.group))
+        # 核验路线是上一轮真实问过路的证据，沿用它、并只重读它依赖的入口层：重试不是
+        # "重新核验"，一条都不该重发（发了就要另算额度，而这次重试只有 POI 预算）。
+        verification = (None if previous.verification is None
+                        else carried_over(previous.verification,
+                                          entrances=assessment.entrances,
+                                          revision=previous.revision))
+        retried = {"fromRevision": previous.revision,
+                   "networkRequests": outcome.network_requests,
+                   "processedPages": outcome.requests,
+                   "coverageTarget": (outcome.group.query_area_coverage or {}).get("target"),
+                   "areaCoverage": outcome.group.query_area_coverage,
+                   "carriedOver": ["isochrone", "verificationRoutes"]}
+        if verification is not None:
+            self._freeze_verification(task_id, payload, frozen, budget, outcome, assessment,
+                                      verification, retried=retried)
+        business = self._publish_reporting(task_id, payload, frozen, budget, outcome, assessment,
+                                           verification, retried=retried)
+        self.store.update(task_id, stage="ready", business_status=business)
+        self.store.finish_extension(
+            record.extension_id, status=_extension_status(outcome, token), document_path=None,
+            counts_by_category=outcome.group.counts_by_category,
+            facilities_status=outcome.group.query_status, requests=outcome.requests,
+            network_requests=outcome.network_requests,
+            stop_reason=outcome.group.stop_reason, initial_plan=outcome.group.initial_plan)
+
+    async def _serve_extensions(self) -> None:
+        # Same reason as ``_serve``: the flag has to be able to end this loop, because
+        # a cancelled run swallows the cancellation and returns its partial evidence.
+        while not self.closing:
+            extension_id = await self.extension_queue.get()
+            try:
+                if not self.closing:
+                    await self._run_extension(extension_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # 补查必须走到终态，哪怕编排本身出错；原因被记下，原始异常不外泄。
+                self.store.finish_extension(extension_id, status="failed", document_path=None,
+                                            error="orchestration_failed")
+            finally:
+                self.extension_queue.task_done()
+
+    async def _run_extension(self, extension_id: str) -> None:
+        if not self.store.claim_extension(extension_id):
+            return
+        record = self.store.extension(extension_id)
+        parent = CheckupRequest(**self.store.get(record.task_id).payload)
+        stored = self.store.revision(record.task_id, record.base_revision)
+        if stored is None:
+            self.store.finish_extension(extension_id, status="failed", document_path=None,
+                                        error="boundary_missing")
+            return
+        isochrone = stored["snapshot"].get("isochrone") or {}
+        # 只借用圈面的几何与质量：设施检索读到的就是这两样，别的都不该由补查决定。
+        snapshot = SimpleNamespace(geometry=isochrone.get("geometry"),
+                                   quality=isochrone.get("quality"))
+        payload = parent.model_copy(update={
+            "facilities": CheckupFacilities(categories=tuple(record.categories),
+                                            max_poi_requests=record.budget,
+                                            max_route_requests=1)})
+        # 只有 POI 这一个池会被用到：补查不成圈，也不请求步行路线。
+        budget = self.quota.task_budget(isochrone=0, poi=record.budget, route=0, detail=0)
+        token = CancelToken()
+        self.extension_tokens[extension_id] = token
+        # 缓存用原任务的标识：核心三类已经取过的页面在这里算"同任务命中"，不再付费。
+        context = EngineContext(task_id=record.task_id, token=token,
+                                deadline=time.monotonic() + DEADLINE_SECONDS,
+                                artifact_dir=self.store.artifact_dir(record.task_id))
+        try:
+            outcome = await collect_facilities(
+                payload, snapshot, settings=self.settings, context=context, quota=self.quota,
+                budget=budget, cache=self.cache, places_factory=self.place_factory,
+                progress=lambda sent, limit: self.store.update_extension(
+                    extension_id, network_requests=sent))
+        finally:
+            self.extension_tokens.pop(extension_id, None)
+        if record.kind == "retry":
+            # 重试与补查的分岔点就在这一行：补查写一份结果文档了事，重试要为这次体检
+            # 发布新修订（见 ``_finish_retry``）。
+            await self._finish_retry(record, outcome, token, budget)
+            return
+        document = FacilityExtensionDocument(
+            extension_id=extension_id, task_id=record.task_id, base_revision=record.base_revision,
+            categories=list(record.categories), status=_extension_status(outcome, token),
+            facilities_status=(outcome.group.query_status if outcome.group is not None else None),
+            group=outcome.group, requests=outcome.requests,
+            network_requests=outcome.network_requests, budget=budget.state().get("poi", {}),
+            issues=outcome.issues, notes=list(EXTENSION_NOTES))
+        path = self.store.publish_extension_document(extension_id, record.task_id,
+                                                     document.model_dump(mode="json", by_alias=True))
+        self.store.finish_extension(
+            extension_id, status=document.status, document_path=path,
+            counts_by_category=(outcome.group.counts_by_category
+                                if outcome.group is not None else {}),
+            facilities_status=document.facilities_status, requests=outcome.requests,
+            network_requests=outcome.network_requests,
+            stop_reason=(None if outcome.group is None else outcome.group.stop_reason),
+            initial_plan=(None if outcome.group is None else outcome.group.initial_plan),
+            error=None if outcome.group is not None else "no_facilities_retrieved")
+
     async def close(self) -> None:
         self.closing = True
+        if self.maintenance is not None and not self.maintenance.done():
+            self.maintenance.cancel()
+            await asyncio.gather(self.maintenance, return_exceptions=True)
         for token in list(self.tokens.values()):
+            token.cancel()
+        for token in list(self.extension_tokens.values()):
             token.cancel()
         if self.worker is not None and not self.worker.done():
             self.worker.cancel()
             await asyncio.gather(self.worker, return_exceptions=True)
+        if self.extension_worker is not None and not self.extension_worker.done():
+            self.extension_worker.cancel()
+            await asyncio.gather(self.extension_worker, return_exceptions=True)
+
+
+def _extension_status(outcome: FacilityOutcome, token: CancelToken) -> str:
+    """检索器的 ``queryStatus`` → 补查自己的状态。被取消的补查仍然是"取消"。"""
+    if token.cancelled:
+        return "cancelled"
+    return {"complete": "completed", "partial": "partial", "cancelled": "cancelled"}.get(
+        outcome.status, "failed")

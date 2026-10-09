@@ -10,6 +10,10 @@ from app.algorithms.hybrid_isochrone.models import Evidence, Validity
 from unittest.mock import patch
 
 settings = Settings(_env_file=None, baidu_map_ak="", analysis_provider="synthetic",
+    # This harness is offline by construction, so it must not initialise -- let alone
+    # spend -- the deployment's own ledger and checkup store.
+    checkup_dir=Path("../.tmp/integration-app/checkups").resolve(),
+    quota_ledger_path=Path("../.tmp/integration-app/quota.sqlite3").resolve(),
     cors_origins=["http://127.0.0.1:5178"])
 # main creates its default app at import time; offline tests must not load credentials.
 with patch("app.config.load_settings", return_value=settings):

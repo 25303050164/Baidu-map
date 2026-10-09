@@ -1,11 +1,15 @@
 /**
- * 能力表测两件事：**读不出来的时候有没有说实话**，以及**不因为路网没配好就把引擎藏起来**。
+ * 能力表测三件事：**读不出来的时候有没有说实话**、**不因为路网没配好就把引擎藏起来**，
+ * 以及**检索计划与缓存的口径**。
  *
- * 后者是这个文件里最要紧的一条：要不要拒绝某个引擎是后端的判断（§4.1 不支持即 422），
+ * 第二条是这个文件里最要紧的一条：要不要拒绝某个引擎是后端的判断（§4.1 不支持即 422），
  * 浏览器替它决定一次，就等于把"这个部署支持什么"写死在了一份前端构建里。
+ *
+ * 第三条盯的是两本不能混的账：本地处理上限（步数，缓存重放也算）与网络额度（只有真的
+ * 发出去的调用才算）。旧后端没报的字段一律省略，不写 0 也不写"(未配置)"。
  */
 import { describe, expect, it } from 'vitest';
-import { budgetFor, capabilityView, quotaSummary } from './capabilities';
+import { budgetFor, capabilityView, hybridTimeEstimate, planningLines, quotaSummary } from './capabilities';
 import { validCapabilities } from './validate';
 import { capabilities, engine } from './fixtures';
 
@@ -95,5 +99,74 @@ describe('quota line', () => {
       services: { place: { qps: 8, dailyBudget: null, remainingToday: null } } } }));
     expect(summary.lines).toContain('设施检索不设每日额度，仅按速率限制');
     expect(summary.lines.some(line => line.includes('0 /'))).toBe(false);
+  });
+});
+
+describe('planning and cache diagnostics', () => {
+  it('reports the local processing ceiling as the step count the backend gave', () => {
+    // 本地处理上限不是网络额度：缓存重放的页面也算步数，但不花额度。
+    const view = capabilityView(capabilities());
+    expect(view.planningLines).toContain('本地处理步数上限：4096 步');
+    expect(view.planningLines).toContain('网络额度与本地处理上限分开计算');
+    expect(view.planningLines).toContain('首轮计划是执行前的估算，不是额度预留');
+  });
+
+  it('says nothing about the planning fields an older backend does not report', () => {
+    // 缺项不是 0，也不是"未配置"：那是替后端报了一个它没报的数。
+    const lines = planningLines(capabilities({ poiPlanning: undefined }));
+    expect(lines.some(line => line.includes('本地处理'))).toBe(false);
+    expect(lines.some(line => line.includes('未配置'))).toBe(false);
+    expect(lines.some(line => line.includes('0 步'))).toBe(false);
+  });
+
+  it('only says the two ceilings are separate when the backend says so', () => {
+    const split = planningLines(capabilities({ poiPlanning: { processingStepLimit: 64 } }));
+    expect(split).toContain('本地处理步数上限：64 步');
+    expect(split).not.toContain('网络额度与本地处理上限分开计算');
+    // 形状不对的步数（0、小数、字符串）不翻译成一句话，也不退化成 0 步。
+    for (const bad of [0, 1.5, '4096']) {
+      const lines = planningLines(capabilities({ poiPlanning: { processingStepLimit: bad } }));
+      expect(lines.some(line => line.includes('本地处理'))).toBe(false);
+    }
+    // 报的是"不预留"才说估算：没报这一项时不替它下结论。
+    expect(planningLines(capabilities({ poiPlanning: { initialPlanIsReservation: true } })))
+      .not.toContain('首轮计划是执行前的估算，不是额度预留');
+  });
+
+  it('explains where the page cache lives and whether it is reused across tasks', () => {
+    const view = capabilityView(capabilities());
+    expect(view.planningLines).toContain('页面缓存为进程内存，重启即失效');
+    expect(view.planningLines).toContain('未启用跨任务复用');
+    // 旧后端没有 cache 字段：两种说法都不出现，而不是默认成"进程内存，重启即失效"。
+    const older = planningLines(capabilities({ cache: undefined }));
+    expect(older.some(line => line.includes('缓存'))).toBe(false);
+    expect(older.some(line => line.includes('跨任务'))).toBe(false);
+  });
+});
+
+describe('hybrid runtime guide', () => {
+  it('only returns a budget guide after the OSM graph is ready', () => {
+    expect(hybridTimeEstimate(400, 'loading')).toBeNull();
+    expect(hybridTimeEstimate(400, null)).toBeNull();
+    expect(hybridTimeEstimate(200, 'ready')).toBe('2–4 分钟');
+    expect(hybridTimeEstimate(400, 'ready')).toBe('3–7 分钟');
+  });
+});
+
+describe('facility catalog on the capability view', () => {
+  it('translates the backend taxonomy once, for the selector to read', () => {
+    // 类别选择器不自己解析能力表：它读的是这一层翻译出来的目录，所以这里必须转出来。
+    const view = capabilityView(capabilities());
+    expect(view.facilityCatalog).not.toBeNull();
+    expect(view.facilityCatalog!.coreMajors).toEqual(['shopping', 'medical', 'education']);
+    expect(view.facilityCatalog!.majors).toHaveLength(10);
+    expect(view.facilityCatalog!.groups).toHaveLength(5);
+    expect(view.facilityCatalog!.blocksUpperBound).toBe(4);
+  });
+
+  it('says the backend offers no selector instead of showing an empty one', () => {
+    // 旧后端：给一个空目录会被读成"没有类别可选"，那是一个关于设施的结论。
+    const view = capabilityView(capabilities({ facilityCategories: undefined }));
+    expect(view.facilityCatalog).toBeNull();
   });
 });

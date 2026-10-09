@@ -17,6 +17,7 @@ import type { CheckupLayer } from './contract';
 import { readLayerGeometry, type LayerId } from './validate';
 import type { DrawableGeometry } from '../analysis/geometry';
 import type { ServiceSample, ServiceStatus } from '../map/layers/serviceField';
+import { categoryLabel } from './report';
 
 export type LayerStyle = {
   label: string;
@@ -49,7 +50,11 @@ export const LAYER_STYLES: Record<LayerId, LayerStyle> = {
 
 /** 点色：设施与热力按大类，核验按结论。缺的属性给中性灰，不猜。 */
 export const POINT_COLORS: Record<string, string> = {
-  shopping: '#12b886', medical: '#7b5cff', education: '#ff9f1a',
+  // 十个大类各有自己的点色。颜色是图上唯一能把类别分开的东西，让扩展类别落到中性灰，
+  // 等于画了一张"看不出多了哪一类"的图 —— 而扩展类别恰恰是用户新加的那一部分。
+  medical: '#7b5cff', shopping: '#12b886', education: '#ff9f1a',
+  care: '#e64980', dining: '#f76b15', finance: '#0ea5e9',
+  public: '#8b5cf6', leisure: '#84cc16', transport: '#14b8a6', life: '#a16207',
   covered: '#3366ff', gap: '#ff8a00', unknown: '#8a94a6',
   verified_reachable: '#3366ff', verified_unreachable: '#ff8a00', pending: '#8a94a6',
 };
@@ -88,11 +93,17 @@ function pointView(layerId: LayerId, index: number, feature: Record<string, unkn
     return null;
   };
   const classification = pick('poiStatus', 'majorCategory', 'status');
+  // 设施点的 majorCategory 是机器键（例如 finance/public），标题给读者看中文标签，
+  // 但颜色仍按原始键取，避免把状态值（covered、verified_reachable）误当分类翻译。
+  const classificationLabel = classification !== null && properties.majorCategory === classification
+    ? categoryLabel(classification)
+    : classification;
   const name = pick('name', 'facilityId', 'cell');
   const detail = pick('category', 'distanceM');
+  const detailLabel = detail !== null && properties.category === detail ? categoryLabel(detail) : detail;
   const distance = properties.distanceM;
-  const title = [name ?? `第 ${index + 1} 个点`, classification ?? '未分类',
-    typeof distance === 'number' ? `${distance.toFixed(0)} 米` : detail].filter(Boolean).join(' · ');
+  const title = [name ?? `第 ${index + 1} 个点`, classificationLabel ?? '未分类',
+    typeof distance === 'number' ? `${distance.toFixed(0)} 米` : detailLabel].filter(Boolean).join(' · ');
   return {
     key: layerId === 'heatmap' ? `${layerId}:${properties.category}:${properties.cell ?? index}`
       : String(properties.id ?? properties.facilityId ?? `${layerId}-${index}`),

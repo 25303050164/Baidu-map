@@ -132,3 +132,17 @@ def test_all_three_supported_degenerate_interval_equals_the_point_score():
     assert isinstance(overall, OverallScore)
     assert math.isclose(overall.coverage_lower_pct, overall.coverage_upper_pct)
     assert math.isclose(overall.coverage_lower_pct, (60 + 90 + 30) / 3)
+
+
+def test_explicit_analysis_scope_controls_the_denominator():
+    scores = {
+        "shopping": score("shopping", covered=60, gap=40, unknown=0),
+        "medical": score("medical", covered=90, gap=10, unknown=0),
+        "care": score("care", covered=20, gap=80, unknown=0),
+        "transport": score("transport", covered=10, gap=90, unknown=0),
+    }
+    overall = overall_score(scores, expected_categories=("shopping", "medical", "care", "transport"))
+    assert isinstance(overall, OverallScore)
+    assert overall.categories == ("shopping", "medical", "care", "transport")
+    assert overall.weights == {category: pytest.approx(0.25) for category in overall.categories}
+    assert overall.coverage_lower_pct == pytest.approx(45.0)

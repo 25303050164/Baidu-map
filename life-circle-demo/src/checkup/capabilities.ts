@@ -10,6 +10,7 @@
  * 让用户自己决定，而不是替他悄悄降级。
  */
 import type { Capabilities, EngineOption } from './validate';
+import { facilityCatalogView, type FacilityCatalogView } from './categories';
 import { waterReviewRefs, type WaterReviewRef } from './water';
 
 type RecordValue = Record<string, unknown>;
@@ -18,6 +19,9 @@ const object = (value: unknown): value is RecordValue =>
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 const number = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
+/** 步数上限是整数且至少 1；缺失或形状不对时不说 —— 0 步是一个关于后端的结论。 */
+const stepCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 1;
 
 export type QuotaSummary = {
   /** 后端给的说法，逐字显示。缺了就说明缺了，不另起一个名字。 */
@@ -44,8 +48,21 @@ export type CapabilityView = {
   defaultEngine: string | null;
   defaultBudget: number | null;
   quota: QuotaSummary;
+  /**
+   * 检索计划与缓存的口径：本地处理上限、它与网络额度分不分家、缓存活在哪、首轮计划是不是
+   * 额度预留。每条只在后端明确报了它时才出现；旧后端缺的项直接省略，不写 0 也不写
+   * "(未配置)"——"没报"不是"没有"。
+   */
+  planningLines: string[];
+  /** 当前 OSM 图状态；缺失表示旧版后端没有提供运行时状态。 */
+  graphState: 'unloaded' | 'loading' | 'ready' | 'unavailable' | null;
   /** 当前部署采用的水系复核（用来认出早于复核的旧版本）；旧后端不给时为空。 */
   waterReviews: WaterReviewRef[];
+  /**
+   * 设施类别目录：类别选择器与预算算术的来源。旧后端不给这一项时为 null，界面据此
+   * 说"这一版不提供类别选择"，而不是显示一份空的类别清单。
+   */
+  facilityCatalog: FacilityCatalogView | null;
 };
 
 function nested(source: RecordValue, ...path: string[]): unknown {
@@ -77,6 +94,32 @@ export function quotaSummary(value: Capabilities): QuotaSummary {
   return { label, lines };
 }
 
+/**
+ * 检索计划与缓存的口径：把 `poiPlanning` 与 `cache` 读成工作台能显示的几行诊断。
+ *
+ * 两件事分得很清楚，因为它们的失败方式不同：**本地处理上限**（步数）与**网络额度**是两本
+ * 账，缓存命中的页面只走前者；**首轮计划是执行前的估算，不是额度预留**，所以它不保证翻页
+ * 与细分能在其中跑完。每条只在后端明确报了这一项时才出现。
+ */
+export function planningLines(value: Capabilities): string[] {
+  const lines: string[] = [];
+  const planning = object(value.poiPlanning) ? value.poiPlanning : null;
+  const steps = planning === null ? undefined : planning.processingStepLimit;
+  if (stepCount(steps)) lines.push(`本地处理步数上限：${steps} 步`);
+  if (planning !== null && planning.networkBudgetIsSeparate === true) {
+    lines.push('网络额度与本地处理上限分开计算');
+  }
+  if (planning !== null && planning.initialPlanIsReservation === false) {
+    lines.push('首轮计划是执行前的估算，不是额度预留');
+  }
+  const cache = object(value.cache) ? value.cache : null;
+  if (cache !== null && cache.processLocal === true) {
+    lines.push('页面缓存为进程内存，重启即失效');
+  }
+  if (cache !== null && cache.crossTaskReuse === false) lines.push('未启用跨任务复用');
+  return lines;
+}
+
 function engineView(engine: EngineOption, graphConfigured: boolean | null): EngineView {
   const notes = engine.notes.filter(text);
   const graphMissing = engine.requiresOsmGraph && graphConfigured === false;
@@ -90,6 +133,9 @@ function engineView(engine: EngineOption, graphConfigured: boolean | null): Engi
 export function capabilityView(value: Capabilities): CapabilityView {
   const graph = nested(value.coverage, 'graphConfigured');
   const graphConfigured = typeof graph === 'boolean' ? graph : null;
+  const graphStateValue = nested(value.coverage, 'graphState');
+  const graphState = graphStateValue === 'unloaded' || graphStateValue === 'loading'
+    || graphStateValue === 'ready' || graphStateValue === 'unavailable' ? graphStateValue : null;
   const engines = value.engines.map(engine => engineView(engine, graphConfigured));
   const first = engines[0] ?? null;
   return {
@@ -98,8 +144,20 @@ export function capabilityView(value: Capabilities): CapabilityView {
     // 默认预算由后端指定，且必须在这一档里：校验层已经查过，这里不再兜底。
     defaultBudget: first?.defaultBudget ?? null,
     quota: quotaSummary(value),
+    planningLines: planningLines(value),
+    graphState,
     waterReviews: waterReviewRefs(value.waterReviews),
+    facilityCatalog: facilityCatalogView(value),
   };
+}
+
+/** Hybrid-only historical guide; it is hidden until the local graph is ready. */
+export function hybridTimeEstimate(budget: number | null, graphState: CapabilityView['graphState']): string | null {
+  if (budget === null || graphState !== 'ready') return null;
+  const scale = budget / 400;
+  const minimum = Math.max(1, Math.round((191.2 * scale) / 60));
+  const maximum = Math.max(minimum, Math.ceil((367.1 * scale) / 60));
+  return `${minimum}–${maximum} 分钟`;
 }
 
 /** 换引擎就要换预算：档位是引擎自己的，沿用上一个引擎的档会撞 422。 */

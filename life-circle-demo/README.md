@@ -2,6 +2,8 @@
 
 基于需求分析与技术方案实现的可交互前端演示。使用 React、TypeScript、Vite、Ant Design、CSS Modules、ECharts；状态由 Context + useReducer 管理。
 
+前端开发和构建需要 Node.js `^20.19.0 || >=22.12.0`，与锁定的 Vite 8 版本要求一致。
+
 非 demo 模式只有体检 v2 工作台，顶部可切换 **算法**（「百度边界搜索（E8.2）」/「OSM＋百度」）。
 选择写在地址 hash 里（`#/checkup/e82`、`#/checkup/hybrid`），刷新与前进后退都回到同一处。
 工作台走 `/api/v2/checkups`（引擎 `baidu_e82` / `osm_hybrid`），服务覆盖热力与设施密度热力都在这里看；
@@ -65,7 +67,7 @@ npm run dev
 ```powershell
 npm test
 npm run build
-npm run test:analysis-ui # 前端 HTTP 契约/地图替身回归，无需 Python 或真实 AK
+npm run test:checkup-ui # v2 体检工作台界面回归，无需 Python 或真实 AK
 npm run test:integration  # 真实 FastAPI + 合成 Provider + 模拟 SDK，禁止外部网络
 npm run test:e2e          # 原演示入口回归
 ```

@@ -52,10 +52,12 @@
 .wb-engine-name{font-size:12px;color:var(--ink-2);line-height:1.6}
 .wb-engine .wb-field{display:grid;gap:5px;font-size:12px;color:var(--ink-2)}
 .wb-engine .wb-field .ant-select{width:100%}
-.wb-estimate{font-size:13px;font-weight:600;color:var(--ink)}
 .wb-engine .wb-hint{margin:0}
 .wb-quota{margin-top:4px;padding-top:10px;border-top:1px solid var(--rule);font-size:11.5px;line-height:1.6;color:var(--ink-3)}
 .wb-quota p+p{margin-top:3px}
+/* 检索计划与缓存的口径跟在余额下面：同一种字号，但不重复那条分隔线。 */
+.wb-planning{margin-top:2px;font-size:11.5px;line-height:1.6;color:var(--ink-3)}
+.wb-planning p+p{margin-top:3px}
 
 /* 主操作固定在左侧面板底部。 */
 .wb-setup{display:grid;gap:10px;padding-bottom:12px}
@@ -334,3 +336,21 @@
 /* 设施密度图例：色带带着与地图相同的不透明度，竖线标出单个设施中心的读数。 */
 .density-ramp{position:relative;display:inline-block;width:96px;height:10px;flex:none;border-radius:2px;box-shadow:inset 0 0 0 1px #d5dae3}
 .density-ramp i{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:#1f2329}
+
+/* 设施类别选择器：核心三类决定总体覆盖率，扩展类别走按需补查。 */
+.wb-scope{display:grid;gap:8px;margin-top:4px;padding-top:10px;border-top:1px solid var(--rule)}
+.wb-scope fieldset{display:grid;gap:4px;margin:0;padding:6px 8px;border:1px solid var(--rule);border-radius:10px}
+.wb-scope legend{padding:0 4px;font-size:11.5px;color:var(--ink-3)}
+.wb-scope .ant-checkbox-wrapper{margin-inline-start:0;font-size:12px;line-height:1.7}
+.wb-scope .wb-hint{margin:0}
+
+/* 扩展补查：一条补查一行，状态与计数都写在行上。 */
+.wb-extension{display:grid;gap:8px}
+.wb-extension .wb-hint{margin:0}
+.wb-extension-list{display:grid;gap:6px;margin:0;padding:0;list-style:none;font-size:12px;color:var(--ink-2)}
+.wb-extension-list li{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:5px 8px;
+  border:1px solid var(--rule);border-radius:8px}
+.wb-extension-list li[data-status="failed"],.wb-extension-list li[data-status="cancelled"]{color:var(--ink-3)}
+.wb-extension-counts{color:var(--ink-3)}
+/* 诊断行各占一行：它们是几个不同的数，挤在一行里会被读成一个数。 */
+.wb-extension-facts{flex-basis:100%;margin:0;color:var(--ink-3)}

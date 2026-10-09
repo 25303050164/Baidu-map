@@ -94,8 +94,10 @@ def graph_from_frames(nodes, edges, settings, *, simplify=True):
 
 def prepare_graph(settings, *, source, downloaded_at, simplify=True):
     started = time.perf_counter()
-    if not settings.osm_pbf_path.is_file():
+    if settings.osm_pbf_path is None or not settings.osm_pbf_path.is_file():
         raise OsmDataError("pbf_file_missing")
+    if settings.osm_graph_cache_path is None:
+        raise OsmDataError("graph_cache_path_required")
     if settings.osm_data_version == "unconfigured":
         raise OsmDataError("osm_data_version_required")
     try:

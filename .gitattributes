@@ -1,0 +1,7 @@
+# .command / .sh 是由 shebang 直接执行的脚本：必须保持 LF，
+# 否则会变成 "#!/usr/bin/env bash\r"，内核找不到解释器而无法启动。
+*.command text eol=lf
+*.sh text eol=lf
+
+# Windows 批处理必须保持 CRLF。
+*.bat text eol=crlf

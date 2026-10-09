@@ -15,6 +15,8 @@
 * **报告 ID 可追溯。** 它由任务 ID 与修订号组成，因此任何一份报告文件都能直接对回磁盘上
   的那一版修订，不需要额外的索引。
 """
+from .. import catalog
+from ..scoring import DEFAULT_SCORING_CATEGORIES
 from .models import (RULE_VERSION, SCHEMA_VERSION, CoverageRow, ReportEvidence, ReportGaps,
                      ReportQuality, ReportVerification)
 
@@ -99,6 +101,32 @@ def _quality_notes(accessibility: dict | None, gaps: dict | None, heatmap: dict 
     )
 
 
+def _scope_limitations(scores: dict | None) -> tuple[str, ...]:
+    """总体分的口径必须写在报告里，不能只存在于一个没人渲染的字段里。
+
+    总体分固定按核心分析范围（三大类各 1/3）加权，所以有两种情况必须说清楚：
+    报告列出了核心范围之外的类别时，读者要知道那个总分没有把它们算进去；这一次
+    根本给不出总体分时，读者要知道缺的是哪几类，而不是把各类别区间自己脑补成一个总分。
+    """
+    overall = (scores or {}).get("overall")
+    if not overall:
+        return ()
+    core = tuple(DEFAULT_SCORING_CATEGORIES)
+    rows = (scores or {}).get("categories") or []
+    if overall.get("available"):
+        if not any(row.get("category") not in core for row in rows):
+            return ()
+        names = "、".join(catalog.major_label(category) for category in core)
+        return (f"总体区间分只覆盖核心分析范围（{names}，各占 1/{len(core)}）："
+                f"报告里列出的其他类别各自单独给出，不进入总体分。",)
+    if overall.get("reason") == "categories_not_analysed":
+        missing = "、".join(catalog.major_label(category)
+                           for category in (overall.get("missingCategories") or []))
+        return (f"本次没有给出总体区间分：{missing or '核心分析范围'}未参与评估。"
+                f"总体分不能由已分析的类别重新加权得到，这里只列各类别自己的区间。",)
+    return ()
+
+
 def build_report(*, task_id: str, revision: int, source_result_hash: str, generated_at: float,
                  domain, domain_area_m2, accessibility, service_gaps, heatmap, scores,
                  facilities, verification=None, water=None) -> ReportEvidence:
@@ -119,7 +147,7 @@ def build_report(*, task_id: str, revision: int, source_result_hash: str, genera
         evidence=_quality_notes(accessibility, service_gaps, heatmap, facilities,
                                 source_result_hash),
         data_sources=_data_sources(water),
-        limitations=list(LIMITATIONS))
+        limitations=list(LIMITATIONS) + list(_scope_limitations(scores)))
 
 
 #: 报告数据来源栏从每份复核里带出的字段：足以复核，不含几何。

@@ -105,6 +105,13 @@ CATEGORIES: tuple[Category, ...] = tuple(
         capabilities=tuple(item.get("capabilities", ())),
     ) for item in DATA["categories"])
 
+# The catalogue contains the full supported taxonomy. Keep the default analysis
+# scope separate so adding a category does not silently multiply every request.
+DEFAULT_ANALYSIS_MAJORS: tuple[str, ...] = ("shopping", "medical", "education")
+_CATALOG_MAJORS = {category.major for category in CATEGORIES}
+if not set(DEFAULT_ANALYSIS_MAJORS).issubset(_CATALOG_MAJORS):
+    raise RuntimeError("DEFAULT_ANALYSIS_MAJORS contains an unknown catalogue major")
+
 BY_KEY: dict[str, Category] = {category.key: category for category in CATEGORIES}
 # The POI runtime's own spelling for a category, where it differs.
 ALIASES: dict[str, str] = {c.key: c.poi_name for c in CATEGORIES if c.poi_name}
@@ -129,6 +136,11 @@ def queries(key: str) -> tuple[str, ...]:
 def majors() -> tuple[str, ...]:
     """Major categories in the order their first minor category appears."""
     return tuple(dict.fromkeys(category.major for category in CATEGORIES))
+
+
+def default_analysis_majors() -> tuple[str, ...]:
+    """Stable default scope for analysis and checkup requests."""
+    return DEFAULT_ANALYSIS_MAJORS
 
 
 def major_label(major: str) -> str:
@@ -191,6 +203,30 @@ def catalog_payload() -> dict:
             }
             for category in CATEGORIES
         ],
+    }
+
+
+def facility_categories() -> dict:
+    """设施目录的 v2 视图：五个展示组、十个大类，以及每个大类展开成几个检索小类。
+
+    小类数是一次设施检索的算术分子（首轮下界 = 查询分块数 × 检索小类数），界面必须
+    能在提交前算出选中的类别够不够预算，而不是提交后拿到一个预算不足的失败任务。
+    核心三类是总体分的口径，所以它由后端点名，不由界面自己写死三个名字。
+    """
+    core = default_analysis_majors()
+    return {
+        "version": VERSION,
+        "coreMajors": list(core),
+        "displayGroups": [
+            {"key": group.key, "label": group.label, "order": group.order,
+             "majors": list(group.majors)}
+            for group in sorted(DISPLAY_GROUPS, key=lambda item: item.order)],
+        "majors": [
+            {"key": major, "label": major_label(major),
+             "displayGroup": display_group_for_major(major),
+             "core": major in core,
+             "minorCategories": len(poi_keys((major,)))}
+            for major in majors()],
     }
 
 

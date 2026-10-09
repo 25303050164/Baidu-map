@@ -5,7 +5,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHECKUP_STORAGE_PREFIX, checkupSession, readStored, resetCheckupSessions } from './sessions';
 import type { CheckupService } from './client';
-import { CENTER, capabilities, layer, route, snapshot, task } from './fixtures';
+import { CENTER, capabilities, extensionDocument, extensionView, layer, retainedView, retryView, route, sessionView, snapshot,
+  task } from './fixtures';
 
 class MemoryStorage {
   data = new Map<string, string>();
@@ -27,6 +28,19 @@ function service(): CheckupService {
     layer: vi.fn(async (_task: string, id: string, revision: number) => layer({ layerId: id, revision })),
     cancel: vi.fn(async () => task({ status: 'cancelled' })),
     route: vi.fn(async () => route()),
+    extensionCreate: vi.fn(async () => extensionView()),
+    extensionStatus: vi.fn(async () => extensionView()),
+    extensionList: vi.fn(async () => [extensionView()]),
+    extensionResult: vi.fn(async () => extensionDocument()),
+    extensionCancel: vi.fn(async () => extensionView({ status: 'cancelled' })),
+    retryCreate: vi.fn(async () => retryView()),
+    retryStatus: vi.fn(async () => retryView()),
+    retryList: vi.fn(async () => []),
+    retryCancel: vi.fn(async () => retryView({ status: 'cancelled' })),
+    sessionOpen: vi.fn(async () => sessionView()),
+    sessionHeartbeat: vi.fn(async () => sessionView({ resumed: true })),
+    sessionClose: vi.fn(async () => sessionView({ openTabs: 0 })),
+    retainedResult: vi.fn(async () => retainedView()),
   };
 }
 

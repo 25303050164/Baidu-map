@@ -6,10 +6,10 @@
  * 通过，把它们全删掉测试照样绿。
  */
 import { describe, expect, it } from 'vitest';
-import { areaTolerance, readLayerGeometry, validCapabilities, validFacilityRoute, validLayer, validSnapshot,
-  validTaskView } from './validate';
-import { AREA, SERVER_TIME, STARTED_AT, capabilities, collection, feature, layer, point, report, route,
-  snapshot, task, water, waterReview, zone } from './fixtures';
+import { areaTolerance, readLayerGeometry, validCapabilities, validFacilityRetryView,
+  validFacilityRoute, validLayer, validSnapshot, validTaskView } from './validate';
+import { AREA, SERVER_TIME, STARTED_AT, capabilities, collection, feature, layer, point, report,
+  retryView, route, snapshot, task, water, waterReview, zone } from './fixtures';
 
 describe('task view', () => {
   it('accepts the fixture and a queued task with no stage yet', () => {
@@ -236,5 +236,29 @@ describe('water evidence', () => {
   it('refuses capabilities whose water review list is not a list', () => {
     expect(validCapabilities(capabilities())).toBe(true);
     expect(validCapabilities({ ...capabilities(), waterReviews: {} })).toBe(false);
+  });
+});
+
+describe('retry view', () => {
+  it('accepts the fixture, including a queued round with no stage yet', () => {
+    expect(validFacilityRetryView(retryView())).toBe(true);
+    expect(validFacilityRetryView(retryView({ status: 'queued', stage: null, finishedAt: null }))).toBe(true);
+  });
+
+  it('refuses a round that points at something other than a revision of this checkup', () => {
+    // baseRevision 是"从哪一版接下来的"：0 或缺失都让它不再是同一次体检的下一轮。
+    expect(validFacilityRetryView(retryView({ baseRevision: 0 }))).toBe(false);
+    expect(validFacilityRetryView(retryView({ retryId: '' }))).toBe(false);
+    expect(validFacilityRetryView(retryView({ stage: 'reporting' as never }))).toBe(false);
+  });
+
+  it('refuses a failed round that will not say why', () => {
+    expect(validFacilityRetryView(retryView({ status: 'failed', error: null }))).toBe(false);
+    expect(validFacilityRetryView(retryView({ status: 'failed', error: 'no_facilities_retrieved' }))).toBe(true);
+  });
+
+  it('refuses a first-round plan that is neither absent nor an object', () => {
+    expect(validFacilityRetryView(retryView({ initialPlan: null }))).toBe(true);
+    expect(validFacilityRetryView(retryView({ initialPlan: 5 as never }))).toBe(false);
   });
 });

@@ -90,15 +90,58 @@ class Answer:
     ``cached`` is True when this call did not itself build the value: it read a
     stored entry, or it awaited an identical in-flight query. It is the flag a
     caller uses to decide whether it owes an upstream request.
+
+    ``shared`` separates the two ways that can happen, because they are not the
+    same fact: a stored entry is a page this deployment already obtained, while a
+    shared in-flight query is a page *being* obtained right now, and whose result
+    is not evidence until it succeeds. A precheck may read the first; it must not
+    treat the second as one.
+
+    ``source_task_id`` is **who paid for this value**: the task that stored it, or
+    the task whose in-flight request this call awaited. §5 B2 决策 2 makes a
+    session's deadline apply to the data as well as to the reports that show it, so
+    a caller has to be able to say which deadline governs what it just read — and
+    a derived report has to record where its bytes came from, because "reuse does
+    not reset the source's deadline" is only enforceable if the source is named.
     """
     value: object
     reason: str | None
     obtained_at: float
     cached: bool
+    shared: bool = False
+    source_task_id: str | None = None
+
+
+class SharedBuildFailed(Exception):
+    """An in-flight build this caller waited on failed, and it was not this caller's call.
+
+    Awaited sharing is only an optimisation for the *caller*: someone else already
+    reserved and dispatched the request, so the outcome — success or failure — is
+    theirs to account for. Without this distinction the failure reaches the waiter
+    as a plain transport exception, and a caller that classifies exceptions by type
+    reads it as "I dispatched and it timed out", which is a call it never made.
+
+    The original exception is kept as ``cause`` so the caller can still name the
+    reason it ended in, and so an exception this layer does not classify keeps
+    propagating exactly as it did before.
+    """
+
+    def __init__(self, cause: BaseException):
+        self.cause = cause
+        super().__init__(f'shared build failed: {cause}')
 
 
 class KeyedCache:
-    def __init__(self, *, freshness_seconds=None, max_entries=1024, clock=time.time):
+    def __init__(self, *, freshness_seconds=None, max_entries=1024, clock=time.time,
+                 reused=None):
+        """``reused`` answers "may a task other than the one that stored this read it".
+
+        It is the seam §5 B2 决策 2 needs: the window alone cannot express a
+        deadline that is an event (the last tab closing, the third later checkup
+        finishing) rather than a number of seconds. It is consulted **only** for a
+        cross-task read — a task's own entries are its own evidence, and denying
+        those would make an expiring session re-fetch pages it already paid for.
+        """
         if freshness_seconds is not None and not freshness_seconds > 0:
             raise ValueError('freshness_seconds must be positive or None')
         if max_entries < 1:
@@ -106,25 +149,51 @@ class KeyedCache:
         self.freshness_seconds = freshness_seconds
         self.max_entries = max_entries
         self.clock = clock
+        #: ``None`` means "no deadline is configured", which is not "everything is
+        #: allowed": cross-task reuse still needs a window.
+        self.reused = reused
         self.entries: dict[str, Entry] = {}
         self.inflight: dict[str, asyncio.Future] = {}
         self.hits = 0
         self.stores = 0
+        self.refused = 0
 
     def __len__(self):
         return len(self.entries)
 
     def fresh(self, entry, *, task_id):
-        """Same task always; another task only inside the configured window."""
+        """Same task always; another task only inside the window *and* by permission."""
         if entry.task_id == task_id:
             return True
         if self.freshness_seconds is None:
+            return False
+        if self.reused is not None and not self.reused(entry.task_id):
             return False
         return self.clock() - entry.obtained_at <= self.freshness_seconds
 
     def get(self, key, *, task_id):
         entry = self.entries.get(key)
-        return entry if entry is not None and self.fresh(entry, task_id=task_id) else None
+        if entry is None:
+            return None
+        if self.fresh(entry, task_id=task_id):
+            return entry
+        if entry.task_id != task_id:
+            # Counted apart from a miss: "the source's deadline has passed" and
+            # "nobody has asked for this yet" lead to different next steps.
+            self.refused += 1
+        return None
+
+    def drop_task(self, task_id: str) -> int:
+        """Forget every entry one task stored. Called when its detail is deleted.
+
+        This is the memory half of the same decision: the files are gone, so a
+        copy of the pages they contained must not stay reachable in the process
+        that deleted them.
+        """
+        doomed = [key for key, entry in self.entries.items() if entry.task_id == task_id]
+        for key in doomed:
+            self.entries.pop(key, None)
+        return len(doomed)
 
     def store(self, key, value, *, task_id):
         if value is None:
@@ -148,14 +217,21 @@ class KeyedCache:
         entry = self.get(key, task_id=task_id)
         if entry is not None:
             self.hits += 1
-            return Answer(entry.value, None, entry.obtained_at, True)
+            return Answer(entry.value, None, entry.obtained_at, True,
+                          source_task_id=entry.task_id)
         pending = self.inflight.get(key)
         if pending is not None:
             self.hits += 1
             # Shielded: a cancelled waiter must not cancel the attempt whose
             # result the other waiters are still owed.
-            shared = await asyncio.shield(pending)
-            return Answer(shared.value, shared.reason, shared.obtained_at, True)
+            try:
+                shared = await asyncio.shield(pending)
+            except Exception as exc:  # CancelledError is not this: a cancelled waiter leaves.
+                # The builder owns this attempt — including its failure. Reported as a
+                # shared outcome so the waiter cannot count a call it did not make.
+                raise SharedBuildFailed(exc) from None
+            return Answer(shared.value, shared.reason, shared.obtained_at, True, True,
+                          source_task_id=shared.source_task_id)
         future = asyncio.ensure_future(self._build(key, build, task_id))
         self.inflight[key] = future
         return await asyncio.shield(future)
@@ -166,6 +242,6 @@ class KeyedCache:
         finally:
             self.inflight.pop(key, None)
         if value is None or reason is not None:
-            return Answer(value, reason, self.clock(), False)
+            return Answer(value, reason, self.clock(), False, source_task_id=task_id)
         entry = self.store(key, value, task_id=task_id)
-        return Answer(entry.value, None, entry.obtained_at, False)
+        return Answer(entry.value, None, entry.obtained_at, False, source_task_id=entry.task_id)

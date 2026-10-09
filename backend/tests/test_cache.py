@@ -1,13 +1,17 @@
 """§3.4 caching: key completeness, cross-task validity, and what is never stored."""
 import asyncio
 
+import httpx
 import pytest
 
 from app.cache import KeyedCache, cache_key
+from app.catalog import majors, poi_keys
+from app.poi import plan as poi_plan
 from app.poi.cache import CachedPages, page_key
-from app.poi.online import OnlinePlanner, QueryDomain
+from app.poi.online import (PROCESSING_STEP_LIMIT, OnlinePlanner, QueryDomain, RunLimits)
 from app.poi.planner import RULES, sequence
 from app.poi.provider import ReplayProvider
+from app.quota import BudgetExhausted
 from app.request_control import RequestStopped
 from life_circle.coordinates import LocalProjection
 
@@ -357,3 +361,216 @@ def test_a_cache_use_is_keyed_the_way_the_page_record_is():
     for (tile, category, query, page), use in adapter.uses.items():
         assert use['sequenceId'] == f'{tile}:{category}:{query}'
         assert use['obtainedAt'] > 0
+
+
+# -- §五 缓存重放与新增调用额度是两件事 --------------------------------------
+
+ALL_MAJORS = list(majors())
+ALL_MINORS = poi_keys(ALL_MAJORS)
+#: 十类首轮：31 个检索小类 × 4 个查询分块。
+ALL_PAGES = 4 * len(ALL_MINORS)
+PRIMARY = {category: (RULES['queries'][category][0],) for category in ALL_MINORS}
+
+
+def ten_category_planner(*, budget, limits=None):
+    return OnlinePlanner(domain=QueryDomain.circle(1300), origin=ORIGIN,
+                         categories=ALL_MINORS, budget=budget, source='synthetic',
+                         queries=PRIMARY, limits=limits)
+
+
+def spend_only_on_the_missing_pages(*, dispatched, allowance):
+    """A metered page source: the first ``allowance`` calls go out, the rest refuse."""
+    calls = []
+
+    async def fetch(sequence_, page):
+        if len(calls) >= allowance:
+            raise BudgetExhausted('poi', allowance)
+        calls.append((sequence_['sequenceId'], page))
+        dispatched.append((sequence_['sequenceId'], page))
+        return two_pages(sequence_, page), None
+
+    return fetch
+
+
+def test_the_precheck_plan_keys_are_the_keys_the_run_looks_up():
+    """预检与执行共用一份计划：它算的键必须就是执行时要查的键。"""
+    plan = poi_plan.initial_plan(QueryDomain.circle(1300), ORIGIN, ALL_MINORS,
+                                 provider=Transport.identity, api_version=Transport.api_version)
+    adapter = CachedPages(KeyedCache(), Live(), provider=Transport(), task_id='t')
+    assert plan.page_count == ALL_PAGES
+    assert [page.key for page in plan.pages] == [adapter.key(page.sequence, 0)
+                                                 for page in plan.pages]
+
+
+def test_more_than_sixty_cached_pages_do_not_stop_the_run_before_the_missing_ones():
+    """§五：缓存里有一百多页要重放，新增调用另有额度 —— 处理页数不能被 60 卡住。
+
+    同一份输入用旧的单层上限跑，第二轮只重放 60 页就停了，一页缺页都没请求到：
+    下面把这两种口径并排放在一起，证明修的是"两把尺子"，而不是把计数器调大。
+    """
+    cache = KeyedCache(freshness_seconds=3600)
+    plan = poi_plan.initial_plan(QueryDomain.circle(1300), ORIGIN, ALL_MINORS,
+                                 provider=Transport.identity, api_version=Transport.api_version)
+    for page in plan.pages:
+        cache.store(page.key, two_pages(page.sequence, 0), task_id='t')
+    assert plan.page_count == ALL_PAGES == 4 * len(ALL_MINORS) > 60
+
+    # 旧的单层上限：60 次页面处理全花在重放上，缺页一页都没碰到。
+    legacy_live = []
+    legacy_adapter = CachedPages(cache, spend_only_on_the_missing_pages(
+        dispatched=legacy_live, allowance=0), provider=Transport(), task_id='t')
+    legacy = asyncio.run(ten_category_planner(budget=60).run(legacy_adapter))
+    assert legacy.attempts == 60 and legacy.network_calls == 0
+    assert legacy.stop_reason == 'budget_exhausted' and legacy.status == 'partial'
+    assert {use['source'] for use in legacy_adapter.uses.values()} == {'cache'}
+    assert {record['pageNum'] for entry in legacy.coverage
+            for record in entry['pageRecords']} == {0}
+
+    # 两把尺子：重放不花额度，额度只花在缺页上，并且全部页面都被处理到。
+    dispatched = []
+    adapter = CachedPages(cache, spend_only_on_the_missing_pages(
+        dispatched=dispatched, allowance=3), provider=Transport(), task_id='t')
+    planner = ten_category_planner(budget=3, limits=RunLimits(
+        processing_steps=PROCESSING_STEP_LIMIT, drain_after_budget_refusal=True))
+    result = asyncio.run(planner.run(adapter))
+    assert result.attempts == 2 * ALL_PAGES          # 124 页重放 + 124 页缺页
+    assert result.attempts > 60
+    assert result.network_calls == len(dispatched) == 3
+    assert result.status == 'partial'
+    assert result.stop_reason == 'network_budget_exhausted'
+    # 缓存那一百多页的观测一条不少，缺页的页面记录也各自留下了原因。
+    assert len(result.observations) == 20 * (ALL_PAGES + 3)
+    assert {record['reason'] for entry in result.coverage for record in entry['pageRecords']
+            if not record['succeeded']} == {'task_budget_exhausted'}
+    assert all(entry['successfulPages'] for entry in result.coverage)
+
+
+def test_a_missing_page_after_a_fully_cached_first_round_is_partial_not_completed():
+    """首轮全在缓存里、翻页缺额度：保留已取得结果，明确 partial，不误报完成。"""
+    cache = KeyedCache(freshness_seconds=3600)
+    planner = ten_category_planner(budget=0, limits=RunLimits(
+        processing_steps=PROCESSING_STEP_LIMIT, drain_after_budget_refusal=True))
+    adapter = CachedPages(cache, Live(), provider=Transport(), task_id='t')
+    for state in planner.first_round:
+        cache.store(adapter.key(state.mapping, 0), two_pages(state.mapping, 0), task_id='t')
+
+    async def refuse(sequence_, page):
+        raise BudgetExhausted('poi', 0)
+
+    second = CachedPages(cache, refuse, provider=Transport(), task_id='t')
+    result = asyncio.run(planner.run(second))
+    assert result.network_calls == 0
+    assert result.status == 'partial' and result.stop_reason == 'network_budget_exhausted'
+    assert len(result.observations) == 20 * ALL_PAGES
+    assert result.catalog_completeness == 'unverified'
+    assert {use['source'] for use in second.uses.values()} == {'cache'}
+
+
+def test_an_in_flight_page_shared_with_another_caller_is_not_a_new_call():
+    """§五.1：等别人在飞的那一次不重复计费，也不算"这次取得的新页面"。"""
+    cache, live = KeyedCache(), Live()
+    started, release = asyncio.Event(), asyncio.Event()
+    block = sequence('r0c0', -1300, -1300, 1300, 'pharmacy', RULES['queries']['pharmacy'][0],
+                     LocalProjection(ORIGIN))
+
+    async def blocking(sequence_, page):
+        started.set()
+        await release.wait()
+        return two_pages(sequence_, page), None
+
+    async def share():
+        first = CachedPages(cache, blocking, provider=Transport(), task_id='t1')
+        second = CachedPages(cache, live, provider=Transport(), task_id='t2')
+        pending = asyncio.ensure_future(first(block, 0))
+        await started.wait()
+        # 第二个调用挂到同一个在飞请求上之后才放行：这样它读到的 manner 一定是"共享"，
+        # 而不是碰巧读到已经存好的页面。
+        shared_request = asyncio.ensure_future(second(block, 0))
+        await asyncio.sleep(0)
+        release.set()
+        return await shared_request, await pending, second
+
+    shared, _built, second = asyncio.run(share())
+    assert shared.manner == 'shared'
+    # 派发方是 t1 的那一路；t2 的传输一次都没被调用，共享的结果仍由派发方写入缓存。
+    assert len(live.calls) == 0 and len(cache) == 1
+    key = (block['tileId'], block['category'], block['query'], 0)
+    assert second.uses[key]['delivery'] == 'shared'
+    assert second.uses[key]['source'] == 'cache'
+
+
+def test_a_failed_shared_call_is_not_a_dispatch_for_the_waiter():
+    """§五.1：共享的那次调用失败了，账仍算在派发方头上 —— 等待方没有发过请求。"""
+    cache = KeyedCache()
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def failing(sequence_, page):
+        entered.set()
+        await release.wait()
+        raise httpx.ReadTimeout('synthetic timeout')
+
+    async def never(sequence_, page):
+        raise AssertionError('the waiter must not dispatch')
+
+    async def share():
+        owner, waiter = planner(60), planner(60)
+        owner_adapter = CachedPages(cache, failing, provider=Transport(), task_id='t1')
+        waiter_adapter = CachedPages(cache, never, provider=Transport(), task_id='t2')
+        block = owner.first_round[0].mapping
+        assert waiter.first_round[0].mapping['sequenceId'] == block['sequenceId']
+        owner_call = asyncio.ensure_future(owner._attempt(owner_adapter, block, 0))
+        await entered.wait()
+        waiter_call = asyncio.ensure_future(waiter._attempt(waiter_adapter, block, 0))
+        await asyncio.sleep(0)
+        release.set()
+        return await owner_call, await waiter_call
+
+    owner_answer, waiter_answer = asyncio.run(share())
+    # 派发方：真的发了请求，失败也要计入。
+    assert owner_answer.dispatched is True
+    assert (owner_answer.manner, owner_answer.reason) == ('live', 'timeout')
+    # 等待方：同一页、同一个失败原因，但它一次都没发。
+    assert waiter_answer.dispatched is False
+    assert (waiter_answer.manner, waiter_answer.reason) == ('shared', 'timeout')
+    # 失败不写入成功缓存。
+    assert len(cache) == 0
+
+
+def test_only_the_dispatcher_counts_a_new_call_when_the_shared_call_fails():
+    """§五.1 的整轮口径：等待方处理了同一页，但一次新增调用都不算。
+
+    派发方自己发了多少次（含失败页的重试）就要记多少次 —— 这里用 fetch 的真实调用
+    记录核对，而不是拿一个期望常数去比。
+    """
+    cache = KeyedCache()
+    entered, release = asyncio.Event(), asyncio.Event()
+    dispatched = []
+
+    async def failing(sequence_, page):
+        dispatched.append((sequence_['sequenceId'], page))
+        entered.set()
+        await release.wait()
+        raise httpx.ReadTimeout('synthetic timeout')
+
+    async def never(sequence_, page):
+        raise AssertionError('the waiter must not dispatch')
+
+    async def share():
+        owner, waiter = planner(60), planner(1)
+        owner_adapter = CachedPages(cache, failing, provider=Transport(), task_id='t1')
+        waiter_adapter = CachedPages(cache, never, provider=Transport(), task_id='t2')
+        owner_run = asyncio.ensure_future(owner.run(owner_adapter))
+        await entered.wait()
+        waiter_run = asyncio.ensure_future(waiter.run(waiter_adapter))
+        await asyncio.sleep(0)
+        release.set()
+        return await owner_run, await waiter_run
+
+    owner_result, waiter_result = asyncio.run(share())
+    # 派发方：每一次真实调用都记一次，不多不少。
+    assert owner_result.network_calls == len(dispatched) > 0
+    # 等待方：同一页、同一个失败原因，但一次都没发。
+    assert waiter_result.attempts == 1
+    assert waiter_result.network_calls == 0
+    assert {record['reason'] for entry in waiter_result.coverage
+            for record in entry['pageRecords']} == {'timeout'}
