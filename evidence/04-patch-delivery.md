@@ -25,7 +25,8 @@
 | `0665f60` | **并入用户改动**：`start.command` 改为 LF＋执行位，加 `.gitattributes` 固定脚本行尾 |
 | `1848253` | C0/C2 离线基准工具与 C1 审计 |
 | `0efc8dc` | A4 重测与撤回（CLI 归因、E2E 阻塞） |
-| 本文件 | A5 记录与 PR 草稿（SHA 见 §8） |
+| `77ab807` | C2 实测：加入**等覆盖率对照臂**（`allkw`），并修掉候选预检与夹具的两处缺陷 |
+| 本文件 | A5 记录与 PR 草稿（本提交即分支末端，SHA 见 `git log --oneline delivery/facility-budget-cache`） |
 
 **关于用户改动的并入**：用户明确指示把 `start.command` 的换行修复并入本次修改。原文件为 CRLF 且模式
 `100644`，在 Linux 上 shebang 变成 `#!/usr/bin/env bash\r`，内核找不到解释器，文件**根本无法运行**；
