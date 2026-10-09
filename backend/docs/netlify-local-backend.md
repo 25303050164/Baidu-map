@@ -6,7 +6,7 @@
 
 正式站点：https://linyu-life-circle.netlify.app 。已解除站点登录保护，匿名访问正常。公网 `/health`、`/api/facility-catalog`、`/api/v2/capabilities` 与精确来源 CORS 已验证。
 
-地图授权校验返回 `error: 220`（Referer 校验失败）。需要在百度开放平台当前浏览器端 AK 的 Referer 白名单中加入 `linyu-life-circle.netlify.app`，保留原有本地来源；保存后刷新网站再验收地图。不要修改服务端 AK 或将全局白名单设为 `*`。本次未提交真实体检任务。
+2026-10-09 更新浏览器端 AK 后重新构建、发布，百度授权校验返回 `error: 0`，底图正常绘制，浏览器无未捕获错误，后端能力接口返回 200。此前线上构建仍使用旧 AK；修改本地 `.env.local` 不会自动更新已发布的静态文件，必须重新构建和发布。本次未提交真实体检任务。
 
 ## 本次本地运行文件
 
