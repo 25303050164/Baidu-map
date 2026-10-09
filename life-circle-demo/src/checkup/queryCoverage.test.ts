@@ -110,6 +110,18 @@ describe('what to do next, by real reason', () => {
     expect(advice).toContain('brand_new_reason');
   });
 
+  it('accepts a round that ran out of allowance only after reaching the line', () => {
+    // 运营者的口径：停止派发的触发条件是"额度用尽"，而 80% 是**那一刻**的验收线。
+    // 额度用尽 + 已完成 85% → 达标、干净收工、不问用户要不要重试。
+    // 反过来说，额度还剩就不该提前收工（那不在这个函数里表达，由后端照常查完）。
+    const exhausted = group({
+      queryStatus: 'partial', stopReason: 'network_budget_exhausted',
+      queryAreaCoverage: coverage({ status: 'met', sharedCompletionRatio: 0.85,
+        residualRatio: 0.15 }) });
+    expect(queryCoverageLine(exhausted)).toContain('达标');
+    expect(queryCoverageRetryLine(exhausted)).toBeNull();
+  });
+
   it('offers no next step when the round met the line', () => {
     const met = group({ queryAreaCoverage: coverage({
       status: 'met', sharedCompletionRatio: 0.95, residualRatio: 0.05 }) });
