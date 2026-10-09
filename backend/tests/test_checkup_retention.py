@@ -260,3 +260,32 @@ def test_the_summary_projection_is_a_whitelist_not_a_redaction():
     assert summary["verification"]["checked"] == 4
     assert summary["gaps"]["gapAreaM2"] == 3.0
     assert summary["limitations"] == ["目录完整性未验证"]
+
+
+def test_the_serving_lifespan_starts_the_retention_sweep(tmp_path, clock):
+    """到期发生在**没有人看**的时候，所以巡检必须由服务的启动钩子起。
+
+    只靠读取触发就等于"没人看就永远不清" —— 而"没人看"正是这条规则描述的场景。
+    """
+    # 间隔是部署参数，所以这个用例走的是**真实的启动钩子**：一条只在测试里存在的调用
+    # 路径证明不了服务里那条也是通的。
+    app = make_app(tmp_path, SyntheticPlaces(at_origin()), retention_maintenance_seconds=0.01)
+    with TestClient(app) as client:
+        manager = app.state.checkups
+        assert manager.maintenance is not None and not manager.maintenance.done()
+
+        opened = client.post("/api/v2/checkups/sessions",
+                             json={"schemaVersion": "checkup-v1"}).json()
+        task_id, _view = submit(client, session_id=opened["sessionId"], facilities=SMALL)
+        directory = app.state.checkups.store.root / "tasks" / task_id
+        assert directory.is_dir()
+
+        clock["t"] += 3600
+        # 不调用任何接口、也不调用 manager 的方法：等循环自己动手。
+        for _ in range(400):
+            if not directory.exists():
+                break
+            time.sleep(0.05)
+        assert not directory.exists(), "巡检没有在到期之后清理明细"
+        assert not manager.maintenance.done()
+        assert manager.retention_of(manager.get(task_id)).reason == "cleared"

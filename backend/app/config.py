@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     # inside the storing task — a deployment's data-use agreement is never
     # assumed, and an entry is never permanently fresh.
     cache_freshness_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    # §5 B2 决策 2：保留期巡检的间隔。到期是一个事件，没有请求会因为它而到来，所以必须
+    # 有东西定期去看；这个间隔就是"多久去看一眼"。它是部署参数而不是常数，因为一个测试
+    # 必须能通过**真实的启动钩子**验证这件事，而不是另写一条只在测试里存在的调用路径。
+    retention_maintenance_seconds: float = Field(default=60.0, gt=0, allow_inf_nan=False)
     # Per-service route and place pools. Both algorithms and the facility stages
     # draw from these; nothing allocates quota outside this entry. Both ceilings are
     # set to what the account actually grants (``VERIFIED_ENTITLEMENT``): the walking

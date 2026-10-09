@@ -59,7 +59,7 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
         checkups.interrupt_unfinished()
         # §5 B2 决策 2：到期是一个事件（最后一次心跳、第三次后续体检结束），
         # 没有任何请求会因为它的到来而发生，所以必须有人定期去看一眼。
-        checkups.start_maintenance()
+        checkups.start_maintenance(interval=config.retention_maintenance_seconds)
         preload_task = None
 
         async def preload_osm():
