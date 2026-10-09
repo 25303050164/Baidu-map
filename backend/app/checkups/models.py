@@ -120,6 +120,9 @@ class TraceEvidence(CheckupModel):
     #: 数据修订后离线重算出的一版：从哪一版来、为什么重算。重算不发网络请求，
     #: ``budgets`` 仍是原任务花掉的额度。
     recomputed: dict | None = None
+    #: §5 B2 决策 1 的重试发布的一版：从哪一版来、这一轮新增了多少真实调用、当时
+    #: 共同完成了多少圈面。与 ``recomputed`` 分开：重算不花钱，重试花钱并带来新证据。
+    retried: dict | None = None
 
 
 class FacilityGroup(CheckupModel):
@@ -160,7 +163,7 @@ class FacilityGroup(CheckupModel):
     query_incomplete_regions: dict[str, list[dict]] | None = None
     #: §5 B2 决策 1：所有所选小类**共同**完成检索的圈面比例。它算的是各小类未完成区域
     #: 取并集后的残余，而不是各小类覆盖率的平均 —— 后者会让"某一类整块没查、其余全部查完"
-    #: 读成 90%。``None`` 表示未记录（旧修订），不表示 0。
+    #: 读成 90%。旧修订没有这一项（键缺失或明确 ``null``），两者都表示"未记录"，都不是 0。
     query_area_coverage: dict | None = None
     statistics: dict = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
@@ -187,6 +190,45 @@ class FacilityExtensionRequest(CheckupModel):
         if not self.categories:
             raise ValueError("at least one facility category is required")
         return self
+
+
+class FacilityRetryRequest(CheckupModel):
+    """§5 B2 决策 1：同一次体检的**重试**，用新预算接着把没查完的地段查下去。
+
+    与补查的区别只有一条，但它是本质的一条：补查产出的是**并列**的一份结果，原体检的
+    修订、评分和报告一个字都不变；重试产出的是**这一次体检自己的新修订**，因为运营者的
+    要求是"普通体检必须查到完整结果" —— 那必须体现在这一份报告里，而不是旁边多一个文件。
+
+    类别不在这里给：重试沿用原体检已经冻结的类别集合。允许改类别就等于允许悄悄换掉
+    这次体检问的问题，"这次查完了没有"随之失去意义。
+    """
+    schema_version: Literal["checkup-v1"] = SCHEMA_VERSION
+    client_request_id: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
+    #: 本轮的新预算。不给就用部署默认（240）；给了但不够首轮就明确拒绝，不静默少查。
+    max_poi_requests: int | None = Field(default=None, ge=1, le=MAX_POI_REQUESTS)
+
+
+class FacilityRetryView(CheckupModel):
+    """一次重试的状态：它自己的预算、它到达的修订，以及它剩下的缺口。"""
+    retry_id: str
+    task_id: str
+    base_revision: int = Field(ge=1)
+    client_request_id: str
+    status: Literal["queued", "running", "completed", "partial", "failed", "cancelled"]
+    stage: Literal["poi", "ready"] | None = None
+    budget: dict = Field(default_factory=dict)
+    requests: int = Field(default=0, ge=0)
+    network_requests: int = Field(default=0, ge=0)
+    facilities_status: str | None = None
+    stop_reason: str | None = None
+    initial_plan: dict | None = None
+    error: str | None = None
+    created_at: float
+    finished_at: float | None = None
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in EXTENSION_TERMINAL
 
 
 class FacilityExtensionView(CheckupModel):

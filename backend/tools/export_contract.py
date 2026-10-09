@@ -5,7 +5,8 @@ from pathlib import Path
 from app.checkups.models import (CheckupCapabilities, CheckupFacilities, CheckupIsochrone,
                                  CheckupLayer, CheckupRequest, CheckupSnapshot, CheckupTaskView,
                                  FacilityExtensionDocument, FacilityExtensionRequest,
-                                 FacilityExtensionView, FacilityRoute)
+                                 FacilityExtensionView, FacilityRetryRequest, FacilityRetryView,
+                                 FacilityRoute)
 from app.contracts import (AnalysisResponse, CategoryResult, Data, Facility, FacilityCatalog, Geometry,
                            Issue, Origin, Rules, TaskResultResponse, TaskStatusResponse, OsmOfflineRequest)
 from app.hybrid_contracts import HybridRequest, HybridResultResponse, HybridError
@@ -131,9 +132,11 @@ def export():
                     # 按需补查也是 v2 契约的一部分：它有自己的请求、状态和结果文档，
                     # 手写这三份类型就等于给同一份字段留第二处定义。
                     FacilityExtensionRequest, FacilityExtensionView,
-                    FacilityExtensionDocument],
+                    FacilityExtensionDocument,
+                    # §5 B2 决策 1 的重试同理：它是另一个资源，有自己的请求与状态。
+                    FacilityRetryRequest, FacilityRetryView],
                    request_models=[CheckupRequest, CheckupFacilities, CheckupIsochrone,
-                                   FacilityExtensionRequest]),
+                                   FacilityExtensionRequest, FacilityRetryRequest]),
         encoding="utf-8")
 
 

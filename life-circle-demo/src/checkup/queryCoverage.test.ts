@@ -16,7 +16,8 @@ const group = (overrides: Partial<FacilityGroup> = {}): FacilityGroup => Object.
   apiVersion: '3.0', dataSource: 'baidu_place', queryDomain: {}, dataObtainedAt: null,
   initialPlan: null, countsByCategory: {}, facilities: [], nearbyFacilities: [],
   reviewCandidates: [], excludedCandidates: [], quarantine: [], queryCoverage: [],
-  queryIncompleteRegions: null, statistics: {}, warnings: [], stopReason: null,
+  queryIncompleteRegions: null, queryAreaCoverage: null, statistics: {}, warnings: [],
+  stopReason: null,
 } as FacilityGroup, overrides);
 
 const coverage = (fields: Record<string, unknown>): Record<string, unknown> => ({

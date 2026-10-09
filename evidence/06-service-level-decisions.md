@@ -150,10 +150,36 @@
 | 项 | 状态 |
 | --- | --- |
 | 第 1 项 覆盖率指标 | **已实现**：`facilities.shared_completion()` + `FacilityGroup.queryAreaCoverage`；`tests/test_query_coverage.py` 8 个单元用例（重叠只算一次、圈外裁剪、圈面孔洞、恰好 80%、79.9%、单类整块未查、无面积=unknown、失败=unmet），另有 2 处端到端断言（真实修订里分别 met / unmet） |
-| 第 4 项 文案 | **未实现**（前端待做） |
-| 第 2 项 重试 | **未实现** |
+| 第 1 项 重试 | **已实现**：`POST/GET /api/v2/checkups/{taskId}/retries`（另有单条查询与取消）；发布**同一次体检的新修订**，圈面与类别取自被冻结的那一版，每轮各有一份独立预算（默认 240、上限 1600），只花缺页的钱；`trace.retried` 与 `trace.recomputed` 分开标记（一个花钱、一个不花）。`tests/test_checkup_retry.py` 4 个用例 |
+| 第 4 项 文案 | **已实现（前端）**：`queryCoverage.ts` + 面板上两行字；按真实停止原因区分（今日额度要到次日、请求超时可立即重试、权限不足明确说"重试不会改善"）；`tests/queryCoverage.test.ts` 12 个用例。含明细响应的 `Cache-Control: no-store` **未做** |
 | 第 3 项 会话与生命周期 | **未实现** |
 | 第 5 项 真实实验 | **未开始**，且仍被 `05` §4.1 阻塞 |
+
+**重试与补查的分工**（两者共用同一张表与同一套幂等/冲突/队列/取消规则，只有定稿之后
+不同）：补查产出**并列**的一份结果、父任务报告一字不改；重试为**同一次体检**发布新修订。
+共用一张表是有意的 —— 幂等键、409、串行队列这些规则各写一遍才是真正会分叉的地方。
+"改类别"在重试接口上**表达不出来**（请求模型 `extra="forbid"` 且没有 `categories` 字段），
+比在服务端判一句"类别不一致就拒绝"更早一步。
+
+### 6.1 导出契约与一处**未**提交的再生成
+
+`life-circle-demo/src/checkup/contract.ts` 是 `tools/export_contract` 的**生成物**，不是手写
+文件：加了 v2 模型就必须重新导出，否则前端缺字段而不会有任何测试变红。本次已把
+`FacilityRetryRequest`/`FacilityRetryView` 加进导出清单并重新生成（该清单一度把它们漏掉，
+而 `tests/test_checkup_v2.py::test_v2_contract_is_generated_without_touching_the_legacy_ones`
+正是为拦这件事存在的）。
+
+同一个命令还会写 `backend/docs/openapi.json`、`backend/docs/analysis-response.schema.json`
+与 `backend/mocks/*.json`。这三处**已还原、未提交**，原因有两条，都需要单独处理：
+
+1. `analysis-response.schema.json` 与四个 mock 的差异是**纯行尾**（工作区 LF、仓库 CRLF），
+   属于导出器的写法与仓库既有行尾不一致，不是内容变化。
+2. `openapi.json` 里除了本次新增的重试端点，还有一批与本次无关的措辞漂移：
+   `"Unprocessable Content"` → `"Unprocessable Entity"`。那是 FastAPI/Starlette 版本差异，
+   说明仓库里那份是用另一个依赖版本生成的。把它混进这次提交，等于用一次功能改动
+   顺手掩盖一处环境漂移 —— 应当单独判断后再重新生成。
+
+**结论**：`openapi.json` 目前**落后于**新增的重试端点，这是已知且已记录的缺口。
 
 ### 6.1 偏离：没有实现"达到 80% 就停止派发"
 

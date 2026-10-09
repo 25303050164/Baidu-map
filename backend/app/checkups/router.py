@@ -12,7 +12,8 @@ from .models import (DEFAULT_POI_REQUESTS, DEFAULT_ROUTE_REQUESTS, DETAIL_ROUTE_
                      DISTANCE_RULE, MAX_POI_REQUESTS, MAX_ROUTE_REQUESTS, QUERY_PADDING_M,
                      RULE_VERSION, CheckupCapabilities, CheckupLayer, CheckupRequest,
                      CheckupSnapshot, CheckupTaskView, FacilityExtensionDocument,
-                     FacilityExtensionRequest, FacilityExtensionView, FacilityRoute)
+                     FacilityExtensionRequest, FacilityExtensionView, FacilityRetryRequest,
+                     FacilityRetryView, FacilityRoute)
 
 # Layers this release can serve, one per published group. The boundary arrives
 # with the first stage, the retrieved facilities with the second, the assessment
@@ -255,6 +256,26 @@ def checkup_router(manager: CheckupManager):
                  response_model=FacilityExtensionView)
     async def create_extension(task_id: str, payload: FacilityExtensionRequest):
         return manager.submit_extension(task_id, payload)
+
+    # §5 B2 决策 1 的重试：与补查是两个资源，因为定稿之后做的事不同 —— 补查产出并列的
+    # 一份结果、父任务一字不改；重试为**同一次体检**发布新修订，因为"这次查完了没有"
+    # 必须体现在这一份报告里，而不是旁边多一个文件。
+    @router.post("/{task_id}/retries", status_code=202, response_model=FacilityRetryView)
+    async def create_retry(task_id: str, payload: FacilityRetryRequest):
+        return manager.submit_retry(task_id, payload)
+
+    @router.get("/{task_id}/retries", response_model=list[FacilityRetryView])
+    async def list_retries(task_id: str):
+        return manager.retries(task_id)
+
+    @router.get("/{task_id}/retries/{retry_id}", response_model=FacilityRetryView)
+    async def retry_status(task_id: str, retry_id: str):
+        return manager.retry(task_id, retry_id)
+
+    @router.post("/{task_id}/retries/{retry_id}/cancel", status_code=202,
+                 response_model=FacilityRetryView)
+    async def cancel_retry(task_id: str, retry_id: str):
+        return manager.cancel_retry(task_id, retry_id)
 
     @router.get("/{task_id}/facility-extensions", response_model=list[FacilityExtensionView])
     async def list_extensions(task_id: str):

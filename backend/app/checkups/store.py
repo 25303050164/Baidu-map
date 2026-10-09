@@ -82,7 +82,14 @@ ADDED_COLUMNS = (("stage_started_at", "REAL"), ("activity_at", "REAL"), ("progre
 #: :func:`extension_matches`。``stop_reason``/``initial_plan`` 是定稿时冻结的诊断：
 #: 界面读状态就能看到停在哪、缓存帮了多少，不必再取结果文件。
 EXTENSION_ADDED_COLUMNS = (("facilities_status", "TEXT"), ("intent", "TEXT"),
-                           ("stop_reason", "TEXT"), ("initial_plan", "TEXT"))
+                           ("stop_reason", "TEXT"), ("initial_plan", "TEXT"),
+                           ("kind", "TEXT"))
+#: 这一行是哪一种工作。``extension``：按需补查，**不**改父任务的报告与修订。
+#: ``retry``：§5 B2 决策 1 的重试，它**要**为同一次体检发布新修订。
+#: 两者共用同一张表是有意的：幂等键、409 冲突、串行队列、取消与终态语义
+#: 是同一套规则，各写一遍才是真正会分叉的地方。区别只在定稿之后做什么。
+#: 旧行为 NULL，按 ``extension`` 读 —— 那正是它们被创建时的语义。
+EXTENSION_KINDS = frozenset({"extension", "retry"})
 #: What ``update`` may write. ``progress`` is the worker's in-stage step (a JSON
 #: object); ``stage_started_at`` and ``activity_at`` are maintained here, never
 #: passed in.
@@ -175,6 +182,9 @@ class ExtensionRecord:
     #: 定稿时冻结的停止原因与首轮估算：它们是读这次补查时必须知道的事。
     stop_reason: str | None = None
     initial_plan: dict | None = None
+    #: ``extension``（补查，不动父任务报告）或 ``retry``（重试，为父任务发布新修订）。
+    #: 旧行读作 ``extension``。
+    kind: str = "extension"
 
     @property
     def declared_max_poi_requests(self) -> int | None:
@@ -195,6 +205,8 @@ def _extension_record(row) -> ExtensionRecord:
         intent=(None if row["intent"] is None else json.loads(row["intent"])),
         stop_reason=row["stop_reason"],
         initial_plan=(None if row["initial_plan"] is None else json.loads(row["initial_plan"])),
+        # 旧行没有这一列，读作 ``extension``：那正是它们被创建时的语义，"补查不改父任务报告"。
+        kind=row["kind"] or "extension",
         counts_by_category=({} if not row["counts_by_category"]
                             else json.loads(row["counts_by_category"])))
 
@@ -458,7 +470,8 @@ class CheckupStore:
     # -- 按需补查 -----------------------------------------------------------
 
     def create_extension(self, *, extension_id: str, task_id: str, client_request_id: str,
-                         identity: dict, fingerprint: str, base_revision: int, categories, budget: int):
+                         identity: dict, fingerprint: str, base_revision: int, categories, budget: int,
+                         kind: str = "extension"):
         """Insert once per (task, client request id); identical repeats return the same row.
 
         幂等键按任务隔离：两个任务里的同一个客户端请求标识是两次不同的补查。
@@ -489,9 +502,9 @@ class CheckupStore:
             connection.execute(
                 "INSERT INTO facility_extensions (extension_id, task_id, client_request_id,"
                 " fingerprint, base_revision, categories, budget, status, created_at, updated_at,"
-                " intent) VALUES (?,?,?,?,?,?,?,'queued',?,?,?)",
+                " intent, kind) VALUES (?,?,?,?,?,?,?,'queued',?,?,?,?)",
                 (extension_id, task_id, client_request_id, fingerprint, base_revision,
-                 json.dumps(list(categories), ensure_ascii=False), budget, now, now, encoded))
+                 json.dumps(list(categories), ensure_ascii=False), budget, now, now, encoded, kind))
             connection.execute("COMMIT")
             return self._extension(extension_id), True
 

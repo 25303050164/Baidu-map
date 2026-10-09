@@ -555,14 +555,18 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
     from app.checkups.models import (CheckupCapabilities, CheckupFacilities, CheckupIsochrone,
                                      CheckupLayer, CheckupRequest, CheckupSnapshot,
                                      CheckupTaskView, FacilityExtensionDocument,
-                                     FacilityExtensionRequest, FacilityExtensionView, FacilityRoute)
+                                     FacilityExtensionRequest, FacilityExtensionView,
+                                     FacilityRetryRequest, FacilityRetryView, FacilityRoute)
     from tools.export_contract import typescript as v2_typescript
     v2 = v2_typescript(
         [CheckupRequest, CheckupTaskView, CheckupSnapshot, CheckupLayer,
          FacilityRoute, CheckupCapabilities, CheckupFacilities, CheckupIsochrone,
-         FacilityExtensionRequest, FacilityExtensionView, FacilityExtensionDocument],
+         FacilityExtensionRequest, FacilityExtensionView, FacilityExtensionDocument,
+         # §5 B2 决策 1 的重试也是 v2 契约的一部分。它漏进过导出清单：前端照着
+         # 生成物写调用，而那份生成物里没有这两个类型 —— 正是这条断言要拦的事。
+         FacilityRetryRequest, FacilityRetryView],
         request_models=[CheckupRequest, CheckupFacilities, CheckupIsochrone,
-                        FacilityExtensionRequest])
+                        FacilityExtensionRequest, FacilityRetryRequest])
     assert v2 == (Path(__file__).resolve().parents[2]
                   / "life-circle-demo/src/checkup/contract.ts").read_text(encoding="utf-8")
 

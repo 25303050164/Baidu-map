@@ -102,7 +102,7 @@ export function snapshot(overrides: Partial<CheckupSnapshot> = {}): CheckupSnaps
       coverageSupported: true, assessmentDomainAvailable: true, excludedAreaM2: 0,
       modelSupportAvailable: true, notes: [] },
     trace: { dataVersions: {}, ruleVersions: {}, isochroneHash: 'abc', resultHash: 'hash-5',
-      budgets: {}, recomputed: null },
+      budgets: {}, recomputed: null, retried: null },
     facilities: null, facilitiesStatus: 'complete',
     accessibility: {
       status: 'partial', domain: polygon(), domainAreaM2: AREA, excludedAreaM2: 0, gridStepM: 50,
@@ -274,7 +274,10 @@ export function extensionDocument(
       // 结果文档沿用 FacilityGroup 的形状；这里按"旧修订没记过首轮计划"来，读作 null。
       initialPlan: null,
       facilities: [], nearbyFacilities: [], reviewCandidates: [], excludedCandidates: [],
-      quarantine: [], queryCoverage: [], queryIncompleteRegions: {}, statistics: {},
+      quarantine: [], queryCoverage: [], queryIncompleteRegions: {},
+      // 补查的结果文档不是"这次体检的达标判决"：达标比例属于任务自己的修订，
+      // 所以这份夹具如实报"未记录"，而不是借一个 0 或 100% 来表达什么。
+      queryAreaCoverage: null, statistics: {},
       warnings: [], stopReason: null },
     requests: 20, networkRequests: 20, budget: { limit: 60, spent: 20, remaining: 40 },
     issues: [], notes: ['扩展类别只做点位、数量和分类展示：不进入核心综合分。'],

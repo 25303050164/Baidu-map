@@ -104,7 +104,8 @@ describe('empty facilities note', () => {
     apiVersion: '3.0', dataSource: 'synthetic', queryDomain: {}, dataObtainedAt: null,
     initialPlan: null, countsByCategory: {}, facilities: [], nearbyFacilities: [],
     reviewCandidates: [], excludedCandidates: [], quarantine: [], queryCoverage: [],
-    queryIncompleteRegions: null, statistics: {}, warnings: [], stopReason: null,
+    queryIncompleteRegions: null, queryAreaCoverage: null, statistics: {}, warnings: [],
+    stopReason: null,
   } as FacilityGroup, overrides);
 
   it('says there were none only when the retrieval did finish', () => {

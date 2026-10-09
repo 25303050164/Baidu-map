@@ -298,6 +298,7 @@ export type TraceEvidence = {
   resultHash: string;
   budgets: Record<string, unknown>;
   recomputed: Record<string, unknown> | null;
+  retried: Record<string, unknown> | null;
 };
 
 export type VerificationEvidence = {
@@ -449,4 +450,28 @@ export type FacilityExtensionDocument = {
   budget: Record<string, unknown>;
   issues: Array<Issue>;
   notes: Array<string>;
+};
+
+export type FacilityRetryRequest = {
+  schemaVersion?: "checkup-v1";
+  clientRequestId: string;
+  maxPoiRequests?: number | null;
+};
+
+export type FacilityRetryView = {
+  retryId: string;
+  taskId: string;
+  baseRevision: number;
+  clientRequestId: string;
+  status: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
+  stage: "poi" | "ready" | null;
+  budget: Record<string, unknown>;
+  requests: number;
+  networkRequests: number;
+  facilitiesStatus: string | null;
+  stopReason: string | null;
+  initialPlan: Record<string, unknown> | null;
+  error: string | null;
+  createdAt: number;
+  finishedAt: number | null;
 };
