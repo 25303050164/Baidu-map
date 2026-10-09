@@ -57,6 +57,9 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
         # 重启清点在**开始服务**时做，不在导入时：导入 app 对象（比如导出 OpenAPI）
         # 不该把别人正在跑的体检判成中断。清点只改状态，不重放任何已付费的请求。
         checkups.interrupt_unfinished()
+        # §5 B2 决策 2：到期是一个事件（最后一次心跳、第三次后续体检结束），
+        # 没有任何请求会因为它的到来而发生，所以必须有人定期去看一眼。
+        checkups.start_maintenance()
         preload_task = None
 
         async def preload_osm():

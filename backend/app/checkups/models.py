@@ -119,6 +119,23 @@ class SessionView(CheckupModel):
     tasks: int = Field(default=0, ge=0)
 
 
+class RetainedCheckupView(CheckupModel):
+    """明细到期之后仍然给得出的那一部分（§5 B2 决策 2）。
+
+    ``summary`` 是定稿时冻结的白名单汇总：结论、分数区间、面积、计数、停止原因。它里面
+    **没有**设施名称、UID、地址、坐标或几何 —— 到期之后还能看到什么，由这份白名单定义，
+    而不是由"原文件里还剩什么"定义。
+    """
+    task_id: str
+    revision: int = Field(ge=1)
+    stage: Stage
+    business_status: BusinessStatus
+    result_hash: str
+    summary: dict = Field(default_factory=dict)
+    retention: "RetentionView"
+    notes: list[str] = Field(default_factory=list)
+
+
 class RetentionView(CheckupModel):
     """这份结果的明细还能不能提供、什么时候到期、为什么。
 
@@ -130,6 +147,8 @@ class RetentionView(CheckupModel):
     reason: Literal["session_closed", "superseded", "legacy", "cleared"] | None = None
     #: 这一版明细来自哪几个任务（含它自己）：复用别人的页面时，那个任务的期限也是它的期限。
     sources: list[str] = Field(default_factory=list)
+    #: 到期时刻已经过了但文件还在（清理由后台巡检做）：界面据此区分"已经删了"与"即将删"。
+    cleared: bool = False
 
 
 class EngineRef(CheckupModel):
@@ -210,6 +229,11 @@ class FacilityGroup(CheckupModel):
     #: 取并集后的残余，而不是各小类覆盖率的平均 —— 后者会让"某一类整块没查、其余全部查完"
     #: 读成 90%。旧修订没有这一项（键缺失或明确 ``null``），两者都表示"未记录"，都不是 0。
     query_area_coverage: dict | None = None
+    #: §5 B2 决策 2：这一版明细出自哪几个任务 —— 来源标识 → 页数、其中新取的页数、最早的
+    #: 取数时刻。复用别人的页面时，**那个任务的期限**也是这一版的期限，所以来源必须落在
+    #: 报告里；只记「来自缓存」会让一份派生报告看起来像这些数据是它自己取回来的。
+    #: 旧修订没有这一项，读作「未记录」：那时也没有任何跨任务复用（窗口默认未配置）。
+    source_tasks: dict[str, dict] | None = None
     statistics: dict = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     stop_reason: str | None = None

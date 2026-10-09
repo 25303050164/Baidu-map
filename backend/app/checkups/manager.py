@@ -16,6 +16,7 @@ reader never has to join two files to see what was established, and the result
 hash of the later revision covers every group it repeats.
 """
 import asyncio
+import logging
 import json
 import math
 import time
@@ -46,8 +47,9 @@ from .models import (DEFAULT_POI_REQUESTS, DETAIL_ROUTE_REQUESTS, DISTANCE_RULE,
                      CheckupFacilities, CheckupRequest, CheckupSnapshot, CheckupTaskView, EngineRef,
                      FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView,
                      FacilityGroup, FacilityRetryRequest, FacilityRetryView, FacilityRoute,
-                     ReportEvidence, RetentionView, ScopeEvidence, SessionOpenRequest, SessionView,
-                     TaskProgress, new_trace)
+                     ReportEvidence, RetainedCheckupView, RetentionView, ScopeEvidence,
+                     SessionOpenRequest, SessionView, TaskProgress, new_trace)
+from . import retention
 from .places import declared_identity
 from .progress import StepReporter, category_label
 from .reporting_stage import build_report
@@ -56,6 +58,8 @@ from .store import (CheckupStore, ExtensionNotFound, RequestIdConflict, TaskNotF
                     extension_identity, extension_matches)
 from .verification_stage import (VerificationOutcome, carried_over, judge_route,
                                  refusal as verification_refusal, verify_facilities)
+
+logger = logging.getLogger(__name__)
 
 # Engines currently enforce their own internal deadline; this is the task-level
 # bound every stage shares.
@@ -66,6 +70,11 @@ SESSION_LEASE_SECONDS = 300.0
 #: 该次体检之后的第几次新体检结束就算它到期。失败与取消也计数；幂等重发、重试、补查
 #: 都不新建任务行，因此不计数。
 CHECKUPS_BEFORE_EXPIRY = 3
+#: 后台巡检的间隔。到期是一个**事件**（最后一次心跳、第三次后续体检结束），没有请求会
+#: 因为它的到来而发生 —— 所以必须有人定期去看，不能只在读取时判定。
+MAINTENANCE_SECONDS = 60.0
+RETENTION_NOTE = ("明细（设施名称、UID、地址与坐标）已按保留期到期不再提供；"
+                  "这里的结论、分数与汇总是到期前定稿的那一份，未重算。")
 ENGINE_UNAVAILABLE = {
     "walking_ak_not_configured": "后端未配置百度步行服务 AK，百度边界搜索（E8.2）无法成圈。",
 }
@@ -237,7 +246,8 @@ class CheckupManager:
         # §3.4: a page is reusable across tasks only inside the configured window,
         # and inside its own task when no window is configured. One cache for the
         # process, outside every quota pool, so a hit costs no attempt.
-        self.cache = KeyedCache(freshness_seconds=settings.cache_freshness_seconds)
+        self.cache = KeyedCache(freshness_seconds=settings.cache_freshness_seconds,
+                                reused=self._source_still_retained)
         # The seam a deployment without a key, or an offline run, substitutes at.
         # ``route_factory`` is the same seam for the walking routes the
         # verification stage and the facility-detail endpoint ask for.
@@ -260,6 +270,8 @@ class CheckupManager:
         self.extension_worker: asyncio.Task | None = None
         self.extension_tokens: dict[str, CancelToken] = {}
         self.closing = False
+        #: 后台巡检任务（见 ``start_maintenance``）：由部署的启动钩子启动，关闭时取消。
+        self.maintenance: asyncio.Task | None = None
 
     # -- 会话与保留期（§5 B2 决策 2）------------------------------------------
 
@@ -348,6 +360,75 @@ class CheckupManager:
         return now >= self._lease_end(row, tabs=self.store.session_tabs(row["session_id"])) \
             + SESSION_LEASE_SECONDS
 
+    def sweep_retention(self, *, now: float | None = None) -> dict:
+        """把已经到期的明细删掉：先落墓碑，再删文件，最后丢掉内存里的那一份。
+
+        顺序是刻意的。墓碑先写：它让两个并发的巡检者里只有一个真的去删，而"已经清理过"
+        这件事在删到一半失败之后仍然成立、仍然可以重试。文件只删
+        ``checkup_dir/tasks/<task_id>`` 这一个目录 —— 额度账本、OSM 数据、用户文件都不在
+        这个根下，也一个都不碰。
+
+        只处理**终态**任务：正在跑的体检当然也已经到期（会话关闭时它就被取消了），
+        但它的明细是这一轮正在写的东西，删除要先等它停下来。
+        """
+        now = time.time() if now is None else now
+        cleared, failed = [], []
+        for record in self.store.terminal_tasks():
+            if record.details_cleared_at is not None:
+                continue
+            if self.retention_of(record, now=now).details_available:
+                continue
+            if not self.store.mark_details_cleared(record.task_id, now=now):
+                continue
+            leftovers = retention.delete_details(self.store.root, record.task_id)
+            self.cache.drop_task(record.task_id)
+            self.detail_budgets.pop(record.task_id, None)
+            (failed if leftovers else cleared).append(record.task_id)
+        return {"cleared": cleared, "failed": failed}
+
+    def start_maintenance(self, interval: float = MAINTENANCE_SECONDS) -> asyncio.Task:
+        """定期做两件没有请求会来触发的事：判会话到期、清到期的明细。
+
+        它必须由部署的启动钩子启动，而不是靠某次读取顺手做：到期恰恰发生在**没有人看**
+        的时候（最后一个标签页关掉之后），只靠读取触发就等于"没人看就永远不清"。
+        """
+        async def loop():
+            while not self.closing:
+                try:
+                    self.expire_due_sessions()
+                    self.sweep_retention()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("checkup retention maintenance failed")
+                await asyncio.sleep(interval)
+
+        self.maintenance = asyncio.create_task(loop())
+        return self.maintenance
+
+    def retained(self, task_id: str, revision: int | None = None) -> RetainedCheckupView:
+        """明细到期之后仍然可以给出的东西：结论、汇总与到期原因。
+
+        它从**冻结的汇总**读，不回头去读那份可能已经删掉的修订文件：到期之后还能不能
+        回答这个问题，不能取决于文件还在不在。
+        """
+        record = self.get(task_id)
+        stored = self.store.revision_row(task_id, revision)
+        if stored is None:
+            if revision is not None:
+                raise CheckupError(409, "checkup_revision_not_found",
+                                   f"这次体检没有第 {revision} 版修订")
+            raise CheckupError(409, "checkup_result_not_ready", "尚无可用结果快照")
+        summary = self.store.summary(task_id, stored["revision"])
+        if summary is None:
+            raise CheckupError(409, "checkup_retained_summary_missing",
+                               "这次体检的那一版没有留存汇总，只有任务层面的状态可用")
+        return RetainedCheckupView(
+            task_id=task_id, revision=stored["revision"], stage=stored["stage"],
+            business_status=record.business_status or "partial", result_hash=stored["result_hash"],
+            summary=summary, retention=self.retention_of(record),
+            notes=[RETENTION_NOTE])
+
     def retention_of(self, record, *, now: float | None = None) -> RetentionView:
         """这份结果的明细还能不能提供（§5 B2 决策 2）。
 
@@ -360,7 +441,7 @@ class CheckupManager:
         """
         now = time.time() if now is None else now
         if record.details_cleared_at is not None:
-            return RetentionView(details_available=False, reason="cleared")
+            return RetentionView(details_available=False, reason="cleared", cleared=True)
         if record.created_at < self.store.retention_baseline_at():
             # 运营者的口径：已经落盘、没有会话归属的历史报告视为已过期（明细清除，
             # 保留不含明细的汇总）。判据是"比本库开始记录保留期的时刻早"，所以一个
@@ -401,6 +482,19 @@ class CheckupManager:
         return expired
 
 
+
+    def _source_still_retained(self, task_id: str) -> bool:
+        """跨任务复用的一票否决：来源任务的明细还在期限内吗（§5 B2 决策 2）。
+
+        这是"复用不重置来源期限"唯一能被执行的时刻。放进缓存而不是每个调用方各判一次，
+        是因为缓存是唯一知道"这一页是谁的"的地方；调用方只看得到页面内容，而内容不会说
+        自己是谁取回来的。
+        """
+        try:
+            return self.retention_of(self.store.get(task_id)).details_available
+        except TaskNotFound:
+            # 任务行都没了（被清理过的库）：没有期限可继承，也没有数据可复用。
+            return False
 
     def interrupt_unfinished(self) -> int:
         """Sweep tasks this process did not finish, as a restart does.
@@ -463,6 +557,10 @@ class CheckupManager:
             except Exception:
                 # A task must reach a terminal state even when orchestration
                 # itself fails; the reason is recorded, never the raw exception.
+                # The traceback still goes to the log: without it, "orchestration
+                # failed" is the only thing anyone can ever see, and the failing
+                # line is unreachable by any test that goes through HTTP.
+                logger.exception("checkup orchestration failed: %s", task_id)
                 self._finish(task_id, status="failed", error="orchestration_failed")
             finally:
                 self.queue.task_done()
@@ -1051,9 +1149,12 @@ class CheckupManager:
                  result_hash: str) -> None:
         # Published files use wire naming, so a stored revision round-trips back
         # into the response model without a translation step.
-        published = self.store.publish(task_id, stage=stage,
-                                       snapshot=document.model_dump(mode="json", by_alias=True),
-                                       result_hash=result_hash)
+        wire = document.model_dump(mode="json", by_alias=True)
+        published = self.store.publish(task_id, stage=stage, snapshot=wire,
+                                       result_hash=result_hash,
+                                       # §5 B2 决策 2：汇总与修订同一笔定稿 —— 明细删掉之后，
+                                       # 它就是这份结论唯一还留下来的东西。
+                                       summary=retention.summary_of(wire))
         if published != revision:
             raise RuntimeError("revision counter diverged")
 
@@ -1670,6 +1771,9 @@ class CheckupManager:
 
     async def close(self) -> None:
         self.closing = True
+        if self.maintenance is not None and not self.maintenance.done():
+            self.maintenance.cancel()
+            await asyncio.gather(self.maintenance, return_exceptions=True)
         for token in list(self.tokens.values()):
             token.cancel()
         for token in list(self.extension_tokens.values()):

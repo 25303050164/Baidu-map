@@ -63,5 +63,10 @@ class CachedPages:
         manner = LIVE if not answer.cached else (SHARED if answer.shared else CACHED)
         self.uses[(sequence['tileId'], sequence['category'], sequence['query'], page)] = {
             'sequenceId': sequence['sequenceId'], 'source': 'cache' if answer.cached else 'live',
-            'obtainedAt': answer.obtained_at, 'delivery': manner}
+            'obtainedAt': answer.obtained_at, 'delivery': manner,
+            # 这一页是**谁付的钱**：这个任务的缓存条目，或正在为它跑的那次请求。§5 B2 决策 2
+            # 要求"复用不重置来源期限"，而期限记在来源身上 —— 所以来源必须一路带到报告里，
+            # 否则一个复用了别处的页面的报告，看起来就像那些数据是它自己取回来的。
+            'sourceTaskId': answer.source_task_id,
+        }
         return PageResponse(answer.value, answer.reason, manner)

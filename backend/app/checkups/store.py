@@ -14,6 +14,7 @@ from typing import Callable
 from pathlib import Path
 
 from ..persistence import atomic_dump
+from . import retention
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -124,6 +125,11 @@ EXTENSION_KINDS = frozenset({"extension", "retry"})
 #: passed in.
 UPDATABLE = frozenset({"status", "stage", "business_status", "requests", "network_requests",
                        "started_at", "finished_at", "cancel_requested", "error", "progress"})
+#: 与 ``ADDED_COLUMNS`` 同理，只是加在修订表上。``summary`` 是定稿时就冻结好的白名单汇总
+#: （见 ``retention.summary_of``）：到期之后它是这份结论唯一还留下来的东西，所以它必须
+#: 在**删掉明细文件之前**就已经存在，而不是删之前临时算一遍。
+REVISION_ADDED_COLUMNS = (("summary", "TEXT"),)
+
 #: 补查行可以改的字段。``document`` 是结果文件的相对路径，写入即意味着这次补查定稿。
 EXTENSION_UPDATABLE = frozenset({"status", "stage", "requests", "network_requests",
                                  "document", "counts_by_category", "facilities_status",
@@ -339,6 +345,11 @@ class CheckupStore:
             for name, declaration in ADDED_COLUMNS:
                 if name not in present:
                     connection.execute(f"ALTER TABLE tasks ADD COLUMN {name} {declaration}")
+            revision_columns = {row["name"] for row in
+                                connection.execute("PRAGMA table_info(revisions)")}
+            for name, declaration in REVISION_ADDED_COLUMNS:
+                if name not in revision_columns:
+                    connection.execute(f"ALTER TABLE revisions ADD COLUMN {name} {declaration}")
             extension_columns = {row["name"] for row in
                                  connection.execute("PRAGMA table_info(facility_extensions)")}
             for name, declaration in EXTENSION_ADDED_COLUMNS:
@@ -659,7 +670,8 @@ class CheckupStore:
                 (*values, now, task_id))
         return self._get(task_id)
 
-    def publish(self, task_id: str, *, stage: str, snapshot: dict, result_hash: str) -> int:
+    def publish(self, task_id: str, *, stage: str, snapshot: dict, result_hash: str,
+                summary: dict | None = None) -> int:
         """Freeze one revision. The payload is durable before its index row exists."""
         record = self._get(task_id)
         revision = record.revision + 1
@@ -668,9 +680,10 @@ class CheckupStore:
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
-                "INSERT INTO revisions (task_id, revision, stage, created_at, result_hash, payload)"
-                " VALUES (?,?,?,?,?,?)",
-                (task_id, revision, stage, time.time(), result_hash, str(relative.as_posix())))
+                "INSERT INTO revisions (task_id, revision, stage, created_at, result_hash, payload,"
+                " summary) VALUES (?,?,?,?,?,?,?)",
+                (task_id, revision, stage, time.time(), result_hash, str(relative.as_posix()),
+                 None if summary is None else retention.dump(summary)))
             now = time.time()
             connection.execute(
                 "UPDATE tasks SET revision=?, stage=?, updated_at=?, activity_at=?,"
@@ -678,6 +691,48 @@ class CheckupStore:
                 " WHERE task_id=?", (revision, stage, now, now, stage, now, task_id))
             connection.execute("COMMIT")
         return revision
+
+    def revision_row(self, task_id: str, revision: int | None = None) -> dict | None:
+        """索引行本身（修订号、阶段、哈希），**不**读修订文件。
+
+        到期之后还能不能回答"这是哪一版、它的哈希是什么"，不能取决于那个文件还在不在 ——
+        所以凡是不需要文件内容的读取都走这里。
+        """
+        self._get(task_id)
+        with self._connection() as connection:
+            if revision is None:
+                row = connection.execute(
+                    "SELECT revision, stage, created_at, result_hash, payload FROM revisions"
+                    " WHERE task_id=? ORDER BY revision DESC LIMIT 1", (task_id,)).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT revision, stage, created_at, result_hash, payload FROM revisions"
+                    " WHERE task_id=? AND revision=?", (task_id, revision)).fetchone()
+        return None if row is None else dict(row)
+
+    def summary(self, task_id: str, revision: int | None = None) -> dict | None:
+        """某一版冻结下来的白名单汇总；没有就是没有（旧修订、或那一版还没有汇总）。"""
+        self._get(task_id)
+        with self._connection() as connection:
+            if revision is None:
+                row = connection.execute(
+                    "SELECT summary FROM revisions WHERE task_id=?"
+                    " ORDER BY revision DESC LIMIT 1", (task_id,)).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT summary FROM revisions WHERE task_id=? AND revision=?",
+                    (task_id, revision)).fetchone()
+        if row is None or row["summary"] is None:
+            return None
+        return json.loads(row["summary"])
+
+    def terminal_tasks(self) -> list[TaskRecord]:
+        """所有已经走到终态的任务。清理只碰这些：正在跑的明细还有人要写。"""
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM tasks WHERE status IN ('completed','failed','cancelled')"
+                " ORDER BY rowid").fetchall()
+        return [_record(row) for row in rows]
 
     def revisions(self, task_id: str) -> list[dict]:
         with self._connection() as connection:

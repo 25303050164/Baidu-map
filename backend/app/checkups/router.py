@@ -13,7 +13,8 @@ from .models import (DEFAULT_POI_REQUESTS, DEFAULT_ROUTE_REQUESTS, DETAIL_ROUTE_
                      RULE_VERSION, CheckupCapabilities, CheckupLayer, CheckupRequest,
                      CheckupSnapshot, CheckupTaskView, FacilityExtensionDocument,
                      FacilityExtensionRequest, FacilityExtensionView, FacilityRetryRequest,
-                     FacilityRetryView, FacilityRoute, SessionOpenRequest, SessionView)
+                     FacilityRetryView, FacilityRoute, RetainedCheckupView, SessionOpenRequest,
+                     SessionView)
 
 # Layers this release can serve, one per published group. The boundary arrives
 # with the first stage, the retrieved facilities with the second, the assessment
@@ -24,6 +25,10 @@ from .models import (DEFAULT_POI_REQUESTS, DEFAULT_ROUTE_REQUESTS, DETAIL_ROUTE_
 LAYER_IDS = ("isochrone", "facilities", "accessibility", "service_gaps", "heatmap",
              "verification", "report")
 CACHE_CONTROL = "private, max-age=0, must-revalidate"
+#: 含明细的响应一律不许落任何缓存。修订是不可变的，所以浏览器**可以**按 ETag 复用旧正文 ——
+#: 而"不可变"只对内容成立：§5 B2 决策 2 的到期说的是这些明细从某一刻起不该再被读到，
+#: 一个还躺在磁盘缓存里的响应会让它继续被读到。
+NO_STORE = "no-store"
 # The balance counts this application's own attempts. The browser SDK, other
 # applications and the console's accounting sit outside it, so the interface
 # must not present it as the account's remaining allowance.
@@ -33,6 +38,25 @@ QUOTA_LABEL = "本应用预算余额（不含浏览器 SDK、其他应用及旧�
 def _latest(manager: CheckupManager, task_id: str, revision: int | None = None):
     """The newest published revision, or an explicit not-ready refusal."""
     return manager.snapshot(task_id, revision)
+
+
+def _retained(manager: CheckupManager, task_id: str) -> None:
+    """明细已经到期时，这里给出**具名拒绝**，而不是少给一点明细。
+
+    部分地提供明细是这里最坏的选项：读者看到一张设施更少的图，会把它读成"这次体检只找到
+    这些"，而真实答案是"这一部分不再被授权查看"。所以到期就是到期，汇总另走
+    ``/retained-result``，两条路各自说清自己是什么。
+    """
+    retention = manager.retention_of(manager.get(task_id))
+    if not retention.details_available:
+        raise CheckupError(
+            410, "checkup_details_expired",
+            "这次体检的明细已按保留期到期（"
+            + {"session_closed": "浏览会话已结束", "superseded": "之后又完成了三次体检",
+               "legacy": "它是保留期开始之前的数据",
+               "cleared": "明细已被清理"}.get(retention.reason or "", "保留期已过")
+            + "）：设施名称、UID、地址与坐标不再提供。结论、分数与汇总仍可读，见"
+              " /api/v2/checkups/{task_id}/retained-result。")
 
 
 def _layer_geometry(snapshot, layer_id: str):
@@ -255,12 +279,29 @@ def checkup_router(manager: CheckupManager):
     async def result(task_id: str, revision: int | None = None):
         # 客户端一直带着 `?revision=`（重试会为同一次体检发布新修订），而这里曾经不看它：
         # 想要第 3 版的人会拿到第 4 版，并且因为响应里的版本号与请求不符而被判为"契约异常"。
-        return _latest(manager, task_id, revision)[0]
+        _retained(manager, task_id)
+        snapshot, _stored = _latest(manager, task_id, revision)
+        return JSONResponse(status_code=200, headers={"Cache-Control": NO_STORE},
+                            content=snapshot.model_dump(mode="json", by_alias=True))
+
+    # 到期之后仍然可以读的东西：结论、分数与汇总，以及"为什么只剩这些"。它与 /result 分开，
+    # 因为它们回答的是两个不同的问题 —— 合成一个就等于把"明细还在"和"明细没了"混成一个
+    # 可以被忽略的细节。
+    @router.get("/{task_id}/retained-result", response_model=RetainedCheckupView)
+    async def retained_result(task_id: str, revision: int | None = None):
+        view = manager.retained(task_id, revision)
+        # 同样不许缓存：它里面的 `retention` 是**现在**的状态（还没清 / 已经清了），
+        # 一个被缓存下来的副本会把"即将到期"一直显示成"还没到期"。
+        return JSONResponse(status_code=200, headers={"Cache-Control": NO_STORE},
+                            content=view.model_dump(mode="json", by_alias=True))
 
     @router.get("/{task_id}/layers/{layer_id}")
     async def layer(task_id: str, layer_id: str, request: Request, revision: int | None = None):
         if layer_id not in LAYER_IDS:
             raise CheckupError(404, "checkup_layer_not_found", "未知图层")
+        # 图层全是明细：设施图层是设施本身，其余图层是照着这次评估画出来的形状。
+        # 到期之后整组都不再提供，免得出现"面积还在、设施没了"的图。
+        _retained(manager, task_id)
         snapshot, stored = _latest(manager, task_id, revision)
         # The validator names the layer as well as the revision: two layers of one
         # revision are different representations, and a shared digest would let a
@@ -330,6 +371,8 @@ def checkup_router(manager: CheckupManager):
 
     @router.post("/{task_id}/routes/{facility_id}", response_model=FacilityRoute)
     async def facility_route(task_id: str, facility_id: str):
+        # 路线详情是明细（它是一条从设施出发的路线），到期之后同样不提供。
+        _retained(manager, task_id)
         # A route detail is only ever issued for an identifier this task itself
         # retrieved: an id from anywhere else is not a facility of this checkup,
         # which is a different answer from "the facilities are not there yet".

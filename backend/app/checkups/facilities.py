@@ -334,9 +334,25 @@ def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
                                   record['pageNum']))
             if use is not None:
                 record[FETCH_SOURCE], record['obtainedAt'] = use['source'], use['obtainedAt']
+                # 这一页是谁付的钱。它跟着页面记录走，也就跟着每个设施的 provenance 走 ——
+                # §5 B2 决策 2 的"复用不重置来源期限"因此是可执行的：一条设施明细能不能
+                # 提供，由**它的来源**的期限决定，而不是由读它的那次体检决定。
+                record['sourceTaskId'] = use.get('sourceTaskId')
     data_times = [record['obtainedAt'] for entry in coverage for record in entry['pageRecords']
                   if record['succeeded'] and 'obtainedAt' in record]
     live = sum(1 for use in fetch.uses.values() if use['source'] == 'live')
+    # 这一版明细的数据来源清单：来源 → 付了多少页、其中多少是新取的、最早什么时候取的。
+    # 报告据此说明"这些数据是谁的、什么时候到期"，而不必再去读缓存内部状态。
+    sources: dict[str, dict] = {}
+    for use in fetch.uses.values():
+        source_id = use.get('sourceTaskId')
+        if source_id is None:
+            continue
+        item = sources.setdefault(source_id, {'pages': 0, 'live': 0, 'obtainedAt': use['obtainedAt']})
+        item['pages'] += 1
+        if use['source'] == 'live':
+            item['live'] += 1
+        item['obtainedAt'] = min(item['obtainedAt'], use['obtainedAt'])
     duplicates = {item['possibleDuplicateGroup'] for item in accepted + review
                   if item['possibleDuplicateGroup']}
     warnings = sorted(
@@ -361,6 +377,10 @@ def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
         # reader can see why the retrieval was allowed to start — and it is not a
         # promise that paging and subdivision finish within it.
         initial_plan=estimate.as_contract(),
+        # §5 B2 决策 2：这一版明细出自哪几个任务。存的是**因果事实**（谁付的钱、多少页、
+        # 什么时候取的），不是"什么时候到期"—— 到期限是一个事件，冻结进不可变修订里
+        # 就一定会写错。
+        source_tasks=sources,
         counts_by_category={major: sum(1 for item in accepted
                                        if catalog.major_of(item['category']) == major)
                             for major in majors},

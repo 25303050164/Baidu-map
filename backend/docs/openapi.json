@@ -1064,6 +1064,64 @@
         }
       }
     },
+    "/api/v2/checkups/{task_id}/retained-result": {
+      "get": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Retained Result",
+        "operationId": "retained_result_api_v2_checkups__task_id__retained_result_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetainedCheckupView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/checkups/{task_id}/layers/{layer_id}": {
       "get": {
         "tags": [
@@ -4591,6 +4649,21 @@
             ],
             "title": "Queryareacoverage"
           },
+          "sourceTasks": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcetasks"
+          },
           "statistics": {
             "additionalProperties": true,
             "type": "object",
@@ -6668,6 +6741,71 @@
         "title": "ReportVerification",
         "description": "报告的核验栏目。``available`` 与 ``status`` 是两件事：这个部署有没有核验服务\n（available），以及核验跑到什么程度（status）。把 ``not_integrated`` 读成\n``available: True`` 会让\"没有核验\"看起来像\"核验过、没发现问题\"。"
       },
+      "RetainedCheckupView": {
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "title": "Taskid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "isochrone",
+              "poi",
+              "accessibility",
+              "verification",
+              "reporting",
+              "ready"
+            ],
+            "title": "Stage"
+          },
+          "businessStatus": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "insufficient"
+            ],
+            "title": "Businessstatus"
+          },
+          "resultHash": {
+            "type": "string",
+            "title": "Resulthash"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "retention": {
+            "$ref": "#/components/schemas/RetentionView"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "taskId",
+          "revision",
+          "stage",
+          "businessStatus",
+          "resultHash",
+          "retention"
+        ],
+        "title": "RetainedCheckupView",
+        "description": "明细到期之后仍然给得出的那一部分（§5 B2 决策 2）。\n\n``summary`` 是定稿时冻结的白名单汇总：结论、分数区间、面积、计数、停止原因。它里面\n**没有**设施名称、UID、地址、坐标或几何 —— 到期之后还能看到什么，由这份白名单定义，\n而不是由\"原文件里还剩什么\"定义。"
+      },
       "RetentionView": {
         "properties": {
           "detailsAvailable": {
@@ -6708,6 +6846,11 @@
             },
             "type": "array",
             "title": "Sources"
+          },
+          "cleared": {
+            "type": "boolean",
+            "title": "Cleared",
+            "default": false
           }
         },
         "additionalProperties": false,

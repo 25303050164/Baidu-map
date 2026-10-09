@@ -32,6 +32,7 @@ export type RetentionView = {
   expiresAt: number | null;
   reason: "session_closed" | "superseded" | "legacy" | "cleared" | null;
   sources: Array<string>;
+  cleared: boolean;
 };
 
 export type TaskProgress = {
@@ -145,6 +146,7 @@ export type FacilityGroup = {
   queryCoverage: Array<Record<string, unknown>>;
   queryIncompleteRegions: Record<string, Array<Record<string, unknown>>> | null;
   queryAreaCoverage: Record<string, unknown> | null;
+  sourceTasks: Record<string, Record<string, unknown>> | null;
   statistics: Record<string, unknown>;
   warnings: Array<string>;
   stopReason: string | null;
@@ -498,4 +500,15 @@ export type SessionView = {
   resumed: boolean;
   openTabs: number;
   tasks: number;
+};
+
+export type RetainedCheckupView = {
+  taskId: string;
+  revision: number;
+  stage: "isochrone" | "poi" | "accessibility" | "verification" | "reporting" | "ready";
+  businessStatus: "complete" | "partial" | "insufficient";
+  resultHash: string;
+  summary: Record<string, unknown>;
+  retention: RetentionView;
+  notes: Array<string>;
 };

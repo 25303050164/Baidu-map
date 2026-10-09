@@ -557,7 +557,8 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
                                      CheckupTaskView, FacilityExtensionDocument,
                                      FacilityExtensionRequest, FacilityExtensionView,
                                      FacilityRetryRequest, FacilityRetryView, FacilityRoute,
-                                     RetentionView, SessionOpenRequest, SessionView)
+                                     RetainedCheckupView, RetentionView,
+                                     SessionOpenRequest, SessionView)
     from tools.export_contract import typescript as v2_typescript
     v2 = v2_typescript(
         [CheckupRequest, CheckupTaskView, CheckupSnapshot, CheckupLayer,
@@ -567,7 +568,7 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
          # 生成物写调用，而那份生成物里没有这两个类型 —— 正是这条断言要拦的事。
          FacilityRetryRequest, FacilityRetryView,
          # §5 B2 决策 2 的会话与保留期同理：它们是客户端要读的状态，不是内部字段。
-         SessionOpenRequest, SessionView, RetentionView],
+         SessionOpenRequest, SessionView, RetentionView, RetainedCheckupView],
         request_models=[CheckupRequest, CheckupFacilities, CheckupIsochrone,
                         FacilityExtensionRequest, FacilityRetryRequest, SessionOpenRequest])
     assert v2 == (Path(__file__).resolve().parents[2]
