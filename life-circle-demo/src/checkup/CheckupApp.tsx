@@ -34,6 +34,7 @@ import { missingCoreMajors, estimatedFirstRoundPages, splitScope } from './categ
 import { extensionLines } from './extensions';
 import type { MajorCategory } from './contract';
 import { nearestEmptyNote, nearestFacilities } from './nearest';
+import { queryCoverageLine, queryCoverageRetryLine } from './queryCoverage';
 import { WeatherCard } from './WeatherCard';
 import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
 import { outdatedText, recomputedText, versionView, waterView } from './water';
@@ -452,6 +453,10 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   const items = useMemo(() => snapshot ? coverageItems(snapshot) : [], [snapshot]);
   const nearestGroups = useMemo(() => nearestFacilities(drawables.facilities, taskCenter ?? null),
     [drawables.facilities, taskCenter]);
+  // §5 B2 决策 1 的判决：查到多少、达没达标、没达标的话下一步能不能靠重试解决。
+  // 旧修订不报这一项，两个值都是 null，界面上就什么都不显示（不补一个 0% 出来）。
+  const queryCoverage = snapshot ? queryCoverageLine(snapshot.facilities) : null;
+  const queryCoverageNext = snapshot ? queryCoverageRetryLine(snapshot.facilities) : null;
   const weatherCenter = draft ?? taskCenter ?? null;
   const idle = state.phase === 'idle';
 
@@ -817,6 +822,10 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
 
         {snapshot && <section className="wb-sec wb-nearest" data-testid="checkup-nearest">
           <h2 className="wb-h">周边设施 · 每类最近 5 处</h2>
+          {queryCoverage && <p className="wb-hint"
+            data-testid="checkup-query-coverage">{queryCoverage}</p>}
+          {queryCoverageNext && <p className="wb-hint"
+            data-testid="checkup-query-coverage-next">{queryCoverageNext}</p>}
           {!drawables.facilities ? <p className="wb-hint">{layerErrors.facilities
             ?? '设施结果尚未加载。'}</p>
             : drawables.facilities.state === 'empty' ? <p className="wb-hint"

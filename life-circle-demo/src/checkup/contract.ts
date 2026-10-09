@@ -136,6 +136,10 @@ export type FacilityGroup = {
   quarantine: Array<Record<string, unknown>>;
   queryCoverage: Array<Record<string, unknown>>;
   queryIncompleteRegions: Record<string, Array<Record<string, unknown>>> | null;
+  //: §5 B2 决策 1：所有所选小类共同完成检索的圈面比例。旧修订没有这一项 ——
+  //: 可选而非 `null`，因为"旧后端不发送这个键"和"后端明确报 null"是两件事。
+  //: 形状由 `coverage.ts` 校验后再用，契约这里只声明它可能存在。
+  queryAreaCoverage?: Record<string, unknown> | null;
   statistics: Record<string, unknown>;
   warnings: Array<string>;
   stopReason: string | null;
