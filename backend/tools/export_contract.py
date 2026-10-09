@@ -32,7 +32,7 @@ from app.checkups.models import (CheckupCapabilities, CheckupFacilities, Checkup
                                  CheckupLayer, CheckupRequest, CheckupSnapshot, CheckupTaskView,
                                  FacilityExtensionDocument, FacilityExtensionRequest,
                                  FacilityExtensionView, FacilityRetryRequest, FacilityRetryView,
-                                 FacilityRoute)
+                                 FacilityRoute, RetentionView, SessionOpenRequest, SessionView)
 from app.contracts import (AnalysisResponse, CategoryResult, Data, Facility, FacilityCatalog, Geometry,
                            Issue, Origin, Rules, TaskResultResponse, TaskStatusResponse, OsmOfflineRequest)
 from app.hybrid_contracts import HybridRequest, HybridResultResponse, HybridError
@@ -250,9 +250,13 @@ def build(where: Path = REPO) -> dict[str, str]:
              FacilityExtensionRequest, FacilityExtensionView,
              FacilityExtensionDocument,
              # §5 B2 决策 1 的重试同理：它是另一个资源，有自己的请求与状态。
-             FacilityRetryRequest, FacilityRetryView],
+             FacilityRetryRequest, FacilityRetryView,
+             # §5 B2 决策 2 的会话与保留期：会话视图是客户端的轮询对象（它是本地存的两个
+             # 标识换回来的状态），保留期在任务视图上，三个类型都是 v2 契约的一部分。
+             SessionOpenRequest, SessionView, RetentionView],
             request_models=[CheckupRequest, CheckupFacilities, CheckupIsochrone,
-                            FacilityExtensionRequest, FacilityRetryRequest]),
+                            FacilityExtensionRequest, FacilityRetryRequest,
+                            SessionOpenRequest]),
     }
     for name, text in _mock_documents().items():
         documents[f"mock-{name}"] = text

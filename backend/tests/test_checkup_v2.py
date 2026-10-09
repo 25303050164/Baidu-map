@@ -556,7 +556,8 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
                                      CheckupLayer, CheckupRequest, CheckupSnapshot,
                                      CheckupTaskView, FacilityExtensionDocument,
                                      FacilityExtensionRequest, FacilityExtensionView,
-                                     FacilityRetryRequest, FacilityRetryView, FacilityRoute)
+                                     FacilityRetryRequest, FacilityRetryView, FacilityRoute,
+                                     RetentionView, SessionOpenRequest, SessionView)
     from tools.export_contract import typescript as v2_typescript
     v2 = v2_typescript(
         [CheckupRequest, CheckupTaskView, CheckupSnapshot, CheckupLayer,
@@ -564,9 +565,11 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
          FacilityExtensionRequest, FacilityExtensionView, FacilityExtensionDocument,
          # §5 B2 决策 1 的重试也是 v2 契约的一部分。它漏进过导出清单：前端照着
          # 生成物写调用，而那份生成物里没有这两个类型 —— 正是这条断言要拦的事。
-         FacilityRetryRequest, FacilityRetryView],
+         FacilityRetryRequest, FacilityRetryView,
+         # §5 B2 决策 2 的会话与保留期同理：它们是客户端要读的状态，不是内部字段。
+         SessionOpenRequest, SessionView, RetentionView],
         request_models=[CheckupRequest, CheckupFacilities, CheckupIsochrone,
-                        FacilityExtensionRequest, FacilityRetryRequest])
+                        FacilityExtensionRequest, FacilityRetryRequest, SessionOpenRequest])
     assert v2 == (Path(__file__).resolve().parents[2]
                   / "life-circle-demo/src/checkup/contract.ts").read_text(encoding="utf-8")
 

@@ -39,6 +39,24 @@ CREATE TABLE IF NOT EXISTS tasks (
     activity_at REAL,
     progress TEXT
 );
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    created_at REAL NOT NULL,
+    last_seen_at REAL NOT NULL,
+    expired_at REAL
+);
+CREATE TABLE IF NOT EXISTS session_tabs (
+    tab_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    opened_at REAL NOT NULL,
+    last_seen_at REAL NOT NULL,
+    closed_at REAL
+);
+CREATE INDEX IF NOT EXISTS session_tabs_of_session ON session_tabs (session_id);
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS revisions (
     task_id TEXT NOT NULL,
     revision INTEGER NOT NULL,
@@ -76,7 +94,18 @@ CREATE TABLE IF NOT EXISTS facility_extensions (
 #: Columns added after the first release, with their declarations. A store
 #: created before them is migrated in place; existing rows read them as NULL,
 #: which the view reports as "not recorded" rather than inventing a time.
-ADDED_COLUMNS = (("stage_started_at", "REAL"), ("activity_at", "REAL"), ("progress", "TEXT"))
+#:
+#: ``session_id`` 是这一次体检属于哪个浏览会话（§5 B2 决策 2 的第一条期限）。
+#: ``details_cleared_at`` 是清理过的**墓碑**：文件删掉之后再有人按这个任务读明细，
+#: 要得到"已到期"而不是"没有这个任务"，而且在两个并发读取之间只能被判一次。
+ADDED_COLUMNS = (("stage_started_at", "REAL"), ("activity_at", "REAL"), ("progress", "TEXT"),
+                 ("session_id", "TEXT"), ("details_cleared_at", "REAL"))
+#: 这一份库第一次被"带保留期的那一版"打开的时刻。它之前落盘的任务没有会话归属，
+#: 也没有任何人替它们承担保留义务 —— 运营者的口径是这些历史报告**视为已过期**：
+#: 明细不再提供，只留不含明细的汇总，实际删除交给清单与人工确认（`evidence/06` §2 决策 2）。
+#: 记在库里而不是写死一个日期：判据是"这份数据比本库开始记录保留期的时刻早"，
+#: 一个新建的库（测试、临时部署）里就不会有任务被判成历史数据。
+RETENTION_BASELINE_KEY = "retention_baseline_at"
 #: 补查表同理：早于它的库按原样读回，不编造缺的字段。``intent`` 记的是客户端当时声明的
 #: 请求身份（类别与是否显式给了预算）；旧行没有它，按旧版的解析结果判定，见
 #: :func:`extension_matches`。``stop_reason``/``initial_plan`` 是定稿时冻结的诊断：
@@ -140,6 +169,12 @@ class TaskRecord:
     activity_at: float | None = None
     #: The worker's current in-stage step, as written; None before the first one.
     progress: dict | None = None
+    #: 这一次体检属于哪个浏览会话（§5 B2 决策 2）。None 表示**没人认领**：它要么早于
+    #: 会话机制（历史数据），要么由不带会话标识的调用方创建（脚本、命令行、旧客户端）。
+    session_id: str | None = None
+    #: 明细被清理掉的时刻（墓碑）。有它就意味着"这份结果还在，但含明细的文件已经不在了"，
+    #: 那与"没有这个任务"是两种回答。
+    details_cleared_at: float | None = None
 
 
 def _record(row) -> TaskRecord:
@@ -152,7 +187,9 @@ def _record(row) -> TaskRecord:
         finished_at=row["finished_at"], cancel_requested=bool(row["cancel_requested"]),
         error=row["error"], stage_started_at=row["stage_started_at"],
         activity_at=row["activity_at"],
-        progress=None if row["progress"] is None else json.loads(row["progress"]))
+        progress=None if row["progress"] is None else json.loads(row["progress"]),
+        session_id=row["session_id"],
+        details_cleared_at=row["details_cleared_at"])
 
 
 @dataclass(frozen=True)
@@ -288,7 +325,14 @@ class CheckupStore:
         return self.interrupt_unfinished()
 
     def create_schema(self) -> None:
-        """Create the tables and add any later column. Changes no task's state."""
+        """Create the tables and add any later column. Changes no task's state.
+
+        Also stamps the retention baseline once, on the first run of a release
+        that has retention at all. Doing it here -- and only once, by ``OR IGNORE``
+        -- is what makes "this data predates the retention policy" a fact about
+        the store rather than a hard-coded date: a store created today starts its
+        own baseline today, so nothing inside it can be mistaken for history.
+        """
         with self._connection() as connection:
             connection.executescript(SCHEMA)
             present = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
@@ -301,6 +345,8 @@ class CheckupStore:
                 if name not in extension_columns:
                     connection.execute(
                         f"ALTER TABLE facility_extensions ADD COLUMN {name} {declaration}")
+            connection.execute("INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
+                               (RETENTION_BASELINE_KEY, repr(time.time())))
 
     def interrupt_unfinished(self) -> int:
         """Fail every queued/running/cancelling task as ``interrupted_by_restart``.
@@ -333,8 +379,196 @@ class CheckupStore:
         directory.mkdir(parents=True, exist_ok=True)
         return directory
 
+    # -- 会话与租约（§5 B2 决策 2 的第一条期限）--------------------------------
+    #
+    # 这几件事分成两层：**记下来**在这里，**判期限**在 manager（它才知道 5 分钟宽限
+    # 这类产品口径）。store 只回答"最后一刻还在的时候是什么时候"，不去解释它意味着什么。
+
+    def retention_baseline_at(self) -> float:
+        """这份库开始记录保留期的时刻；缺失时按"此刻"记一次（老库的第一次迁移）。"""
+        with self._connection() as connection:
+            row = connection.execute("SELECT value FROM meta WHERE key=?",
+                                     (RETENTION_BASELINE_KEY,)).fetchone()
+            if row is None:
+                connection.execute("INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
+                                   (RETENTION_BASELINE_KEY, repr(time.time())))
+                return time.time()
+        return float(row["value"])
+
+    def session_row(self, session_id: str) -> dict | None:
+        with self._connection() as connection:
+            row = connection.execute("SELECT * FROM sessions WHERE session_id=?",
+                                     (session_id,)).fetchone()
+        return None if row is None else dict(row)
+
+    def session_tabs(self, session_id: str) -> list[dict]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM session_tabs WHERE session_id=? ORDER BY opened_at, tab_id",
+                (session_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def start_session(self, *, session_id: str, tab_id: str, now: float) -> dict:
+        """开一个会话并登记它的第一个标签页。"""
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "INSERT INTO sessions (session_id, created_at, last_seen_at) VALUES (?,?,?)",
+                (session_id, now, now))
+            connection.execute(
+                "INSERT INTO session_tabs (tab_id, session_id, opened_at, last_seen_at)"
+                " VALUES (?,?,?,?)", (tab_id, session_id, now, now))
+            connection.execute("COMMIT")
+        return self.session_row(session_id)
+
+    def touch_session(self, *, session_id: str, tab_id: str, now: float,
+                      reopen: bool) -> dict | None:
+        """续租；``reopen`` 为真时把一个已关闭的标签页重新登记（刷新后回到同一个标签页）。
+
+        未知会话返回 None —— 调用方据此决定是"让它过期"还是"接不上就别接"，
+        这里不替它判断。
+        """
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM sessions WHERE session_id=?",
+                                     (session_id,)).fetchone()
+            if row is None:
+                connection.execute("COMMIT")
+                return None
+            connection.execute("UPDATE session_tabs SET last_seen_at=?,"
+                               " closed_at=CASE WHEN ? THEN NULL ELSE closed_at END"
+                               " WHERE tab_id=? AND session_id=?",
+                               (now, int(reopen), tab_id, session_id))
+            connection.execute("UPDATE sessions SET last_seen_at=? WHERE session_id=?",
+                               (now, session_id))
+            connection.execute("COMMIT")
+        return self.session_row(session_id)
+
+    def open_tab(self, *, session_id: str, tab_id: str, now: float) -> bool:
+        """把一个新标签页登记到已有会话里。返回它是否真的是新的。"""
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO session_tabs (tab_id, session_id, opened_at, last_seen_at)"
+                " VALUES (?,?,?,?)", (tab_id, session_id, now, now))
+            if cursor.rowcount:
+                connection.execute("UPDATE sessions SET last_seen_at=? WHERE session_id=?",
+                                   (now, session_id))
+            connection.execute("COMMIT")
+            return cursor.rowcount == 1
+
+    def close_tab(self, *, session_id: str, tab_id: str, now: float) -> bool:
+        """标签页离开。返回它是否真的从"开着"变成了"关着"（重复关闭不是第二次事件）。"""
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "UPDATE session_tabs SET closed_at=?, last_seen_at=?"
+                " WHERE tab_id=? AND session_id=? AND closed_at IS NULL",
+                (now, now, tab_id, session_id))
+            return cursor.rowcount == 1
+
+    def expire_session(self, *, session_id: str, now: float) -> bool:
+        """把会话判成已过期，只判一次。已过期是终态：迟到的心跳不能让它复活。"""
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "UPDATE sessions SET expired_at=? WHERE session_id=? AND expired_at IS NULL",
+                (now, session_id))
+            return cursor.rowcount == 1
+
+    def expire_sessions_without_live_tabs(self, *, now: float, grace: float) -> list[str]:
+        """把"最后一个标签页离开已经超过宽限期"的会话判成过期，返回它们的标识。
+
+        判据只用到**已经写下来的时刻**：最后一个标签页的关闭时刻，或它最后一次续租的
+        时刻 —— 后者覆盖"标签页被直接杀掉、来不及说再见"的情形。
+        """
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT s.session_id AS session_id FROM sessions s"
+                " WHERE s.expired_at IS NULL AND NOT EXISTS ("
+                "   SELECT 1 FROM session_tabs t WHERE t.session_id = s.session_id"
+                "     AND t.closed_at IS NULL AND t.last_seen_at > ?)"
+                " AND COALESCE((SELECT MAX(COALESCE(t2.closed_at, t2.last_seen_at))"
+                "               FROM session_tabs t2 WHERE t2.session_id = s.session_id),"
+                "              s.created_at) <= ?",
+                (now - grace, now - grace)).fetchall()
+            ids = [row["session_id"] for row in rows]
+            if ids:
+                connection.executemany(
+                    "UPDATE sessions SET expired_at=? WHERE session_id=? AND expired_at IS NULL",
+                    [(now, session_id) for session_id in ids])
+        return ids
+
+    def session_ids_of_tasks(self, session_id: str) -> list[str]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT task_id FROM tasks WHERE session_id=? ORDER BY created_at, task_id",
+                (session_id,)).fetchall()
+        return [row["task_id"] for row in rows]
+
+    # -- 保留期：第三次后续体检 -------------------------------------------------
+
+    def later_terminal_instants(self, task_id: str, *, limit: int = 3) -> list[float | None]:
+        """这份任务之后**按提交顺序**前 limit 个已经进入终态的任务，各自的结束时刻。
+
+        "该次体检之后的第三次新体检结束"就是这里第 limit 个的结束时刻。顺序用 ``rowid``：
+        那才是真正的插入顺序。``created_at`` 只到浮点精度，同一瞬间提交的两次体检会拿到
+        同一个值，于是排序会退化成按任务标识（一个 UUID）比较 —— 那不是"提交顺序"，而是
+        一个看起来稳定、实际与提交无关的顺序，测试里冻结时钟时立刻就会露出来。
+
+        重试、补查与幂等重发都不在这里出现：它们不新建 ``tasks`` 行。
+        """
+        with self._connection() as connection:
+            row = connection.execute("SELECT rowid FROM tasks WHERE task_id=?",
+                                     (task_id,)).fetchone()
+            if row is None:
+                raise TaskNotFound(task_id)
+            rows = connection.execute(
+                "SELECT finished_at FROM tasks WHERE rowid > ?"
+                " AND status IN ('completed','failed','cancelled')"
+                " ORDER BY rowid LIMIT ?", (row["rowid"], limit)).fetchall()
+        return [item["finished_at"] for item in rows]
+
+    def tasks_created_before(self, instant: float) -> list[str]:
+        """早于这个时刻创建的任务：没有会话归属、也没有人替它们承担保留义务的那些。"""
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT task_id FROM tasks WHERE created_at < ? ORDER BY created_at, task_id",
+                (instant,)).fetchall()
+        return [row["task_id"] for row in rows]
+
+    def mark_details_cleared(self, task_id: str, *, now: float) -> bool:
+        """给清理盖墓碑：两个并发的清理者里只有一个能拿到 True。
+
+        先落墓碑再删文件 —— 反过来的话，删到一半失败的那次重启会让"已清理"这件事
+        既没有记录、也不可重试。
+        """
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "UPDATE tasks SET details_cleared_at=? WHERE task_id=? AND details_cleared_at IS NULL",
+                (now, task_id))
+            return cursor.rowcount == 1
+
+    def details_cleared_tasks(self) -> list[str]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT task_id FROM tasks WHERE details_cleared_at IS NOT NULL"
+                " ORDER BY created_at, task_id").fetchall()
+        return [row["task_id"] for row in rows]
+
+    def task_directories(self) -> list[str]:
+        """磁盘上真实存在的任务目录，包括**索引里已经没有行**的那些。
+
+        只按索引删是错的：一个目录可能留下没有索引行的修订文件（写文件成功、写索引前
+        进程就没了），照索引清理会把这些明细永远留在盘上。
+        """
+        tasks = self.root / "tasks"
+        if not tasks.is_dir():
+            return []
+        return sorted(item.name for item in tasks.iterdir() if item.is_dir())
+
+
     def create(self, *, task_id: str, client_request_id: str, engine: str,
-               fingerprint: str, payload: dict, budget: int) -> tuple[TaskRecord, bool]:
+               fingerprint: str, payload: dict, budget: int,
+               session_id: str | None = None) -> tuple[TaskRecord, bool]:
         """Insert once per client request id; identical repeats return the same task."""
         now = time.time()
         with self._connection() as connection:
@@ -348,10 +582,11 @@ class CheckupStore:
                 return _record(existing), False
             connection.execute(
                 "INSERT INTO tasks (task_id, client_request_id, engine, fingerprint, payload,"
-                " status, stage, revision, budget, created_at, updated_at)"
-                " VALUES (?,?,?,?,?,'queued',NULL,0,?,?,?)",
+                " status, stage, revision, budget, created_at, updated_at, session_id)"
+                " VALUES (?,?,?,?,?,'queued',NULL,0,?,?,?,?)",
                 (task_id, client_request_id, engine, fingerprint,
-                 json.dumps(payload, ensure_ascii=False, sort_keys=True), budget, now, now))
+                 json.dumps(payload, ensure_ascii=False, sort_keys=True), budget, now, now,
+                 session_id))
             connection.execute("COMMIT")
             return self._get(task_id), True
 

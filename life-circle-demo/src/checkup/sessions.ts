@@ -10,6 +10,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { createCheckupService, type CheckupService } from './client';
+import { startBrowserSession } from './browserSession';
 import { CheckupController } from './controller';
 import type { CheckupHandle, CheckupInput, CheckupState } from './types';
 import { onWake } from '../wakeups';
@@ -94,11 +95,28 @@ function write(engine: string, stored: Stored) {
 
 const sessions = new Map<string, CheckupSession>();
 let sharedService: CheckupService | undefined;
+let stopBrowserSession: (() => void) | undefined;
+
+/**
+ * 应用自己的那个服务对象，顺带把**浏览会话**打开并保活。
+ *
+ * 会话是整个应用一个，不是每个引擎一个：同一浏览器的两个标签页、两个体检引擎共用它
+ * （§5 B2 决策 2）。注入服务（测试、或者别的宿主）时不碰会话 —— 那种情况下这个模块
+ * 连浏览器都不该假设存在。
+ */
+function ensureService(service?: CheckupService): CheckupService {
+  if (service !== undefined) return service;
+  if (sharedService === undefined) {
+    sharedService = createCheckupService();
+    stopBrowserSession = startBrowserSession(sharedService);
+  }
+  return sharedService;
+}
 
 export function checkupSession(engine: string, service?: CheckupService): CheckupSession {
   const existing = sessions.get(engine);
   if (existing) return existing;
-  const api = service ?? (sharedService ??= createCheckupService());
+  const api = ensureService(service);
   const stored = readStored(engine);
   let state: CheckupState = { phase: 'idle' };
   let prefs: CheckupPrefs = stored.prefs ?? {};
@@ -135,5 +153,7 @@ const IDLE: CheckupState = { phase: 'idle' };
 export function resetCheckupSessions() {
   for (const session of sessions.values()) session.controller.dispose();
   sessions.clear();
+  stopBrowserSession?.();
+  stopBrowserSession = undefined;
   sharedService = undefined;
 }

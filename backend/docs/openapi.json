@@ -779,6 +779,149 @@
         }
       }
     },
+    "/api/v2/checkups/sessions": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Open Session",
+        "operationId": "open_session_api_v2_checkups_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionOpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/sessions/{session_id}/tabs/{tab_id}/heartbeat": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Heartbeat",
+        "operationId": "heartbeat_api_v2_checkups_sessions__session_id__tabs__tab_id__heartbeat_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "tab_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tab Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/checkups/sessions/{session_id}/tabs/{tab_id}/close": {
+      "post": {
+        "tags": [
+          "checkups"
+        ],
+        "summary": "Close Tab",
+        "operationId": "close_tab_api_v2_checkups_sessions__session_id__tabs__tab_id__close_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "tab_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tab Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/checkups/by-request/{client_request_id}": {
       "get": {
         "tags": [
@@ -3116,6 +3259,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/TaskProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retention": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetentionView"
               },
               {
                 "type": "null"
@@ -6515,6 +6668,56 @@
         "title": "ReportVerification",
         "description": "报告的核验栏目。``available`` 与 ``status`` 是两件事：这个部署有没有核验服务\n（available），以及核验跑到什么程度（status）。把 ``not_integrated`` 读成\n``available: True`` 会让\"没有核验\"看起来像\"核验过、没发现问题\"。"
       },
+      "RetentionView": {
+        "properties": {
+          "detailsAvailable": {
+            "type": "boolean",
+            "title": "Detailsavailable"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiresat"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "session_closed",
+                  "superseded",
+                  "legacy",
+                  "cleared"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "detailsAvailable"
+        ],
+        "title": "RetentionView",
+        "description": "这份结果的明细还能不能提供、什么时候到期、为什么。\n\n``details_available`` 为假时**不等于**\"没有这个任务\"：任务、评分与汇总都还在，\n缺的是含设施名称、UID 与坐标的那部分明细（`evidence/06` §2 决策 2）。"
+      },
       "RouteEvidence": {
         "properties": {
           "distance_m": {
@@ -7020,6 +7223,93 @@
         ],
         "title": "ServiceZone",
         "description": "一片灰区在冻结修订里的样子（§6.5）。\n\n``zones`` 曾经是裸 dict，于是\"这一片有多大、为什么是灰区、建议查什么\"只存在于\n``Zone.as_dict()`` 的写法里：写错了没有一处会报错，读的人也没有类型可依。把它写成\n模型之后，冻结出来的清单自带校验，前端契约也从同一份定义生成。\n\n两份几何必须来自同一个对象：``geometry`` 是**统计几何**（米制，面积以它为准），\n``displayGeometry`` 是同一对象的 bd09ll 形态。展示简化改变统计几何是 §6.5 明令禁止的。"
+      },
+      "SessionOpenRequest": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "checkup-v1",
+            "title": "Schemaversion",
+            "default": "checkup-v1"
+          },
+          "sessionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sessionid"
+          },
+          "tabId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tabid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SessionOpenRequest",
+        "description": "开一个浏览会话，或回到已有的那一个（§5 B2 决策 2 的第一条期限）。\n\n两个标识分两处存，因为它们的寿命不一样：**会话**属于这个浏览器（同一浏览器的两个\n标签页共用一个），**标签页**属于一个标签页（刷新要接着用同一个，关掉就该消失）。\n客户端负责保管它们，服务端只回答\"这个会话现在还算数吗\"。"
+      },
+      "SessionView": {
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "title": "Sessionid"
+          },
+          "tabId": {
+            "type": "string",
+            "title": "Tabid"
+          },
+          "leaseSeconds": {
+            "type": "number",
+            "title": "Leaseseconds"
+          },
+          "expiresAt": {
+            "type": "number",
+            "title": "Expiresat"
+          },
+          "resumed": {
+            "type": "boolean",
+            "title": "Resumed"
+          },
+          "openTabs": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Opentabs",
+            "default": 1
+          },
+          "tasks": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Tasks",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sessionId",
+          "tabId",
+          "leaseSeconds",
+          "expiresAt",
+          "resumed"
+        ],
+        "title": "SessionView",
+        "description": "一个会话此刻的状态：租约还剩多久、有几个标签页还开着。\n\n``expires_at`` 是**租约到期时刻**，不是\"数据已经删了\"：到期之后还有一段可判定的\n时间用来拒绝迟到的心跳，但明细的可用性由 ``RetentionView`` 单独回答。"
       },
       "SyntheticRequest": {
         "properties": {

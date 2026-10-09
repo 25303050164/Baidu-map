@@ -13,7 +13,7 @@ from .models import (DEFAULT_POI_REQUESTS, DEFAULT_ROUTE_REQUESTS, DETAIL_ROUTE_
                      RULE_VERSION, CheckupCapabilities, CheckupLayer, CheckupRequest,
                      CheckupSnapshot, CheckupTaskView, FacilityExtensionDocument,
                      FacilityExtensionRequest, FacilityExtensionView, FacilityRetryRequest,
-                     FacilityRetryView, FacilityRoute)
+                     FacilityRetryView, FacilityRoute, SessionOpenRequest, SessionView)
 
 # Layers this release can serve, one per published group. The boundary arrives
 # with the first stage, the retrieved facilities with the second, the assessment
@@ -202,13 +202,44 @@ def _report_layer(snapshot):
     return None, None, snapshot.report.model_dump(mode="json", by_alias=True)
 
 
+#: 会话标识走请求头而不是请求体：它属于**调用方**，不属于某一次体检的参数。放进
+#: ``CheckupRequest`` 会让它进入指纹 —— 于是同一个请求标识在不同会话里重发就变成"参数变了"，
+#: 而那不是参数，是"谁在问"。它也因而不会出现在任何一份生成契约的请求体里。
+SESSION_HEADER = "X-Checkup-Session"
+
+
+def session_id_of(request: Request) -> str | None:
+    """请求头里的会话标识；没有就返回 None（这次体检没有会话归属）。"""
+    value = request.headers.get(SESSION_HEADER)
+    if value is None or not value.strip():
+        return None
+    return value.strip()[:100]
+
+
 def checkup_router(manager: CheckupManager):
     router = APIRouter(prefix="/api/v2/checkups", tags=["checkups"])
 
     @router.post("", status_code=202, response_model=CheckupTaskView)
-    async def create(payload: CheckupRequest):
-        view, _created = manager.submit(payload)
+    async def create(payload: CheckupRequest, request: Request):
+        view, _created = manager.submit(payload, session_id=session_id_of(request))
         return view
+
+    # §5 B2 决策 2：会话是保留期的第一条期限。客户端在 localStorage / sessionStorage 里保管
+    # 两个标识，服务端只回答"这个会话现在还算数吗"。它挂在 checkups 前缀下，因为它是这些
+    # 结果的生命周期的一部分，而不是一个独立的账号概念。
+    @router.post("/sessions", response_model=SessionView)
+    async def open_session(payload: SessionOpenRequest):
+        return manager.open_session(payload)
+
+    @router.post("/sessions/{session_id}/tabs/{tab_id}/heartbeat", response_model=SessionView)
+    async def heartbeat(session_id: str, tab_id: str):
+        return manager.heartbeat(session_id, tab_id)
+
+    @router.post("/sessions/{session_id}/tabs/{tab_id}/close", response_model=SessionView)
+    async def close_tab(session_id: str, tab_id: str):
+        # 关闭是**记录**，不是判决：会话是否到期由"最后离开的时刻 + 宽限"决定，
+        # 所以一个标签页关掉之后，另一个还开着的标签页照样能续租。
+        return manager.close_tab(session_id, tab_id)
 
     # Declared before the bare task route so the literal segment is not read as
     # a task id, which would otherwise shadow it.

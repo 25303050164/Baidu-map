@@ -27,6 +27,13 @@ export type CheckupRequest = {
   facilities?: CheckupFacilities;
 };
 
+export type RetentionView = {
+  detailsAvailable: boolean;
+  expiresAt: number | null;
+  reason: "session_closed" | "superseded" | "legacy" | "cleared" | null;
+  sources: Array<string>;
+};
+
 export type TaskProgress = {
   step: string;
   label: string;
@@ -57,6 +64,7 @@ export type CheckupTaskView = {
   stageStartedAt: number | null;
   lastActivityAt: number | null;
   progress: TaskProgress | null;
+  retention: RetentionView | null;
 };
 
 export type AccessibilityEvidence = {
@@ -474,4 +482,20 @@ export type FacilityRetryView = {
   error: string | null;
   createdAt: number;
   finishedAt: number | null;
+};
+
+export type SessionOpenRequest = {
+  schemaVersion?: "checkup-v1";
+  sessionId?: string | null;
+  tabId?: string | null;
+};
+
+export type SessionView = {
+  sessionId: string;
+  tabId: string;
+  leaseSeconds: number;
+  expiresAt: number;
+  resumed: boolean;
+  openTabs: number;
+  tasks: number;
 };

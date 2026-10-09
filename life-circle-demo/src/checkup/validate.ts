@@ -17,8 +17,8 @@
  * 它不推导任何结论：设施是否可达、面积属于哪一态，都由后端说，这里只核对它说清了没有。
  */
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityExtensionDocument,
-  FacilityExtensionView, FacilityRetryView, FacilityRoute, Origin, ReportEvidence, ServiceZone,
-  TaskProgress } from './contract';
+  FacilityExtensionView, FacilityRetryView, FacilityRoute, Origin, ReportEvidence, RetentionView,
+  ServiceZone, SessionView, TaskProgress } from './contract';
 
 type RecordValue = Record<string, unknown>;
 const object = (value: unknown): value is RecordValue =>
@@ -395,6 +395,32 @@ export function validFacilityExtensionView(value: unknown): value is FacilityExt
     && nullableNumber(value.finishedAt)
     // 失败必须有话说：只说 "failed" 的补查没法告诉人下一步做什么。
     && (value.status !== 'failed' || text(value.error));
+}
+
+/**
+ * 一个浏览会话此刻的状态（§5 B2 决策 2）。``expiresAt`` 是租约到期时刻：过了它，这个
+ * 会话的明细就不再保留。它不是"数据已经删了"，所以界面用它说明"什么时候会到期"，
+ * 而不是拿它当"现在还能不能看"的判据 —— 那个问题由任务视图上的 ``retention`` 回答。
+ */
+export function validSessionView(value: unknown): value is SessionView {
+  return object(value)
+    && text(value.sessionId) && value.sessionId.length > 0
+    && text(value.tabId) && value.tabId.length > 0
+    && finite(value.leaseSeconds) && value.leaseSeconds > 0
+    && finite(value.expiresAt) && value.expiresAt > 0
+    && typeof value.resumed === 'boolean'
+    && count(value.openTabs) && count(value.tasks);
+}
+
+/** 任务视图上的保留期：明细还能不能提供、为什么、什么时候到期。 */
+export function validRetentionView(value: unknown): value is RetentionView {
+  if (!object(value) || typeof value.detailsAvailable !== 'boolean') return false;
+  if (!nullableNumber(value.expiresAt)) return false;
+  if (!(value.reason === null || oneOf(value.reason,
+    ['session_closed', 'superseded', 'legacy', 'cleared'] as const))) return false;
+  if (!Array.isArray(value.sources) || !value.sources.every(text)) return false;
+  // 明细还能提供时不该同时给一个"已经到期的原因"：两者放在一起就是一份自相矛盾的状态。
+  return value.detailsAvailable ? value.reason === null : true;
 }
 
 /**

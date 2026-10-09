@@ -104,7 +104,7 @@ def create_app(settings: Settings | None = None, *, provider_factory=None,
         allow_origins=config.cors_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "X-Checkup-Session"],
     )
     app.include_router(router)
     app.include_router(osm_router)

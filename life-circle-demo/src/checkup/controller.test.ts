@@ -10,7 +10,7 @@ import { CheckupController } from './controller';
 import { CheckupError, DETAIL_BUDGET_EXHAUSTED, RETRY_DAILY_BUDGET, RETRY_IN_PROGRESS,
   type CheckupService } from './client';
 import { STAGE_LABELS, isCheckupBusy, isStageReached, type CheckupHandle } from './types';
-import { CENTER, SERVER_TIME, capabilities, extensionDocument, extensionView, layer, retryView, route,
+import { CENTER, SERVER_TIME, capabilities, extensionDocument, extensionView, layer, retryView, route, sessionView,
   snapshot, task } from './fixtures';
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView } from './contract';
 
@@ -36,6 +36,9 @@ function service(): CheckupService {
     retryStatus: vi.fn(async () => retryView()),
     retryList: vi.fn(async () => []),
     retryCancel: vi.fn(async () => retryView({ status: 'cancelled' })),
+    sessionOpen: vi.fn(async () => sessionView()),
+    sessionHeartbeat: vi.fn(async () => sessionView({ resumed: true })),
+    sessionClose: vi.fn(async () => sessionView({ openTabs: 0 })),
   };
 }
 afterEach(() => vi.useRealTimers());

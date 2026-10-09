@@ -12,10 +12,11 @@
  */
 import type { CheckupLayer, CheckupRequest, CheckupSnapshot, CheckupTaskView,
   FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView, FacilityRetryRequest,
-  FacilityRetryView, FacilityRoute } from './contract';
+  FacilityRetryView, FacilityRoute, SessionOpenRequest, SessionView } from './contract';
 import { validCapabilities, validFacilityExtensionDocument, validFacilityExtensionView,
-  validFacilityRetryView, validFacilityRoute, validLayer, validSnapshot, validTaskView,
-  type Capabilities, type LayerId } from './validate';
+  validFacilityRetryView, validFacilityRoute, validLayer, validSessionView, validSnapshot,
+  validTaskView, type Capabilities, type LayerId } from './validate';
+import { sessionHeader } from './browserSession';
 
 export class CheckupError extends Error {
   constructor(message: string, public status: number, public code: string) { super(message); }
@@ -61,6 +62,15 @@ export type CheckupService = {
   retryStatus: (taskId: string, retryId: string, signal?: AbortSignal) => Promise<FacilityRetryView>;
   retryList: (taskId: string, signal?: AbortSignal) => Promise<FacilityRetryView[]>;
   retryCancel: (taskId: string, retryId: string) => Promise<FacilityRetryView>;
+  /**
+   * §5 B2 决策 2 的浏览会话：开一个或回到已有的那一个、续租、说一声离开。
+   *
+   * 会话标识由 `browserSession.ts` 保管（会话在 localStorage、标签页在 sessionStorage），
+   * 三个方法都通过请求头把它带给服务端 —— 它是"谁在问"，不是体检的参数。
+   */
+  sessionOpen: (body: SessionOpenRequest) => Promise<SessionView>;
+  sessionHeartbeat: (sessionId: string, tabId: string) => Promise<SessionView>;
+  sessionClose: (sessionId: string, tabId: string, keepalive?: boolean) => Promise<SessionView>;
 };
 
 const NOT_FOUND = new Set(['checkup_task_not_found', 'checkup_unknown_engine']);
@@ -81,13 +91,17 @@ export function createCheckupService(
   const api = `${base.replace(/\/$/, '')}/api/v2`;
   const root = `${api}/checkups`;
 
-  async function send(url: string, method: string, body?: unknown, signal?: AbortSignal) {
+  async function send(url: string, method: string, body?: unknown, signal?: AbortSignal,
+                      keepalive = false) {
     const timeout = AbortSignal.timeout(15_000);
     let response: Response;
     try {
       response = await fetcher(url, {
-        method, headers: { 'Content-Type': 'application/json' },
+        method, headers: { 'Content-Type': 'application/json', ...sessionHeader() },
         body: body === undefined ? undefined : JSON.stringify(body),
+        // 页面卸载时的最后一次"我走了"要活得比页面久：普通请求会被卸载取消掉，
+        // 于是最后一个标签页的离开就丢掉了，租约要等到宽限期后才自己到期。
+        ...(keepalive ? { keepalive: true } : {}),
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
     } catch {
@@ -265,6 +279,29 @@ export function createCheckupService(
         throw new CheckupError('体检服务返回了另一次重试的状态，请检查服务版本', 0, 'mismatched_task');
       }
       return view;
+    },
+    async sessionOpen(body) {
+      const { body: value } = await request('/sessions', 'POST', body);
+      const view = checked<SessionView>(value, validSessionView, '会话状态');
+      // 回来的必须是这一个会话：错配的标识会让心跳去续租别人的会话。
+      if (body.sessionId !== undefined && body.sessionId !== null && view.sessionId !== body.sessionId) {
+        throw new CheckupError('体检服务返回了另一个会话的状态，请检查服务版本', 0, 'mismatched_task');
+      }
+      return view;
+    },
+    async sessionHeartbeat(sessionId, tabId) {
+      const path = `/sessions/${encodeURIComponent(sessionId)}/tabs/${encodeURIComponent(tabId)}/heartbeat`;
+      const { body: value } = await send(`${root}${path}`, 'POST');
+      const view = checked<SessionView>(value, validSessionView, '会话状态');
+      if (view.sessionId !== sessionId || view.tabId !== tabId) {
+        throw new CheckupError('体检服务返回了另一个会话的状态，请检查服务版本', 0, 'mismatched_task');
+      }
+      return view;
+    },
+    async sessionClose(sessionId, tabId, keepalive = false) {
+      const path = `/sessions/${encodeURIComponent(sessionId)}/tabs/${encodeURIComponent(tabId)}/close`;
+      const { body: value } = await send(`${root}${path}`, 'POST', undefined, undefined, keepalive);
+      return checked<SessionView>(value, validSessionView, '会话状态');
     },
   };
 }

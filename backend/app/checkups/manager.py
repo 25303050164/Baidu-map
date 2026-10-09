@@ -46,8 +46,8 @@ from .models import (DEFAULT_POI_REQUESTS, DETAIL_ROUTE_REQUESTS, DISTANCE_RULE,
                      CheckupFacilities, CheckupRequest, CheckupSnapshot, CheckupTaskView, EngineRef,
                      FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView,
                      FacilityGroup, FacilityRetryRequest, FacilityRetryView, FacilityRoute,
-                     ReportEvidence, ScopeEvidence, TaskProgress,
-                     new_trace)
+                     ReportEvidence, RetentionView, ScopeEvidence, SessionOpenRequest, SessionView,
+                     TaskProgress, new_trace)
 from .places import declared_identity
 from .progress import StepReporter, category_label
 from .reporting_stage import build_report
@@ -60,6 +60,12 @@ from .verification_stage import (VerificationOutcome, carried_over, judge_route,
 # Engines currently enforce their own internal deadline; this is the task-level
 # bound every stage shares.
 DEADLINE_SECONDS = 1800
+# §5 B2 决策 2：会话租约。最后一个标签页离开后给这么多时间（刷新、短暂断网、多标签页
+# 共享会话都不该被误判成"关掉了浏览器"），之后这个会话的数据就到期。
+SESSION_LEASE_SECONDS = 300.0
+#: 该次体检之后的第几次新体检结束就算它到期。失败与取消也计数；幂等重发、重试、补查
+#: 都不新建任务行，因此不计数。
+CHECKUPS_BEFORE_EXPIRY = 3
 ENGINE_UNAVAILABLE = {
     "walking_ak_not_configured": "后端未配置百度步行服务 AK，百度边界搜索（E8.2）无法成圈。",
 }
@@ -255,7 +261,146 @@ class CheckupManager:
         self.extension_tokens: dict[str, CancelToken] = {}
         self.closing = False
 
-    # -- admission ---------------------------------------------------------
+    # -- 会话与保留期（§5 B2 决策 2）------------------------------------------
+
+    def open_session(self, payload: SessionOpenRequest) -> SessionView:
+        """开一个会话或回到它；带上已有的会话标识时，**已到期就是一堵墙**。
+
+        这条规则是整个期限的地基：迟到的心跳若能复活一个已到期的会话，那么"关闭浏览器
+        （或三次后续体检）即到期"就只剩一个说法 —— 数据还在，而且随时可以被重新认领。
+        """
+        now = time.time()
+        if payload.session_id is None:
+            session_id = str(uuid4())
+            row = self.store.start_session(session_id=session_id,
+                                           tab_id=payload.tab_id or str(uuid4()), now=now)
+            return self._session_view(row, tab_id=payload.tab_id or self._only_tab(session_id),
+                                      resumed=False, now=now)
+        row = self.store.session_row(payload.session_id)
+        if row is None:
+            # 服务端不认识这个标识（换了后端、清了库）：新开一个，而不是假装续上了。
+            session_id = str(uuid4())
+            row = self.store.start_session(session_id=session_id,
+                                           tab_id=payload.tab_id or str(uuid4()), now=now)
+            return self._session_view(row, tab_id=payload.tab_id or self._only_tab(session_id),
+                                      resumed=False, now=now)
+        if self._session_expired(row, now=now):
+            self.store.expire_session(session_id=payload.session_id, now=now)
+            raise CheckupError(
+                409, "checkup_session_expired",
+                "这个浏览会话已经到期（关闭浏览器或后续体检已超过期限），它的数据不再保留；"
+                "请刷新页面开始一个新的会话。")
+        tab_id = payload.tab_id or str(uuid4())
+        self.store.touch_session(session_id=payload.session_id, tab_id=tab_id, now=now, reopen=True)
+        self.store.open_tab(session_id=payload.session_id, tab_id=tab_id, now=now)
+        return self._session_view(self.store.session_row(payload.session_id), tab_id=tab_id,
+                                  resumed=True, now=now)
+
+    def heartbeat(self, session_id: str, tab_id: str) -> SessionView:
+        """标签页续租。已到期的会话不能被迟到的心跳复活。"""
+        now = time.time()
+        row = self.store.session_row(session_id)
+        if row is None:
+            raise CheckupError(404, "checkup_session_not_found", "这个浏览会话不存在或已被清理")
+        if self._session_expired(row, now=now):
+            self.store.expire_session(session_id=session_id, now=now)
+            raise CheckupError(409, "checkup_session_expired",
+                               "这个浏览会话已经到期，它的数据不再保留；请刷新页面开始新的会话。")
+        if self.store.touch_session(session_id=session_id, tab_id=tab_id, now=now,
+                                    reopen=False) is None:
+            raise CheckupError(404, "checkup_session_not_found", "这个浏览会话不存在或已被清理")
+        return self._session_view(self.store.session_row(session_id), tab_id=tab_id,
+                                  resumed=True, now=now)
+
+    def close_tab(self, session_id: str, tab_id: str) -> SessionView:
+        """一个标签页离开。它是**记录**，不是判决：会话是否到期由最后离开的时刻加宽限决定。"""
+        now = time.time()
+        row = self.store.session_row(session_id)
+        if row is None:
+            raise CheckupError(404, "checkup_session_not_found", "这个浏览会话不存在或已被清理")
+        self.store.close_tab(session_id=session_id, tab_id=tab_id, now=now)
+        return self._session_view(self.store.session_row(session_id), tab_id=tab_id,
+                                  resumed=True, now=now)
+
+    def _only_tab(self, session_id: str) -> str:
+        tabs = self.store.session_tabs(session_id)
+        return tabs[0]["tab_id"] if tabs else ""
+
+    def _session_view(self, row, *, tab_id: str, resumed: bool, now: float) -> SessionView:
+        tabs = self.store.session_tabs(row["session_id"])
+        return SessionView(
+            session_id=row["session_id"], tab_id=tab_id, lease_seconds=SESSION_LEASE_SECONDS,
+            expires_at=self._lease_end(row, tabs=tabs) + SESSION_LEASE_SECONDS,
+            resumed=resumed,
+            open_tabs=sum(1 for tab in tabs if tab["closed_at"] is None),
+            tasks=len(self.store.session_ids_of_tasks(row["session_id"])))
+
+    @staticmethod
+    def _lease_end(row, *, tabs) -> float:
+        """最后一个标签页**还在**的时刻：它离开的时刻，或它最后一次续租的时刻。"""
+        instants = [tab["closed_at"] if tab["closed_at"] is not None else tab["last_seen_at"]
+                    for tab in tabs]
+        return max([row["created_at"], *instants])
+
+    def _session_expired(self, row, *, now: float) -> bool:
+        if row["expired_at"] is not None:
+            return True
+        return now >= self._lease_end(row, tabs=self.store.session_tabs(row["session_id"])) \
+            + SESSION_LEASE_SECONDS
+
+    def retention_of(self, record, *, now: float | None = None) -> RetentionView:
+        """这份结果的明细还能不能提供（§5 B2 决策 2）。
+
+        两条期限**任一先到即过期**：会话租约（最后标签页离开 + 宽限），以及"这次体检
+        之后的第三次新体检结束"。另外两条是历史口径：早于本库保留期基线的记录视为已过期；
+        已经清理过的记录按墓碑回答。
+
+        `expires_at` 报的是**两个期限里更早的那个**：界面上"还能看到什么时候"这个问题
+        只有一个答案。
+        """
+        now = time.time() if now is None else now
+        if record.details_cleared_at is not None:
+            return RetentionView(details_available=False, reason="cleared")
+        if record.created_at < self.store.retention_baseline_at():
+            # 运营者的口径：已经落盘、没有会话归属的历史报告视为已过期（明细清除，
+            # 保留不含明细的汇总）。判据是"比本库开始记录保留期的时刻早"，所以一个
+            # 新建的库（测试、临时部署）里不会有任务被当成历史数据。
+            return RetentionView(details_available=False, reason="legacy")
+        arms: list[tuple[str, float]] = []
+        if record.session_id is not None:
+            row = self.store.session_row(record.session_id)
+            if row is None:
+                arms.append(("session_closed", record.created_at))
+            else:
+                tabs = self.store.session_tabs(record.session_id)
+                arms.append(("session_closed",
+                             self._lease_end(row, tabs=tabs) + SESSION_LEASE_SECONDS))
+        later = self.store.later_terminal_instants(record.task_id, limit=CHECKUPS_BEFORE_EXPIRY)
+        if len(later) == CHECKUPS_BEFORE_EXPIRY and later[-1] is not None:
+            arms.append(("superseded", later[-1]))
+        if not arms:
+            # 没有人认领、也还没有第三次后续体检：没有期限可言，如实报"未记录"。
+            return RetentionView(details_available=True)
+        reason, expires_at = min(arms, key=lambda arm: arm[1])
+        return RetentionView(details_available=now < expires_at, expires_at=expires_at,
+                             reason=None if now < expires_at else reason)
+
+    def expire_due_sessions(self, *, now: float | None = None) -> list[str]:
+        """把"最后一个标签页离开已经超过宽限"的会话判成过期，并停掉它们正在跑的工作。
+
+        停止是必须的，不是顺手做的：会话到期说的是"这个人不再被授权看这些数据了"，
+        那么继续为它花额度、往它名下写新明细都违反了同一条规则。
+        """
+        now = time.time() if now is None else now
+        expired = self.store.expire_sessions_without_live_tabs(now=now, grace=SESSION_LEASE_SECONDS)
+        for session_id in expired:
+            for task_id in self.store.session_ids_of_tasks(session_id):
+                record = self.store.get(task_id)
+                if record.status in ("queued", "running", "cancelling"):
+                    self.cancel(task_id)
+        return expired
+
+
 
     def interrupt_unfinished(self) -> int:
         """Sweep tasks this process did not finish, as a restart does.
@@ -274,7 +419,8 @@ class CheckupManager:
         if self.extension_worker is None or self.extension_worker.done():
             self.extension_worker = asyncio.create_task(self._serve_extensions())
 
-    def submit(self, payload: CheckupRequest) -> tuple[CheckupTaskView, bool]:
+    def submit(self, payload: CheckupRequest, *, session_id: str | None = None
+               ) -> tuple[CheckupTaskView, bool]:
         engine = self.registry.get(payload.engine)
         capabilities = engine.capabilities()
         budget = resolve_budget(capabilities, payload.isochrone.budget)
@@ -287,7 +433,10 @@ class CheckupManager:
             record, created = self.store.create(
                 task_id=str(uuid4()), client_request_id=payload.client_request_id,
                 engine=payload.engine, fingerprint=canonical_hash(payload.fingerprint()),
-                payload=payload.model_dump(mode="json"), budget=budget)
+                payload=payload.model_dump(mode="json"), budget=budget,
+                # 会话归属是**这一次体检**的保留期限之一（§5 B2 决策 2）。没有它也能建
+                # 任务（命令行、脚本、旧客户端），但那样只剩"三次后续体检"这一条期限。
+                session_id=session_id)
         except RequestIdConflict:
             raise CheckupError(409, "checkup_request_id_conflict",
                                "该请求标识已用于不同参数的体检") from None
@@ -1043,7 +1192,8 @@ class CheckupManager:
             error=record.error, server_time=now, started_at=record.started_at,
             finished_at=record.finished_at, stage_started_at=record.stage_started_at,
             last_activity_at=record.activity_at,
-            progress=None if record.progress is None else TaskProgress(**record.progress))
+            progress=None if record.progress is None else TaskProgress(**record.progress),
+            retention=self.retention_of(record, now=now))
 
     def get(self, task_id: str):
         try:

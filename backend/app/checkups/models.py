@@ -87,6 +87,51 @@ class CheckupRequest(CheckupModel):
         return self.model_dump(mode="json", exclude={"client_request_id"})
 
 
+class SessionOpenRequest(CheckupModel):
+    """开一个浏览会话，或回到已有的那一个（§5 B2 决策 2 的第一条期限）。
+
+    两个标识分两处存，因为它们的寿命不一样：**会话**属于这个浏览器（同一浏览器的两个
+    标签页共用一个），**标签页**属于一个标签页（刷新要接着用同一个，关掉就该消失）。
+    客户端负责保管它们，服务端只回答"这个会话现在还算数吗"。
+    """
+    schema_version: Literal["checkup-v1"] = SCHEMA_VERSION
+    #: 已有的会话标识。带上它就要求**续上同一个会话**：它已经到期时明确拒绝，
+    #: 而不是悄悄开一个新的 —— 那会让"关闭浏览器即到期"这条规则形同虚设。
+    session_id: str | None = Field(default=None, min_length=1, max_length=100)
+    #: 已有的标签页标识（刷新时带上）：同一个标签页刷新不该被算成多开了一个标签页。
+    tab_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class SessionView(CheckupModel):
+    """一个会话此刻的状态：租约还剩多久、有几个标签页还开着。
+
+    ``expires_at`` 是**租约到期时刻**，不是"数据已经删了"：到期之后还有一段可判定的
+    时间用来拒绝迟到的心跳，但明细的可用性由 ``RetentionView`` 单独回答。
+    """
+    session_id: str
+    tab_id: str
+    lease_seconds: float
+    expires_at: float
+    #: 这一次是接上了已有的会话，还是新开了一个。
+    resumed: bool
+    open_tabs: int = Field(default=1, ge=0)
+    #: 这个会话里的任务数：界面据此说明"这些结果会跟这个会话一起到期"。
+    tasks: int = Field(default=0, ge=0)
+
+
+class RetentionView(CheckupModel):
+    """这份结果的明细还能不能提供、什么时候到期、为什么。
+
+    ``details_available`` 为假时**不等于**"没有这个任务"：任务、评分与汇总都还在，
+    缺的是含设施名称、UID 与坐标的那部分明细（`evidence/06` §2 决策 2）。
+    """
+    details_available: bool
+    expires_at: float | None = None
+    reason: Literal["session_closed", "superseded", "legacy", "cleared"] | None = None
+    #: 这一版明细来自哪几个任务（含它自己）：复用别人的页面时，那个任务的期限也是它的期限。
+    sources: list[str] = Field(default_factory=list)
+
+
 class EngineRef(CheckupModel):
     engine_id: str
     engine_version: str
@@ -655,6 +700,10 @@ class CheckupTaskView(CheckupModel):
     #: a revision, a state change). A cancel request is not the worker's activity.
     last_activity_at: float | None = None
     progress: TaskProgress | None = None
+    #: §5 B2 决策 2：这份结果的明细还能不能提供、为什么、什么时候到期。它是**任务视图**上
+    #: 的活字段（不像修订那样冻结），因为它描述的是"现在"，而到期时刻会随后来发生的体检
+    #: 变化 —— 冻结进修订就等于把一个会变的答案写成常数。
+    retention: RetentionView | None = None
 
     def is_terminal(self) -> bool:
         return self.status in TERMINAL

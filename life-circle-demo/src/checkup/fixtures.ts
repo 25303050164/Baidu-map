@@ -10,6 +10,7 @@
  */
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, CoverageRow,
   FacilityExtensionDocument, FacilityExtensionView, FacilityRetryView, FacilityRoute,
+  RetentionView, SessionView,
   ReportEvidence, ServiceZone, WaterDataEvidence } from './contract';
 import type { Capabilities, EngineOption } from './validate';
 
@@ -37,6 +38,8 @@ export function task(overrides: Partial<CheckupTaskView> = {}): CheckupTaskView 
     networkRequests: 12, elapsedSeconds: 4.5, createdAt: CREATED_AT, cancelRequested: false,
     error: null, serverTime: SERVER_TIME, startedAt: STARTED_AT, finishedAt: null,
     stageStartedAt: STARTED_AT + 3, lastActivityAt: SERVER_TIME - 0.5,
+    // 默认"还在期限内、但还没记到期限"：它既不假装有到期时刻，也不假装明细已经没了。
+    retention: retentionView(),
     progress: { step: 'category', label: '评估服务覆盖 · 医疗（第 2/3 类）', count: 120, limit: null,
       unit: '格', since: STARTED_AT + 4 },
     ...overrides,
@@ -347,4 +350,19 @@ export function water(overrides: Partial<WaterDataEvidence> = {}): WaterDataEvid
     unreviewedAreaM2: AREA * 0.1, conflictAreaM2: 660,
     statements: ['水系障碍取自合成 OSM。'], ...overrides,
   };
+}
+
+/**
+ * 一份结果的保留期状态（§5 B2 决策 2）。默认是"明细可用、还没到期、没有来源"——
+ * 三个字段各自都是**一个事实**，不是占位：`expiresAt` 为 null 说的是"还没有能算出来的
+ * 期限"（既没有会话租约、也还没到第三次后续体检），不是"永远不会到期"。
+ */
+export function retentionView(overrides: Partial<RetentionView> = {}): RetentionView {
+  return { detailsAvailable: true, expiresAt: null, reason: null, sources: [], ...overrides };
+}
+
+/** 一个浏览会话此刻的状态：租约 300 秒、一个标签页、名下还没有体检。 */
+export function sessionView(overrides: Partial<SessionView> = {}): SessionView {
+  return { sessionId: 'session-1', tabId: 'tab-1', leaseSeconds: 300,
+    expiresAt: SERVER_TIME + 300, resumed: false, openTabs: 1, tasks: 0, ...overrides };
 }
