@@ -306,17 +306,30 @@ def extension_matches(record: ExtensionRecord, *, identity: dict,
 
 
 class CheckupStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, read_only: bool = False):
+        """``read_only`` 打开这份库**只做读取**：不建表、不迁移、不写墓碑。
+
+        它存在的原因是清单工具：运营者要先看清单再决定删什么，那么"看一眼"就必须真的
+        只是看一眼 —— 一份为了被审阅而跑的工具，不该顺手改动它正在回答的那份数据。
+        """
         self.root = Path(root)
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.read_only = read_only
+        if not read_only:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.path = self.root / "checkups.sqlite3"
 
     @contextmanager
     def _connection(self):
-        connection = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+        if self.read_only:
+            # URI 形式的只读连接：连 PRAGMA 与 journal 都不给写的机会。
+            connection = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, timeout=30,
+                                         isolation_level=None)
+        else:
+            connection = sqlite3.connect(self.path, timeout=30, isolation_level=None)
         connection.row_factory = sqlite3.Row
         try:
-            connection.execute("PRAGMA journal_mode=WAL")
+            if not self.read_only:
+                connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA foreign_keys=ON")
             yield connection
         finally:
@@ -339,6 +352,8 @@ class CheckupStore:
         the store rather than a hard-coded date: a store created today starts its
         own baseline today, so nothing inside it can be mistaken for history.
         """
+        if self.read_only:
+            return
         with self._connection() as connection:
             connection.executescript(SCHEMA)
             present = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
@@ -396,11 +411,18 @@ class CheckupStore:
     # 这类产品口径）。store 只回答"最后一刻还在的时候是什么时候"，不去解释它意味着什么。
 
     def retention_baseline_at(self) -> float:
-        """这份库开始记录保留期的时刻；缺失时按"此刻"记一次（老库的第一次迁移）。"""
+        """这份库开始记录保留期的时刻；缺失时按"此刻"记一次（老库的第一次迁移）。
+
+        只读模式下不写这一行，而是返回无穷大：这份库还没有基线时，现有数据**全部**早于
+        将要写下的那个时刻 —— 那正是清单要说的"这些都是历史数据"。清单的输出会同时说明
+        这一点，免得有人把它当成"永远都算历史"。
+        """
         with self._connection() as connection:
             row = connection.execute("SELECT value FROM meta WHERE key=?",
                                      (RETENTION_BASELINE_KEY,)).fetchone()
             if row is None:
+                if self.read_only:
+                    return float("inf")
                 connection.execute("INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
                                    (RETENTION_BASELINE_KEY, repr(time.time())))
                 return time.time()
