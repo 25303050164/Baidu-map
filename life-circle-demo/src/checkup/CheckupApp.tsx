@@ -16,7 +16,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Alert, Button, Checkbox, Descriptions, Drawer, InputNumber, Select } from 'antd';
+import { Alert, Button, Checkbox, Descriptions, Drawer, InputNumber, Select, Space } from 'antd';
 import type { Center } from '../types';
 import { LocationControls } from '../analysis/LocationControls';
 import { createCheckupService, CheckupError } from './client';
@@ -32,6 +32,7 @@ import { Fold } from './Fold';
 import { CATEGORY_ORDER, categoryLabel, coverageItems, percent } from './report';
 import { missingCoreMajors, estimatedFirstRoundPages, splitScope } from './categories';
 import { extensionLines } from './extensions';
+import { isRetryTerminal, retryActionLabel, retryLines } from './retry';
 import type { MajorCategory } from './contract';
 import { nearestEmptyNote, nearestFacilities } from './nearest';
 import { queryCoverageLine, queryCoverageRetryLine } from './queryCoverage';
@@ -343,6 +344,11 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     // 只跟任务标识与状态走：补查自己的状态变化不该再触发一次列表读取。
   }, [controller, task?.taskId, task?.status]);
 
+  /** 重试同理：本地不记"跑到哪了"，刷新后从服务端读回来，还在跑的那一轮直接接上。 */
+  useEffect(() => {
+    if (task !== undefined && isTerminal(task)) void controller.loadRetries();
+  }, [controller, task?.taskId, task?.status]);
+
   /**
    * 图层：按当前修订按需取，取到就缓存（控制器按"图层:修订"记），**一次只取一层**。
    *
@@ -457,6 +463,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   // 旧修订不报这一项，两个值都是 null，界面上就什么都不显示（不补一个 0% 出来）。
   const queryCoverage = snapshot ? queryCoverageLine(snapshot.facilities) : null;
   const queryCoverageNext = snapshot ? queryCoverageRetryLine(snapshot.facilities) : null;
+  // 重试的入口只在"没达标"时出现：达标了还提示重试，就是在劝人多花额度。
+  const retryRunning = state.retry !== undefined && !isRetryTerminal(state.retry.status);
   const weatherCenter = draft ?? taskCenter ?? null;
   const idle = state.phase === 'idle';
 
@@ -824,8 +832,23 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
           <h2 className="wb-h">周边设施 · 每类最近 5 处</h2>
           {queryCoverage && <p className="wb-hint"
             data-testid="checkup-query-coverage">{queryCoverage}</p>}
-          {queryCoverageNext && <p className="wb-hint"
-            data-testid="checkup-query-coverage-next">{queryCoverageNext}</p>}
+          {queryCoverageNext && <div className="wb-retry" data-testid="checkup-retry">
+            <p className="wb-hint" data-testid="checkup-query-coverage-next">
+              {queryCoverageNext}</p>
+            <Space size="small" wrap>
+              <Button size="small" data-testid="checkup-retry-run"
+                disabled={state.retrying === true}
+                onClick={() => void controller.retryCheckup()}>
+                {retryActionLabel(state.retrying === true)}</Button>
+              {retryRunning && <Button size="small" data-testid="checkup-retry-cancel"
+                onClick={() => void controller.cancelRetry(state.retry!.retryId)}>取消</Button>}
+            </Space>
+            {state.retry && retryLines(state.retry).map(line =>
+              <p key={line} className="wb-extension-facts"
+                data-testid="checkup-retry-facts">{line}</p>)}
+            {state.retryError && <Alert type="error" showIcon data-testid="checkup-retry-error"
+              title={state.retryError} />}
+          </div>}
           {!drawables.facilities ? <p className="wb-hint">{layerErrors.facilities
             ?? '设施结果尚未加载。'}</p>
             : drawables.facilities.state === 'empty' ? <p className="wb-hint"

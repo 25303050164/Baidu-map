@@ -17,7 +17,8 @@
  * 它不推导任何结论：设施是否可达、面积属于哪一态，都由后端说，这里只核对它说清了没有。
  */
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityExtensionDocument,
-  FacilityExtensionView, FacilityRoute, Origin, ReportEvidence, ServiceZone, TaskProgress } from './contract';
+  FacilityExtensionView, FacilityRetryView, FacilityRoute, Origin, ReportEvidence, ServiceZone,
+  TaskProgress } from './contract';
 
 type RecordValue = Record<string, unknown>;
 const object = (value: unknown): value is RecordValue =>
@@ -393,6 +394,31 @@ export function validFacilityExtensionView(value: unknown): value is FacilityExt
     && object(value.countsByCategory) && finite(value.createdAt) && value.createdAt > 0
     && nullableNumber(value.finishedAt)
     // 失败必须有话说：只说 "failed" 的补查没法告诉人下一步做什么。
+    && (value.status !== 'failed' || text(value.error));
+}
+
+/**
+ * 一次重试的状态。它**不报**"发布了第几版"：那一版是任务自己的最新修订，客户端照常读
+ * 任务即可 —— 在这里再存一份修订号，只会多出一份可能与任务不一致的副本。
+ *
+ * 与补查的区别在这里也是可见的：补查报的是它自己的结果文档，重试报的是"这次体检的检索
+ * 有没有查完"，所以它必须带 `facilitiesStatus` 与停止原因，否则界面只能显示"跑完了"。
+ */
+export function validFacilityRetryView(value: unknown): value is FacilityRetryView {
+  return object(value)
+    && text(value.retryId) && value.retryId.length > 0
+    && text(value.taskId) && value.taskId.length > 0
+    && text(value.clientRequestId) && value.clientRequestId.length > 0
+    && count(value.baseRevision) && value.baseRevision >= 1
+    && oneOf(value.status, EXTENSION_STATUS)
+    // 排队时还没有阶段：null 是"还没有"，不是缺失。
+    && (value.stage === null || oneOf(value.stage, EXTENSION_STAGES))
+    && object(value.budget) && count(value.requests) && count(value.networkRequests)
+    && nullableText(value.facilitiesStatus) && nullableText(value.stopReason)
+    && nullableText(value.error) && nullableNumber(value.finishedAt)
+    && finite(value.createdAt) && value.createdAt > 0
+    && (value.initialPlan === null || object(value.initialPlan))
+    // 失败必须有话说：只说 "failed" 的重试没法告诉人下一步做什么。
     && (value.status !== 'failed' || text(value.error));
 }
 

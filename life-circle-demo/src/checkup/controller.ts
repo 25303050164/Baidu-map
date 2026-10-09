@@ -16,11 +16,14 @@
  * 每个异步步骤结束回写状态之前都要问一次"这一轮还算数吗"（``current``）：取消、清除
  * 都会让旧的一轮作废，而它可能正好在这时返回。
  */
-import type { CheckupLayer, CheckupTaskView, FacilityExtensionView, MajorCategory } from './contract';
+import type { CheckupLayer, CheckupTaskView, FacilityExtensionView, FacilityRetryView,
+  MajorCategory } from './contract';
 import type { LayerId } from './validate';
-import { CheckupError, DETAIL_BUDGET_EXHAUSTED, isNotFound, type CheckupService } from './client';
+import { CheckupError, DETAIL_BUDGET_EXHAUSTED, RETRY_IN_PROGRESS, isNotFound,
+  type CheckupService } from './client';
 import type { CheckupHandle, CheckupInput, CheckupState } from './types';
 import { isCheckupBusy, isTerminal } from './types';
+import { isRetryTerminal } from './retry';
 import type { Contact } from './live';
 
 type Run = {
@@ -451,6 +454,138 @@ export class CheckupController {
     }
     return created;
   }
+
+  // -- §5 B2 决策 1 的重试 --------------------------------------------------
+
+  /**
+   * 继续把这次体检没查完的地段查下去。
+   *
+   * 与补查的三处不同，都是"它是同一次体检"的直接后果：
+   *
+   * * 它**改这一份报告**：一轮结束后任务与结果要重新按新修订读回来，图层整组丢掉
+   *   （`layer()` 的缓存键含修订号，但已经取到的对象仍指向上一个版本）；
+   * * 它**不改问题**：类别与圈面由后端从被冻结的那一版取，这里一个字段都不传；
+   * * 它**一轮只跑一次**：后端对"这次体检已经有一次重试在进行中"给 409，界面据此把
+   *   正在进行的那一轮接上，而不是把它显示成一次失败。
+   *
+   * 重复提交不会重复花钱：POST 的响应丢了之后再点一次，如果那一轮还在跑，服务端回
+   * `checkup_retry_in_progress`；如果它已经跑完，这次体检要么已经查完（`not_needed`）、
+   * 要么确实还需要一轮 —— 后者是用户真想要的。所以请求标识不必存进句柄。
+   */
+  async retryCheckup() {
+    const task = this.state.task;
+    const revision = this.state.snapshot?.revision;
+    if (task === undefined || revision === undefined || this.state.retrying) return;
+    this.patch({ retrying: true, retryError: undefined });
+    try {
+      let view: FacilityRetryView;
+      try {
+        view = await this.api.retryCreate(task.taskId, {
+          schemaVersion: 'checkup-v1', clientRequestId: crypto.randomUUID(),
+        });
+      } catch (error) {
+        if (!(error instanceof CheckupError) || error.code !== RETRY_IN_PROGRESS) throw error;
+        // 已经有一轮在跑（很可能是刷新前发出去的那一次）：接上它，而不是报错。
+        const running = (await this.api.retryList(task.taskId))
+          .find(item => item.status === 'queued' || item.status === 'running');
+        if (running === undefined) throw error;
+        view = running;
+      }
+      if (this.state.task?.taskId !== task.taskId) return;
+      this.patch({ retry: view, retries: mergeRetry(this.state.retries, view) });
+      const settled = await this.followRetry(task.taskId, view);
+      if (this.state.task?.taskId !== task.taskId) return;
+      this.patch({ retry: settled, retries: mergeRetry(this.state.retries, settled) });
+      if (isRetryTerminal(settled.status)) await this.refresh(task.taskId);
+    } catch (error) {
+      if (this.state.task?.taskId !== task.taskId) return;
+      // 后端把"要多少次、剩多少次、为什么现在不行"写在 message 里：原样显示，不改写。
+      this.patch({ retryError: error instanceof CheckupError
+        ? error.message : '重试没有完成，请稍后重试' });
+    } finally {
+      if (this.state.task?.taskId === task.taskId) this.patch({ retrying: false });
+    }
+  }
+
+  /** 停止这一轮重试。已发布的那一版报告照旧可读 —— 取消不会撤下已经取到的证据。 */
+  async cancelRetry(retryId: string) {
+    const task = this.state.task;
+    if (task === undefined) return;
+    try {
+      const view = await this.api.retryCancel(task.taskId, retryId);
+      if (this.state.task?.taskId !== task.taskId) return;
+      this.patch({ retry: view, retries: mergeRetry(this.state.retries, view) });
+    } catch (error) {
+      if (this.state.task?.taskId !== task.taskId) return;
+      this.patch({ retryError: error instanceof CheckupError ? error.message : '未能取消这次重试' });
+    }
+  }
+
+  /**
+   * 刷新后把已有的重试读回来，并把还在跑的那一轮接上。
+   *
+   * 结果一律以服务端为准：本地不存"重试跑到哪了"，因为一次刷新之后，本地那份要么是空的，
+   * 要么是已经过期的。
+   */
+  async loadRetries() {
+    const task = this.state.task;
+    if (task === undefined) return;
+    try {
+      const views = await this.api.retryList(task.taskId);
+      if (this.state.task?.taskId !== task.taskId) return;
+      const latest = views[views.length - 1];
+      const running = views.find(item => item.status === 'queued' || item.status === 'running');
+      this.patch({ retries: views, ...(latest === undefined ? {} : { retry: latest }) });
+      if (running !== undefined) {
+        // 上一轮还在跑：继续跟着它，结束时照样把任务与结果按新修订读回来。
+        const settled = await this.followRetry(task.taskId, running);
+        if (this.state.task?.taskId !== task.taskId) return;
+        this.patch({ retry: settled, retries: mergeRetry(this.state.retries, settled) });
+        if (isRetryTerminal(settled.status)) await this.refresh(task.taskId);
+      }
+    } catch {
+      // 列表读不到不是体检的问题：面板照旧显示已有的报告，只是看不到重试记录。
+    }
+  }
+
+  /**
+   * 一轮重试结束后把任务与结果重新读回来。
+   *
+   * 读的是**任务视图报告的那一版**，而不是"最新的一版"：重试正好在这两次请求之间又发布了
+   * 一版时，取最新会让报告与任务状态描述不同的结论（与 `accept()` 同一条理由）。
+   */
+  private async refresh(taskId: string) {
+    const task = await this.api.status(taskId);
+    if (this.state.task?.taskId !== taskId) return;
+    const snapshot = await this.api.result(taskId, task.revision);
+    if (this.state.task?.taskId !== taskId) return;
+    if (snapshot.revision !== task.revision) {
+      throw new CheckupError('体检修订与任务状态不符，请检查服务版本', 0, 'mismatched_revision');
+    }
+    // 图层与详情路线一律丢掉：它们属于上一版修订，留着就是"图上画旧版、面板写新版"。
+    this.set({ ...this.state, task, snapshot, layers: undefined,
+      route: undefined, routeError: undefined });
+  }
+
+  /** 轮询到终态。终态的那一版带着这一轮最终的计数与停止原因。 */
+  private async followRetry(taskId: string, created: FacilityRetryView) {
+    let view = created;
+    for (let attempt = 0; attempt < EXTENSION_POLL_LIMIT; attempt += 1) {
+      if (isRetryTerminal(view.status) || this.state.task?.taskId !== taskId) return view;
+      await new Promise(resolve => setTimeout(resolve, EXTENSION_POLL_MS));
+      if (this.state.task?.taskId !== taskId) return view;
+      view = await this.api.retryStatus(taskId, view.retryId);
+    }
+    return view;
+  }
+}
+
+/** 同一次重试只保留最新的一条视图：轮询回来的那一版才是它的当前状态。 */
+function mergeRetry(
+  list: FacilityRetryView[] | undefined, view: FacilityRetryView,
+): FacilityRetryView[] {
+  const rest = (list ?? []).filter(item => item.retryId !== view.retryId);
+  return [...rest, view];
 }
 
 /** 同一个补查只保留最新的一条视图：轮询回来的那一版才是它的当前状态。 */

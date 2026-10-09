@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHECKUP_STORAGE_PREFIX, checkupSession, readStored, resetCheckupSessions } from './sessions';
 import type { CheckupService } from './client';
-import { CENTER, capabilities, extensionDocument, extensionView, layer, route, snapshot,
+import { CENTER, capabilities, extensionDocument, extensionView, layer, retryView, route, snapshot,
   task } from './fixtures';
 
 class MemoryStorage {
@@ -33,6 +33,10 @@ function service(): CheckupService {
     extensionList: vi.fn(async () => [extensionView()]),
     extensionResult: vi.fn(async () => extensionDocument()),
     extensionCancel: vi.fn(async () => extensionView({ status: 'cancelled' })),
+    retryCreate: vi.fn(async () => retryView()),
+    retryStatus: vi.fn(async () => retryView()),
+    retryList: vi.fn(async () => []),
+    retryCancel: vi.fn(async () => retryView({ status: 'cancelled' })),
   };
 }
 

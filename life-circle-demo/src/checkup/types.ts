@@ -1,6 +1,6 @@
 import type { Center } from '../types';
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityExtensionView,
-  FacilityRoute, MajorCategory } from './contract';
+  FacilityRetryView, FacilityRoute, MajorCategory } from './contract';
 import type { Contact, Reconnect } from './live';
 import { STAGES, type LayerId, type Stage } from './validate';
 
@@ -64,6 +64,16 @@ export type CheckupState = {
   extensions?: FacilityExtensionView[];
   extensionRunning?: boolean;
   extensionError?: string;
+  /**
+   * §5 B2 决策 1 的重试：**同一次体检**的下一轮，不是并列的一份结果。所以它成功之后
+   * `task` 与 `snapshot` 会一起换成新修订（`report.ts` 与图层都跟着换版），而 `retry`
+   * 只留下"这一轮花了多少、停在哪"。
+   */
+  retry?: FacilityRetryView;
+  /** 同一次体检已经发生过的重试，含正在进行的那一次：刷新后靠它把轮询接上。 */
+  retries?: FacilityRetryView[];
+  retrying?: boolean;
+  retryError?: string;
   error?: string;
 };
 

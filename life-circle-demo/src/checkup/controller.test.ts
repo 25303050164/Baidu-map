@@ -7,9 +7,10 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CheckupController } from './controller';
-import { CheckupError, DETAIL_BUDGET_EXHAUSTED, type CheckupService } from './client';
+import { CheckupError, DETAIL_BUDGET_EXHAUSTED, RETRY_DAILY_BUDGET, RETRY_IN_PROGRESS,
+  type CheckupService } from './client';
 import { STAGE_LABELS, isCheckupBusy, isStageReached, type CheckupHandle } from './types';
-import { CENTER, SERVER_TIME, capabilities, extensionDocument, extensionView, layer, route,
+import { CENTER, SERVER_TIME, capabilities, extensionDocument, extensionView, layer, retryView, route,
   snapshot, task } from './fixtures';
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView } from './contract';
 
@@ -31,6 +32,10 @@ function service(): CheckupService {
     extensionList: vi.fn(async () => [extensionView()]),
     extensionResult: vi.fn(async () => extensionDocument()),
     extensionCancel: vi.fn(async () => extensionView({ status: 'cancelled' })),
+    retryCreate: vi.fn(async () => retryView()),
+    retryStatus: vi.fn(async () => retryView()),
+    retryList: vi.fn(async () => []),
+    retryCancel: vi.fn(async () => retryView({ status: 'cancelled' })),
   };
 }
 afterEach(() => vi.useRealTimers());
@@ -448,6 +453,102 @@ describe('checkup facility detail', () => {
     await controller.detail('synthetic:clinic-1');
     expect(controller.state.routeError).toContain('预算已用尽');
     expect(controller.state.route).toBeUndefined();
+  });
+});
+
+describe('checkup retry', () => {
+  it('follows a retry into the new revision and drops the layers of the old one', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    await controller.layer('facilities');
+    expect(controller.state.snapshot?.revision).toBe(5);
+
+    vi.mocked(api.retryCreate).mockResolvedValue(retryView({
+      status: 'partial', facilitiesStatus: 'partial', stopReason: 'network_budget_exhausted' }));
+    vi.mocked(api.status).mockResolvedValue(task({ status: 'completed', stage: 'ready', revision: 7 }));
+    vi.mocked(api.result).mockResolvedValue(snapshot({ revision: 7 }));
+
+    await controller.retryCheckup();
+
+    // 请求体里只有标识：类别与圈面由后端从被冻结的那一版取，重试改不了这次体检问的问题。
+    expect(Object.keys(vi.mocked(api.retryCreate).mock.calls[0][1])).toEqual(
+      ['schemaVersion', 'clientRequestId']);
+    // 它发布的是**同一次体检**的新修订：报告要跟着换版，旧图层属于上一版，必须丢掉。
+    expect(controller.state.snapshot?.revision).toBe(7);
+    expect(controller.state.task?.revision).toBe(7);
+    expect(controller.state.layers).toBeUndefined();
+    expect(controller.state.retry?.status).toBe('partial');
+    expect(controller.state.retrying).toBe(false);
+    expect(controller.state.retryError).toBeUndefined();
+  });
+
+  it('adopts the retry already running instead of reporting a conflict', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    vi.mocked(api.retryCreate).mockRejectedValue(
+      new CheckupError('这次体检已经有一次重试在进行中', 409, RETRY_IN_PROGRESS));
+    vi.mocked(api.retryList).mockResolvedValue([
+      retryView({ retryId: 'retry-9', status: 'running', stage: 'poi', finishedAt: null })]);
+    vi.mocked(api.retryStatus).mockResolvedValue(retryView({ retryId: 'retry-9', status: 'completed' }));
+
+    await controller.retryCheckup();
+
+    // 409 说的是"已经有一轮在跑"，不是"这次重试失败了"：接上它并跟着跑完。
+    expect(controller.state.retryError).toBeUndefined();
+    expect(controller.state.retry?.retryId).toBe('retry-9');
+    expect(controller.state.retry?.status).toBe('completed');
+    expect(vi.mocked(api.retryStatus)).toHaveBeenCalledWith('task-1', 'retry-9');
+  });
+
+  it('shows why a retry was refused and never touches the report', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    const report = controller.state.snapshot;
+    vi.mocked(api.retryCreate).mockRejectedValue(new CheckupError(
+      '今天的地点检索额度不足以继续这次重试：本应用今天还剩 3 次。', 429, RETRY_DAILY_BUDGET));
+
+    await controller.retryCheckup();
+
+    // 后端把"要多少次、剩多少次、为什么要等次日"写在 message 里：原样显示，不改写。
+    expect(controller.state.retryError).toContain('还剩 3 次');
+    expect(controller.state.snapshot).toBe(report);
+    expect(controller.state.retrying).toBe(false);
+    expect(controller.state.retry).toBeUndefined();
+  });
+
+  it('picks the running retry back up after a reload and can cancel it', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    const running = retryView({ retryId: 'retry-3', status: 'running', stage: 'poi', finishedAt: null });
+    vi.mocked(api.retryList).mockResolvedValue([running]);
+    vi.mocked(api.retryStatus).mockResolvedValue(retryView({ retryId: 'retry-3', status: 'completed' }));
+    vi.mocked(api.status).mockResolvedValue(task({ status: 'completed', stage: 'ready', revision: 6 }));
+    vi.mocked(api.result).mockResolvedValue(snapshot({ revision: 6 }));
+
+    await controller.loadRetries();
+    expect(controller.state.retries?.map(item => item.retryId)).toEqual(['retry-3']);
+    expect(controller.state.snapshot?.revision).toBe(6);
+
+    vi.mocked(api.retryCancel).mockResolvedValue(running);
+    await controller.cancelRetry('retry-3');
+    expect(vi.mocked(api.retryCancel)).toHaveBeenCalledWith('task-1', 'retry-3');
+    expect(controller.state.retry?.status).toBe('running');
+  });
+
+  it('keeps the report when the retry list cannot be read', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    const report = controller.state.snapshot;
+    vi.mocked(api.retryList).mockRejectedValue(new CheckupError('无法连接体检服务', 0, 'network'));
+    await controller.loadRetries();
+    // 列表读不到不是体检的问题：报告照旧在，也不该冒出一句"体检失败"。
+    expect(controller.state.snapshot).toBe(report);
+    expect(controller.state.retryError).toBeUndefined();
   });
 });
 

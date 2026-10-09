@@ -9,7 +9,7 @@
  * `as unknown as` 蒙过去。夹具一旦靠断言绕过类型，它就再也证明不了契约本身。
  */
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, CoverageRow,
-  FacilityExtensionDocument, FacilityExtensionView, FacilityRoute,
+  FacilityExtensionDocument, FacilityExtensionView, FacilityRetryView, FacilityRoute,
   ReportEvidence, ServiceZone, WaterDataEvidence } from './contract';
 import type { Capabilities, EngineOption } from './validate';
 
@@ -255,6 +255,25 @@ export function extensionView(overrides: Partial<FacilityExtensionView> = {}): F
       remainingTaskBudget: 60, remainingDailyBudget: 1450, blocks: 4, minorCategories: 5,
       primaryQueriesOnly: true, isReservation: false },
     error: null, createdAt: CREATED_AT, finishedAt: CREATED_AT + 3, ...overrides,
+  };
+}
+
+/**
+ * 一次重试的状态：默认是"这一轮把缺口查完了，任务由此发布了新修订"。
+ *
+ * 它**不报**发布了第几版 —— 那一版是任务自己的最新修订，客户端照常读任务即可。两本账
+ * （页面处理 / 新增网络调用）分开报，与补查同一个理由：把两者并成一个数，会让"额度用尽"
+ * 看起来像"查了很多"。
+ */
+export function retryView(overrides: Partial<FacilityRetryView> = {}): FacilityRetryView {
+  return {
+    retryId: 'retry-1', taskId: 'task-1', baseRevision: 5, clientRequestId: 'retry-request-1',
+    status: 'completed', stage: 'ready', budget: { limit: 240, spent: 63, remaining: 177 },
+    requests: 63, networkRequests: 41, facilitiesStatus: 'completed', stopReason: null,
+    initialPlan: { initialPageCount: 20, reusableInitialPageCount: 16,
+      estimatedNewInitialCalls: 4, remainingTaskBudget: 240, remainingDailyBudget: 1900,
+      blocks: 4, minorCategories: 3, primaryQueriesOnly: true, isReservation: false },
+    error: null, createdAt: CREATED_AT, finishedAt: CREATED_AT + 5, ...overrides,
   };
 }
 

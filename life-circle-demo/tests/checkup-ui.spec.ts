@@ -10,8 +10,8 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { installMapSdk } from './mapSdk';
-import { capabilities, collection, feature, layer, point, polygon, report, snapshot, task, zone }
-  from '../src/checkup/fixtures';
+import { capabilities, collection, feature, layer, point, polygon, report, retryView, snapshot,
+  task, zone } from '../src/checkup/fixtures';
 
 const REVISION = 5;
 const HASH = 'hash-5';
@@ -38,11 +38,15 @@ type Options = {
   graphConfigured?: boolean;
   graphState?: 'unloaded' | 'loading' | 'ready' | 'unavailable';
   runningFirst?: boolean;
+  /** 设施检索没达标：面板上要出现"继续检索缺口"的入口，并且点得动。 */
+  unmetCoverage?: boolean;
 };
 
 async function setup(page: Page, options: Options = {}) {
   let submitted: { center: { lng: number; lat: number }; engine: string } | undefined;
   let statusCalls = 0;
+  /** 每一次重试请求带上来的标识：用例靠它证明"提交的是同一次重试"。 */
+  const retries: string[] = [];
   await installMapSdk(page);
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
@@ -67,6 +71,28 @@ async function setup(page: Page, options: Options = {}) {
       // 任务视图必须回报**这次请求**的 ID：客户端拿它对账，错一个就会（正确地）拒绝整份响应。
       return route.fulfill({ status: 202, json: task({ status: 'queued', stage: null, revision: 1,
         budget: 400, engine: body.engine, clientRequestId: body.clientRequestId }) });
+    }
+    // §5 B2 决策 1 的重试：同一张任务上的另一个资源。
+    const retryMatch = url.pathname.match(/\/checkups\/([^/]+)\/retries(\/([^/]+))?(\/cancel)?$/);
+    if (retryMatch) {
+      if (route.request().method() === 'POST' && retryMatch[2] === undefined) {
+        const body = route.request().postDataJSON() as { clientRequestId: string };
+        retries.push(body.clientRequestId);
+        return route.fulfill({ status: 202, json: retryView({ clientRequestId: body.clientRequestId,
+          taskId: retryMatch[1], status: 'running', stage: 'poi', finishedAt: null,
+          facilitiesStatus: null, stopReason: null, requests: 12, networkRequests: 5,
+          budget: { limit: 240, spent: 12, remaining: 228 } }) });
+      }
+      if (retryMatch[4] !== undefined) {
+        return route.fulfill({ json: retryView({ retryId: retryMatch[3], taskId: retryMatch[1],
+          status: 'cancelled' }) });
+      }
+      if (retryMatch[3] !== undefined) {
+        // 第一轮已经跑完：任务由此发布了新修订，界面必须跟着换版。
+        return route.fulfill({ json: retryView({ retryId: retryMatch[3], taskId: retryMatch[1],
+          status: 'partial', facilitiesStatus: 'partial', stopReason: 'network_budget_exhausted' }) });
+      }
+      return route.fulfill({ json: [] });
     }
     const layerMatch = url.pathname.match(/\/layers\/([a-z_]+)$/);
     if (layerMatch) {
@@ -102,6 +128,7 @@ async function setup(page: Page, options: Options = {}) {
     return route.fulfill({ json: task({ status: 'completed', stage: 'ready', revision: REVISION,
       businessStatus: 'partial', budget: 400, engine: submitted?.engine ?? 'baidu_e82' }) });
   });
+  return { retries };
 }
 
 /** 每层的载荷都按后端实际返回的形态给：等时圈是单个面，其余五层是要素集合。 */
@@ -175,11 +202,18 @@ function snapshotFor(options: Options, submitted: { center: { lng: number; lat: 
     : [zone({ id: 'zone-1', index: 1, queryStatus: 'partial', geometry: polygon(0.05),
       displayGeometry: polygon(0.05), suggestion: '设施检索未完成，先补采再判定。' })];
   const base = snapshot();
+  const facilities = options.unmetCoverage
+    ? { ...base.facilities!, queryStatus: 'partial' as const, stopReason: 'network_budget_exhausted',
+      queryAreaCoverage: { target: 0.8, status: 'unmet', boundaryAreaM2: 1000,
+        sharedCompletedAreaM2: 500, sharedCompletionRatio: 0.5, residualRatio: 0.5,
+        categories: ['market', 'pharmacy', 'school'] } }
+    : base.facilities!;
   return snapshot({
     center: { lng: submitted.center.lng, lat: submitted.center.lat },
     serviceGaps: { ...base.serviceGaps!, zones },
     report: report({ gaps: { ...report().gaps, zones } }),
     accessibility: { ...base.accessibility!, domain: polygon(0.03) },
+    facilities,
   });
 }
 
@@ -640,4 +674,32 @@ test('hybrid hides the runtime guide while the graph is still loading', async ({
   await page.getByTestId('algorithm-hybrid').click();
   await expect(page).toHaveURL(/#\/checkup\/hybrid$/);
   await expect(page.getByTestId('checkup-time-estimate')).toHaveCount(0);
+});
+
+/**
+ * §5 B2 决策 1 的重试入口。单元测试与控制器测试各自钉住了判决文案和时序，这里钉的是
+ * **它真的出现在面板上、真的点得动**：未达标时给出下一步，点一次就提交一次重试，
+ * 而且提交的请求体里只有标识 —— 类别与圈面由后端从被冻结的那一版取。
+ */
+test('未达标时给出继续检索入口，点一次就提交一次重试', async ({ page }) => {
+  const errors: string[] = [];
+  const harness = await setup(page, { unmetCoverage: true });
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await pickAndStart(page);
+
+  // 先说清"查完了多少"，再说下一步：达标线是 80%，实测 50%。
+  await expect(page.getByTestId('checkup-query-coverage'))
+    .toContainText('共同完成圈面 50.0%（合格线 80.0%）');
+  await expect(page.getByTestId('checkup-query-coverage')).toContainText('未达标');
+  // 原因按真实停止原因区分：本轮额度用尽可以再点一次，今日额度用尽要等次日。
+  await expect(page.getByTestId('checkup-query-coverage-next'))
+    .toContainText('本轮请求额度已用完，可重试继续');
+
+  await page.getByTestId('checkup-retry-run').click();
+  // 这一轮**自己的**账目：预算属于这次重试，不是原任务的。
+  await expect(page.getByTestId('checkup-retry-facts').first()).toContainText('本轮预算 240');
+  expect(harness.retries).toHaveLength(1);
+  expect(harness.retries[0]).toMatch(/^[0-9a-f-]{36}$/);
+  expect(errors).toEqual([]);
 });

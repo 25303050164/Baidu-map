@@ -11,9 +11,10 @@
  * `message` 显示，逻辑用 `code` 判断，不要拿 `message` 去比对字符串。
  */
 import type { CheckupLayer, CheckupRequest, CheckupSnapshot, CheckupTaskView,
-  FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView, FacilityRoute } from './contract';
+  FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView, FacilityRetryRequest,
+  FacilityRetryView, FacilityRoute } from './contract';
 import { validCapabilities, validFacilityExtensionDocument, validFacilityExtensionView,
-  validFacilityRoute, validLayer, validSnapshot, validTaskView,
+  validFacilityRetryView, validFacilityRoute, validLayer, validSnapshot, validTaskView,
   type Capabilities, type LayerId } from './validate';
 
 export class CheckupError extends Error {
@@ -27,6 +28,11 @@ export const ROUTE_UNAVAILABLE = 'checkup_route_unavailable';
 /** 补查在花钱之前就被拒的两个原因：界面要把"要多少次、剩多少次"原样显示出来。 */
 export const EXTENSION_BUDGET_TOO_SMALL = 'checkup_extension_budget_too_small';
 export const EXTENSION_DAILY_BUDGET = 'checkup_extension_daily_budget';
+/** 重试被拒的四个原因；它们各自对应完全不同的下一步，所以不能合并成一句"失败"。 */
+export const RETRY_NOT_NEEDED = 'checkup_retry_not_needed';
+export const RETRY_IN_PROGRESS = 'checkup_retry_in_progress';
+export const RETRY_DAILY_BUDGET = 'checkup_retry_daily_budget';
+export const RETRY_BUDGET_TOO_SMALL = 'checkup_retry_budget_too_small';
 
 export type CheckupService = {
   /** 能力表：能选哪个引擎、哪一档预算，以及本应用预算余额的说法，都从这里来。 */
@@ -44,6 +50,17 @@ export type CheckupService = {
   extensionList: (taskId: string, signal?: AbortSignal) => Promise<FacilityExtensionView[]>;
   extensionResult: (taskId: string, extensionId: string) => Promise<FacilityExtensionDocument>;
   extensionCancel: (taskId: string, extensionId: string) => Promise<FacilityExtensionView>;
+  /**
+   * §5 B2 决策 1 的重试：用新预算接着把这次体检没查完的地段查下去。
+   *
+   * 它与补查是**两个资源**，因为定稿之后做的事不同：补查产出并列的一份结果，重试为
+   * **同一次体检**发布新修订 —— 所以这里没有"取回重试结果"的方法，新的答案在任务的
+   * 下一个修订里（`result(taskId, revision)` 按指定版本读）。
+   */
+  retryCreate: (taskId: string, body: FacilityRetryRequest) => Promise<FacilityRetryView>;
+  retryStatus: (taskId: string, retryId: string, signal?: AbortSignal) => Promise<FacilityRetryView>;
+  retryList: (taskId: string, signal?: AbortSignal) => Promise<FacilityRetryView[]>;
+  retryCancel: (taskId: string, retryId: string) => Promise<FacilityRetryView>;
 };
 
 const NOT_FOUND = new Set(['checkup_task_not_found', 'checkup_unknown_engine']);
@@ -205,6 +222,47 @@ export function createCheckupService(
       const view = checked<FacilityExtensionView>(value, validFacilityExtensionView, '补查状态');
       if (view.taskId !== taskId || view.extensionId !== extensionId) {
         throw new CheckupError('体检服务返回了另一次补查的状态，请检查服务版本', 0, 'mismatched_task');
+      }
+      return view;
+    },
+    async retryCreate(taskId, body) {
+      const path = `/${encodeURIComponent(taskId)}/retries`;
+      const { body: value } = await request(path, 'POST', body);
+      const view = checked<FacilityRetryView>(value, validFacilityRetryView, '重试状态');
+      // 回来的必须是刚提交的那一次：错配的标识会让轮询盯着别人的重试。
+      if (view.taskId !== taskId || view.clientRequestId !== body.clientRequestId) {
+        throw new CheckupError('体检服务返回了另一次重试的状态，请检查服务版本', 0, 'mismatched_request');
+      }
+      return view;
+    },
+    async retryStatus(taskId, retryId, signal) {
+      const path = `/${encodeURIComponent(taskId)}/retries/${encodeURIComponent(retryId)}`;
+      const { body: value } = await request(path, 'GET', undefined, signal);
+      const view = checked<FacilityRetryView>(value, validFacilityRetryView, '重试状态');
+      if (view.taskId !== taskId || view.retryId !== retryId) {
+        throw new CheckupError('体检服务返回了另一次重试的状态，请检查服务版本', 0, 'mismatched_task');
+      }
+      return view;
+    },
+    async retryList(taskId, signal) {
+      const path = `/${encodeURIComponent(taskId)}/retries`;
+      const { body: value } = await request(path, 'GET', undefined, signal);
+      if (!Array.isArray(value)) {
+        throw new CheckupError('体检服务返回的重试列表结构异常，请检查服务版本', 0, 'invalid_response');
+      }
+      const views = value.map(item => checked<FacilityRetryView>(item, validFacilityRetryView, '重试状态'));
+      // 列表里混进别的任务的重试，等于把一次越权访问当成一次成功读取。
+      if (views.some(item => item.taskId !== taskId)) {
+        throw new CheckupError('重试列表里出现了不属于本任务的记录，请检查服务版本', 0, 'mismatched_task');
+      }
+      return views;
+    },
+    async retryCancel(taskId, retryId) {
+      const path = `/${encodeURIComponent(taskId)}/retries/${encodeURIComponent(retryId)}/cancel`;
+      const { body: value } = await request(path, 'POST');
+      const view = checked<FacilityRetryView>(value, validFacilityRetryView, '重试状态');
+      if (view.taskId !== taskId || view.retryId !== retryId) {
+        throw new CheckupError('体检服务返回了另一次重试的状态，请检查服务版本', 0, 'mismatched_task');
       }
       return view;
     },

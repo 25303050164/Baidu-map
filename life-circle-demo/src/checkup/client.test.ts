@@ -8,7 +8,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { CheckupError, DETAIL_BUDGET_EXHAUSTED, createCheckupService, isNotFound } from './client';
-import { capabilities, extensionDocument, extensionView, layer, route, snapshot, task } from './fixtures';
+import { capabilities, extensionDocument, extensionView, layer, retryView, route, snapshot, task } from './fixtures';
 
 type Reply = { body?: unknown; status?: number; raw?: unknown };
 
@@ -180,5 +180,48 @@ describe('on-demand facility extensions', () => {
     const view = await api.extensionCancel('task-1', 'extension-1');
     expect(calls[0].url).toBe('/api/v2/checkups/task-1/facility-extensions/extension-1/cancel');
     expect(view.status).toBe('cancelled');
+  });
+});
+
+describe('checkup retries', () => {
+  it('posts the retry under the task and keeps the request id', async () => {
+    const { api, calls } = service([{ body: retryView({ status: 'queued', stage: null, finishedAt: null }) }]);
+    const view = await api.retryCreate('task-1', {
+      schemaVersion: 'checkup-v1', clientRequestId: 'retry-request-1' });
+    expect(calls[0].url).toBe('/api/v2/checkups/task-1/retries');
+    expect(calls[0].init.method).toBe('POST');
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({
+      schemaVersion: 'checkup-v1', clientRequestId: 'retry-request-1' });
+    expect(view.status).toBe('queued');
+  });
+
+  it('refuses a retry view minted for a different task or request', async () => {
+    const otherRequest = service([{ body: retryView({ clientRequestId: 'retry-request-9' }) }]);
+    await expect(otherRequest.api.retryCreate('task-1',
+      { schemaVersion: 'checkup-v1', clientRequestId: 'retry-request-1' }))
+      .rejects.toMatchObject({ code: 'mismatched_request' });
+    const otherTask = service([{ body: retryView({ taskId: 'task-9' }) }]);
+    await expect(otherTask.api.retryStatus('task-1', 'retry-1'))
+      .rejects.toMatchObject({ code: 'mismatched_task' });
+  });
+
+  it('reads one retry and refuses a list that carries another task', async () => {
+    const one = service([{ body: retryView() }]);
+    expect((await one.api.retryStatus('task-1', 'retry-1')).retryId).toBe('retry-1');
+    expect(one.calls[0].url).toBe('/api/v2/checkups/task-1/retries/retry-1');
+    const list = service([{ body: [retryView(), retryView({ taskId: 'task-9' })] }]);
+    await expect(list.api.retryList('task-1')).rejects.toMatchObject({ code: 'mismatched_task' });
+  });
+
+  it('refuses a failed retry that does not say why', async () => {
+    const { api } = service([{ body: retryView({ status: 'failed', error: null }) }]);
+    await expect(api.retryStatus('task-1', 'retry-1'))
+      .rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
+  it('cancels through the retry path', async () => {
+    const { api, calls } = service([{ body: retryView({ status: 'cancelled' }) }]);
+    expect((await api.retryCancel('task-1', 'retry-1')).status).toBe('cancelled');
+    expect(calls[0].url).toBe('/api/v2/checkups/task-1/retries/retry-1/cancel');
   });
 });
