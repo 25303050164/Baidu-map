@@ -1,119 +1,139 @@
 # A4｜完整验证与失败归因
 
 **任务**：`scheme.md` A4
-**执行时间**：2026-10-08
-**环境**：同一台机器、同一虚拟环境（`backend/.venv`，Python 3.12.3）、同一依赖锁定；`conftest.py` 全会话拒绝外连。
+**执行时间**：2026-10-09（重写；上一版 2026-10-08 的两条结论已按 §3 撤回）
+**环境**：同一台机器、同一虚拟环境（`backend/.venv`，Python 3.12.3，pytest 9.1.1）、同一依赖清单；
+`conftest.py` 在导入任何应用模块之前就拒绝全部外连，测试结束打印尝试次数。
+**被验代码**：`655e17dd69c5b6c128bc229ff3f764163cb8ceae`（分支 `delivery/facility-budget-cache`）
+**基线对照**：`decce8784e0505fb9601c1d493c522d919c1e348`，在 `.tmp/baseline-tree` 的
+`git worktree`（detached）中以**同一解释器**运行，`-p no:cacheprovider`。
+
+> 关于隔离检出：`life_circle` 是指向主工作树的 editable 安装，因此必须确认它在本任务前后没有变化——
+> `git log --oneline decce878..HEAD -- life-circle-algorithm` 输出为空，即该包与基线逐字节相同，
+> 不会把新代码带进基线运行。`app` 包由 `backend/pytest.ini` 的 `pythonpath = .` 从检出根解析。
 
 ---
 
 ## 1. 实际执行的命令与结果
 
-| 命令 | 结果 | 备注 |
+| 命令 | 结果 | 日志 |
 | --- | --- | --- |
-| `cd backend && .venv/bin/python -m pytest -q` | **34 failed / 1011 passed / 10 skipped**（668s） | 见 §2 逐项归因；基线同环境为 **42 failed / 968 passed / 10 skipped** |
-| `cd backend && .venv/bin/python -m pytest -q tests/test_checkup_facilities.py tests/test_checkup_v2.py tests/test_cache.py tests/test_poi_online.py tests/test_quota.py` | **126 passed** | 本轮改动涉及的全部套件 |
-| `cd backend && .venv/bin/python -m pytest -q tests/test_checkup_v2.py tests/test_cache.py tests/test_poi_online.py` | **71 passed** | 修复后的定向复跑 |
-| `cd life-circle-demo && npm test` | **41 files / 458 tests passed** | 前端未改行为，只改诊断文案与其断言 |
-| `cd life-circle-demo && npm run build`（`tsc -b && vite build`） | 通过 | 类型检查与构建均过 |
-| `cd backend && .venv/bin/python -m tools.export_contract` | 运行过；只保留 v2 契约产物 | 旧生成物在基准版本即已漂移，整批重写会把无关变更混入，已回退（见 §3 第③类） |
-| Playwright E2E（`test:e2e` / `test:checkup-ui` / `test:integration`） | **NOT RUN（环境阻塞）** | 见 §4 |
-| 外连尝试统计 | **0 次** | 两次全量运行均无 `/tmp/baidu-verify/*.txt` 中的 `external connection attempts refused` 行 |
+| `cd backend && .venv/bin/python -m pytest -q -rf` | **31 failed / 1016 passed / 10 skipped**（558.18s），exit 1 | `.tmp/verify/full-A-final.txt` |
+| 同上，在 `.tmp/baseline-tree/backend`（基线检出） | **42 failed / 963 passed / 10 skipped**（482.23s），exit 1 | `.tmp/verify/baseline-full.txt` |
+| 把本轮的 31 个失败节点逐个在基线检出重放 | **31 failed**（69.35s）——与当前失败集**逐项一致** | `.tmp/verify/baseline-repro.txt` |
+| `cd life-circle-demo && npm test` | **41 files / 462 tests passed**，exit 0 | `.tmp/verify/frontend-unit.txt` |
+| `cd life-circle-demo && npm run build` | 通过（`tsc -b` + `vite build`），exit 0 | `.tmp/verify/frontend-build.txt` |
+| `npm run test:checkup-ui` | **15 passed**（36.9s），exit 0 | `.tmp/verify/browser-suites.txt` |
+| `DEMO_PORT=5186 DEMO_OUTPUT_DIR=output/demo-regression npm run test:e2e` | **10 passed**（1.9m），exit 0 | 同上 |
+| `npm run test:integration` | **7 passed**（1.4m），exit 0 | 同上 |
+| `bash -n start.command && ./start.command --help` | 通过（打印启动器用法） | 见 `0665f60` |
+| 外连尝试统计 | **0 次**：后端两次全量都没有 `external connection attempts refused` 行（`grep -c` = 0）；三个浏览器套件每个用例都断言 `external.attempts == 0` | — |
 
-退出码处理：所有命令都保留真实退出码（不再用管道尾部命令掩盖失败）；`git diff --check` 需用 `core.whitespace=cr-at-eol`（仓库工作区为 CRLF），结果干净。
+**未跟踪文件对计数的影响（必须说明）**：`backend/tests/test_osm_package.py`（用户 OSM 工作，未跟踪）
+在整仓收集中贡献 **5** 个用例；它只有在整仓收集时才可导入（单独收集会 `ModuleNotFoundError: backend`，
+因为需要另一模块先把仓库根加入 `sys.path`）。基线检出中没有该文件。因此可比口径为：
+当前树 **1057** 项 = 31 + 1016 + 10；基线树 **1015** 项 = 42 + 963 + 10。31 项失败中没有一项来自该文件。
 
 ---
 
-## 2. 失败归因（同环境、同依赖，逐项）
+## 2. 失败归因（同环境、同依赖、逐项）
 
-对照文件：基线 `/tmp/baidu-verify/baseline-full.txt`（改动前）与本轮 `/tmp/baidu-verify/A-after-fixes.txt`。逐条比对（名称规范化后）：
+### 2.1 结论
 
 ```text
-baseline=42  now=34
-新增失败（本轮引入或新暴露）：无
-本轮修好：8 项
+基线 42 failed  →  当前 31 failed
+本轮引入（当前失败但基线通过）：0 项
+本轮修好（基线失败但当前通过）：11 项
+两边都失败（baseline-confirmed）：31 项
+31 + 11 = 42   ← 与基线失败总数精确闭合
 ```
 
-**本次引入：0 项。** 8 项修好的是基线里本就失败、且与本轮改动直接相关或时间相关的用例：
+核对方式不是"看名字像不像"，而是**把当前 31 个失败节点逐个在基线检出上重放**，两次运行的
+节点 id 集合做差集。当前失败集是基线失败集的**真子集**，所以"新增失败 0"是可复算的结论。
 
-| 修好的用例 | 原因 |
+### 2.2 本轮修好的 11 项
+
+| 用例 | 真实原因 |
 | --- | --- |
-| `test_checkup_facilities.py::test_both_engines_close_the_loop_over_their_own_boundary` 等 7 项 | 基线里仍在用"三类 6 小类 × 4 块 = 24 页"的旧数字，与 3→10 类别重构脱节；本轮按词典推导期望值（断言未删未放宽） |
-| `test_facility_stage.py::test_the_daily_allowance_is_checked_before_the_request` | 夹具未固定档位切换时间：切换日之后生效的是 fallback 档（80），于是用例真的发了请求。修的是夹具（固定切换时间），断言原样 |
+| `test_poi_tool.py::test_offline_cli_never_reads_credentials_or_sends_http[plan]`、`[replay]` | **示例配置过期**：`tools/poi-example.json` 只给了 3 个类的预算，而 `RuntimeConfig` 要求逐类给全（词典已是 31 类），CLI 因此以一个笼统错误码退出。**守卫从未触发**（详见 §3 撤回） |
+| `test_poi_service.py::test_total_budget_and_category_budget_preserve_other_categories` | 同一根因：用例构造的部分预算字典缺类 |
+| `test_facilities.py`、`test_checkup_facilities.py` 共 7 项 | 期望值仍写死"三类 6 小类 × 4 块 = 24 页"等旧数字，与 3→10 类词典重构脱节；改为按词典推导期望值（断言未删、未放宽） |
+| `test_facility_stage.py::test_the_daily_allowance_is_checked_before_the_request` | 夹具未固定档位切换时间，切换日之后生效的是 fallback 档；修的是夹具，断言原样 |
 
-**基线已存在、与本轮无关：34 项**（下面按根因分组，附本轮捕获的断言行）：
+### 2.3 仍然失败的 31 项（全部 `baseline-confirmed`）
 
-### ① 3→10 类别词典重构遗留（23 项）
+按用例文件分布（数据由失败节点统计得出）：
 
-旧三元组 `(market, pharmacy, school)`／旧展示组名／旧类别数仍写死在用例里：
+| 文件 | 项数 | 根因 |
+| --- | ---: | --- |
+| `test_facilities.py` | 10 | 类别词典/展示口径重构遗留 |
+| `test_catalog.py` | 4 | 同上（旧三元组、旧共享词表、旧排除词表） |
+| `test_poi_acceptance.py` | 4 | 同上（旧标签→类别映射期望） |
+| `test_poi_service.py` | 4 | 3 项属旧自适应网格运行时的计划规模/状态期望；1 项属类别词典 |
+| `test_business_api.py` | 3 | 旧类别数（`assert 13 == 5` 等） |
+| `test_checkup_progress.py` | 2 | 展示组改名（`医疗` → `医疗健康`） |
+| `test_analysis.py` | 1 | 旧展示组三元组 |
+| `test_checkup_report.py` | 1 | 旧类别数（`assert 24 == 6`） |
+| `test_place_safety.py` | 1 | 旧类别名（`school`） |
+| `test_poi_evidence.py` | 1 | 生成物漂移：`api-contract.ts` 与当前序列化契约不一致（基线即已过期） |
 
-| 文件 | 断言行（本轮捕获） |
-| --- | --- |
-| `test_catalog.py` | `assert ('pharmacy', ...) == ('market', 'pharmacy', 'school')`；`assert [{'hospital_...'}] == [{'hospital_...', 'pharmacy'}]`；`assert '培训' in ('出入口', '门口', ...)`；`assert 'hospital' == 'clinic'` |
-| `test_facilities.py` | `assert 'fresh_store' == 'supermarket'`；`assert 'preschool' == None`；`assert 'hospital' == None`；`assert 32 == 6`（×7，每类期望数） |
-| `test_place_safety.py` | `assert 'school' is None` |
-| `test_poi_acceptance.py` | `assert 'accepted' != 'accepted'`（×3）；`assert 'excluded' == 'accepted'` |
-| `test_poi_service.py` | `assert 'accepted' == 'needs_review'` |
-| `test_analysis.py` | `assert 'care' in ('shopping', 'medical', 'education')` |
-| `test_business_api.py` | `assert (13 == 5)`（×3） |
-| `test_checkup_report.py` | `assert 24 == 6` |
-| `test_checkup_progress.py` | `assert '评估服务覆盖 · 医疗健康（第 1/2 类）' == '评估服务覆盖 · 医疗（第 1/2 类）'`（×2，展示组改名） |
+判定：这些用例描述的是**类别词典口径、旧运行时语义与生成物**，都不经过本轮的
+预算/缓存/补查路径，且在同一基线上以同样方式失败。**改写它们等于宣布类别口径变更**，
+属于产品决定，不在本轮范围。其中 `test_poi_evidence.py` 的生成物漂移是唯一的非词典项，
+重跑导出会一次性改写约 12k 行无关内容，因此本轮不动。
 
-判定：这些用例描述的是**类别词典与展示口径**，不经过本轮的预算/缓存/补查路径；它们在基线提交上以同样方式失败。分类：`baseline-confirmed`（保留原样，不在本轮范围内改写——改写它们等于宣布类别口径变更，需要产品决定）。
+### 2.4 是否阻塞 Gate A
 
-### ② 旧 POI 运行时与离线 CLI（7 项）
-
-| 文件 | 断言行 | 说明 |
-| --- | --- | --- |
-| `test_poi_service.py` | `ValidationError: RuntimeConfig`；`assert 'partial' == 'completed'`（×2）；`assert (1520 == 96)` | 旧自适应网格运行时的计划规模与状态期望 |
-| `test_poi_tool.py` | `assert 1 == 0`（×2） | 离线 CLI 的"不读凭据/不发 HTTP"守卫在基线即失败 |
-
-判定：`baseline-confirmed`。**其中 `test_poi_tool.py` 的两项需要在 PR 描述里显式列出**：它检测到 CLI 路径读了凭据/发了请求，属于既有风险，本轮未触碰该路径，也不应用"与本轮无关"掩盖。
-
-### ③ 生成物漂移（1 项）
-
-`test_poi_evidence.py::test_typescript_matches_current_serialization_contract`：`api-contract.ts` 与当前序列化契约不一致。该生成物在基准提交上即已过期；重跑导出会一次性改写约 12k 行无关内容，因此本轮只保留 v2 契约（`life-circle-demo/src/checkup/contract.ts`）的变更。判定：`baseline-confirmed`。
-
-### ④ 其余既有偏差（3 项）
-
-`test_analysis.py::test_four_mocks_consistent`、`test_business_api.py` 的 3 项 HTTP 链路断言、`test_checkup_report.py::...` 报告字段数：均为基线既有、与本轮无关。判定：`baseline-confirmed`。
-
-### 是否阻塞 Gate A
-
-按 scheme.md §4 A4/§12：核心正确性（预算/缓存/幂等/取消/关停）**全部通过**，无未解释的新增回归，旧调用方语义保持。34 项失败全部为 `baseline-confirmed`（类别词典、旧运行时、生成物），**不阻塞 Gate A 的本地交付**；其中 `test_poi_tool.py` 的凭据/HTTP 守卫失败标记为 **`blocking`（生产审批）**，因为它涉及"离线 CLI 是否会读凭据"的安全承诺，需要单独处理后再谈部署。
+按 `scheme.md` §4 A4／§13：核心正确性（预算、缓存、幂等、取消、关停、准入）全部通过，
+**新增失败 0**，旧调用方语义保持。31 项失败全部 `baseline-confirmed`，
+不阻塞本地交付，也**不**构成新的生产阻塞项（它们与本轮改动无关，且在基线提交上同样存在）。
 
 ---
 
-## 3. 断言完整性声明
+## 3. 对上一版 `03-validation.md` 的撤回与更正
 
-- 本轮**没有删除、跳过或弱化**任何断言；没有新增 `skip`/`xfail`。
-- 唯一被改写期望的用例是 `test_a_partly_cached_extension_spends_its_allowance_on_the_missing_pages`：原期望"部分缓存 + 预算不足 → 422"被准入规则修复推翻（scheme.md 不变量 5：部分缓存允许取得可复用证据）。改写后的用例断言**更强的证据**：受理、只按缺页派发、账本精确增量、随后只差 1 页即完成。
-- 行尾处理：仓库工作区混用 CRLF/LF。早期编辑曾把两个文件改成 LF，造成约 1300 行纯行尾差异；已按"内容未变的行恢复原字节"修复（`test_checkup_facilities.py` +1384/−686 → **+815/−45**，`backend/README.md` +71/−46 → **+25/−0**）。校验：`git diff --numstat` 与 `git diff --ignore-space-at-eol --numstat` 一致。
+上一版（2026-10-08）有两处**错误结论**，本版予以撤回：
+
+**① 撤回："离线 CLI 在读凭据/发 HTTP，属既有安全风险"。**
+这是从"守卫用例失败"反推"守卫触发"得来的，**没有读过守卫的实现，也没有读过 CLI 的真实失败原因**。
+实际重跑后：`test_offline_cli_never_reads_credentials_or_sends_http` 里的
+`monkeypatch.setattr(app.config, 'load_settings', forbidden)` 与 `httpx.AsyncClient.get` 替身
+**从未被调用**；CLI 返回 1 的原因在更早一步——`CollectionConfig.model_validate_json` 拒绝了随附的
+`tools/poi-example.json`（`runtime.categoryBudgets` 缺 28 个类）。第二个被掩盖的原因是回放夹具缺
+`market.extraQueries` 新增的 `农副产品市场` 的首页，于是回放报 `fixture_missing` 并落 `partial`。
+修法是**数据**（示例配置 + 夹具 + 两个用例的构造方式），不是放宽安全断言。
+原先标为 `blocking（生产审批）` 的这一项**撤销**。
+
+**② 更正："E2E NOT RUN（环境阻塞）"。**
+当时的描述把"本机缺一个共享库"当成了被测功能的问题。实际有两层：
+仓库四个 Playwright 配置都写死 `channel: 'msedge'`（本机没有 Edge，也没有任何系统 Chromium），
+而 Playwright 自带的 Chromium 缺 `libasound.so.2`。现在：
+- `life-circle-demo/scripts/ensure-browser-libs.sh` 把发行版运行库解到仓库忽略的
+  `.tmp/playwright-libs/`（**不需要 root、不改系统**），`tests/browser.ts` 只在目录存在时接上
+  `LD_LIBRARY_PATH`；浏览器、产物目录、端口都改为可配置，默认用自带 Chromium。
+- 结果是三个套件**真的跑起来了并通过**（§1）。因此"E2E 未通过必须列为生产审批阻塞"这一条
+  **已满足**：不是因为环境被豁免，而是因为 E2E 已经执行且通过。
+
+**③ 上一版的失败计数（34 项、4 组分法）作废。** 上一版缺少可复核的基线日志（`/tmp/baidu-verify/*`
+已不存在），分组是按行数估的。本版用隔离基线检出的**完整重跑**重新计得 42 → 31，并且 31 项逐个在
+基线上重放确认。
 
 ---
 
-## 4. 浏览器 E2E：NOT RUN（环境阻塞，非"通过"）
+## 4. 浏览器端到端：已运行（含一个真实缺陷）
 
-按 scheme.md A4 要求"尝试在可用 Chromium/Playwright 环境运行 E2E"，本轮实际尝试并留证：
+三个套件共 **32** 个用例全部通过，且每个用例都断言 `external.attempts == 0`（即页面没有向
+127.0.0.1 之外发出任何请求）。它们覆盖：普通体检、预算不足、全缓存零额度补查、部分结果与补查、
+错误状态、实时诊断文案、幂等取回与冲突 409、限流有界停止、取消、父任务报告不变。
 
-```text
-$ node -e '...chromium.executablePath()...'
-{"node":"v24.15.0","chromiumPath":"~/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome","chromiumInstalled":true}
+**这些套件第一次运行就抓到一个真实缺陷**：上游持续限流时，后端如实报
+`queryStatus=failed` + `stopReason=rate_limit`，而界面仍渲染"本次体检没有接收的设施。"——
+把一个**失败**说成了**没有**，正是 `scheme.md` G3／§4.4 要排除的那种零。
+该行为来自基线提交 `85ec80e4`，**不是本轮引入**。修法：`nearestEmptyNote()` 按
+`queryStatus`/`stopReason` 给出具名说明，停止原因复用补查面板同一张词表，未知原因原样回显；
+新增 12 项单测（其中 4 项针对该函数）。旧行为在基线检出上可复现。
 
-$ chromium-1243/chrome-linux64/chrome --version
-chrome: error while loading shared libraries: libasound.so.2: cannot open shared object file
-
-$ chromium_headless_shell-1243/.../chrome-headless-shell --version
-chrome-headless-shell: error while loading shared libraries: libasound.so.2: cannot open shared object file
-
-$ ldd chromium-1243/chrome-linux64/chrome | grep -c "not found"
-1
-```
-
-- 仓库的四个 Playwright 配置都指定 `channel: 'msedge'`；本机没有 Edge，也没有任何系统 Chromium（`which chromium chromium-browser microsoft-edge google-chrome` 全部为空）。
-- 缺失的是一个系统级共享库（`libasound.so.2`），系统里找不到该文件；安装它需要 root 与软件源访问，属于环境变更，未经批准不做。
-- 因此 **E2E 记为 NOT RUN**，并按 scheme.md 要求列为**生产部署的待解阻塞项**：在具备 Edge 或补齐 Chromium 运行库的环境中必须先跑通 `test:checkup-ui` 与 `test:integration` 才谈上线。
-
-已用带外方式部分覆盖 UI 行为：前端 458 项单测通过（含"旧后端缺字段"的向后兼容用例），但这**不能替代**浏览器端到端验证。
+这条也说明：浏览器验收不是形式——它是本轮唯一发现该缺陷的环节。
 
 ---
 
@@ -121,16 +141,21 @@ $ ldd chromium-1243/chrome-linux64/chrome | grep -c "not found"
 
 | 项目 | 状态 | 原因 |
 | --- | --- | --- |
-| 真实百度 Place API 行为与召回 | NOT RUN | 未获授权（scheme.md D 阶段） |
-| 真实账号配额/计费 | NOT RUN | 运营者核实（B 阶段） |
-| 浏览器 E2E | NOT RUN | §4 环境阻塞 |
-| 多进程/多实例部署、持久化续查 | NOT RUN | 本轮范围之外（F 阶段） |
-| 长时间稳定性、真实地理数据质量 | NOT RUN | 同上 |
+| 真实百度 Place API 行为与召回 | **NOT RUN** | 未获授权（D 阶段）；C 阶段只有离线证据 |
+| 真实账号配额/计费与许可 | **NOT RUN** | 运营者核实（B 阶段） |
+| v3 官方文档本身 | **NOT RUN（未能取得）** | 官方页面是 JS 单页应用，抓取只得标题壳；C1 已按官方 v2 原文 + 镜像交叉印证，并把差异登记为待确认项 |
+| 多关键词 `$` 合并查询 | **NOT RUN（不可直接试验）** | 现有响应校验器把 `>20` 条判为 `invalid_response`，而官方文档说明并集页为 `关键词数 × page_size` 条；见 `08-query-merge-design.md` §5.1 |
+| 多进程/多实例部署、跨日与跨重启续查 | **NOT RUN** | F 阶段范围 |
+| 长时间稳定性、真实地理数据质量 | **NOT RUN** | 同上 |
 
 ---
 
 ## 6. 结论
 
-- 核心套件 126 项全通过；全量 34 项失败**全部**可归因到基线既有原因，且都在同一环境做过前后对照；新增失败 0。
-- 8 项基线失败被修好（7 项旧类别数字 + 1 项时间相关夹具）。
-- E2E 未运行，已记录可复现的阻塞证据，并作为生产审批阻塞项。
+- 后端全量：**31 failed / 1016 passed / 10 skipped**；基线同环境 **42 / 963 / 10**；
+  逐项集合比对：**新增 0，修好 11**，`31 + 11 = 42` 精确闭合。
+- 前端：**462 项单测**＋**构建**通过；浏览器三个套件 **32 项**通过，外连尝试 **0**。
+- 上一版的"CLI 凭据风险"归因**错误且已撤回**；"E2E 环境阻塞"**已解除**，因为 E2E 现在真的运行并通过。
+- 本阶段新发现、且**不属于**本轮授权的改动：C1 记录的并集页校验器冲突（C 阶段阻塞项）、
+  以及基准测得的一处既有成本问题（持续非限流错误会以每序列 2 次的代价烧掉整轮预算，见 `07` §4(e)）。
+  两者都按 `scheme.md` §12 记录并停止，未擅自"顺手修掉"。

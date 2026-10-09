@@ -4,6 +4,31 @@
 **执行时间**：2026-10-08
 **证据级别**：E0（静态记录）＋ E1（可重复的本地命令输出）
 
+> **2026-10-09 增量（本轮补记，原 A1 快照保持原样见下方）**
+>
+> 上一轮结束时全部改动仍在工作区；本轮已按路径白名单提交为可审查分支，状态如下：
+>
+> | 项目 | 值 |
+> | --- | --- |
+> | 分支 | `delivery/facility-budget-cache`（**未推送**） |
+> | 基线 | `decce8784e0505fb9601c1d493c522d919c1e348`（远端 `distribution-boost` 同点） |
+> | 提交序列 | `c030bca` → `decce87`(基线) → `84db1b8` → `c384654` → `655e17d` → `0665f60` |
+> | 其中 | `84db1b8` 预算/缓存/补查修复；`c384654` A5 记录；`655e17d` 让离线浏览器套件真正运行并修好过期 CLI 示例；`0665f60` `start.command` 可在 Linux 直接运行（LF＋执行位）并固定脚本行尾 |
+> | 仍未跟踪 | `scheme.md`、`prompt.md`、`Baidu-map/`、`intro-page/`、`ai-tone-issues.json`、`*:Zone.Identifier`、OSM 地区包全部文件（`backend/app/osm_package.py`、`backend/scripts/{configure,pack,setup}_osm_region.py`、`backend/docs/OSM_REGION_SETUP.md`、`backend/tests/test_osm_package.py`、`data/osm/*`） |
+> | 本轮新增未跟踪 | `backend/tools/poi_benchmark_{guard,world,merge}.py`、`backend/tools/poi_query_benchmark.py`、`evidence/07`–`09` |
+>
+> **用户改动的并入**：`start.command` 原为 CRLF ＋ 模式 `100644`，在 Linux 上 shebang 会变成
+> `#!/usr/bin/env bash\r` 而完全无法执行；用户已自行修正。本轮按用户明确指示把该修复并入交付，
+> 并同时纳入 `.gitattributes`（`*.command`/`*.sh` 用 LF、`*.bat` 用 CRLF）以防检出时复发。
+> 核对：`git ls-files --eol '*.sh' '*.bat' '*.command'` 三个文件的行尾与属性一致，因此该属性文件
+> **不**改动任何既有文件的字节；`./start.command --help` 与 `bash -n start.command` 均通过。
+>
+> **未跟踪测试的影响（重要）**：`backend/tests/test_osm_package.py`（用户 OSM 工作，未跟踪）在整仓
+> 收集中贡献 **5** 个用例，且它只有在整仓收集时才能导入（单独收集会 `ModuleNotFoundError: backend`）。
+> 因此本轮两个全量的可比口径是：当前树 1057 项 = 31 失败 ＋ 1016 通过 ＋ 10 跳过；隔离基线树 1015 项
+> = 42 失败 ＋ 963 通过 ＋ 10 跳过。31 项失败中**没有**任何一项来自 OSM 文件。
+
+
 ---
 
 ## 1. 版本与工作区
