@@ -7,10 +7,10 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CheckupController } from './controller';
-import { CheckupError, DETAIL_BUDGET_EXHAUSTED, RETRY_DAILY_BUDGET, RETRY_IN_PROGRESS,
-  type CheckupService } from './client';
+import { CheckupError, DETAIL_BUDGET_EXHAUSTED, DETAILS_EXPIRED, RETRY_DAILY_BUDGET,
+  RETRY_IN_PROGRESS, type CheckupService } from './client';
 import { STAGE_LABELS, isCheckupBusy, isStageReached, type CheckupHandle } from './types';
-import { CENTER, SERVER_TIME, capabilities, extensionDocument, extensionView, layer, retryView, route, sessionView,
+import { CENTER, SERVER_TIME, capabilities, extensionDocument, extensionView, layer, retainedView, retentionView, retryView, route, sessionView,
   snapshot, task } from './fixtures';
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView } from './contract';
 
@@ -39,6 +39,7 @@ function service(): CheckupService {
     sessionOpen: vi.fn(async () => sessionView()),
     sessionHeartbeat: vi.fn(async () => sessionView({ resumed: true })),
     sessionClose: vi.fn(async () => sessionView({ openTabs: 0 })),
+    retainedResult: vi.fn(async () => retainedView()),
   };
 }
 afterEach(() => vi.useRealTimers());
@@ -552,6 +553,95 @@ describe('checkup retry', () => {
     // 列表读不到不是体检的问题：报告照旧在，也不该冒出一句"体检失败"。
     expect(controller.state.snapshot).toBe(report);
     expect(controller.state.retryError).toBeUndefined();
+  });
+});
+
+describe('expired detail', () => {
+  it('reads the retained summary instead of the detail, and clears what it held', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    expect(controller.state.snapshot).toBeDefined();
+
+    // 任务视图先说：这份明细已经到期。于是明细接口一个都不该被调用。
+    vi.mocked(api.status).mockResolvedValue(task({ status: 'completed', stage: 'ready',
+      revision: 5, retention: retentionView({ detailsAvailable: false, reason: 'legacy',
+        cleared: true }) }));
+    await controller.retry();
+
+    expect(controller.state.retained?.revision).toBe(5);
+    expect(controller.state.snapshot).toBeUndefined();
+    expect(controller.state.layers).toBeUndefined();
+    expect(vi.mocked(api.result).mock.calls.length).toBe(1);        // 只有最初那一次
+    expect(vi.mocked(api.layer)).not.toHaveBeenCalled();
+  });
+
+  it('switches when the detail expires between the status poll and the result', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    await controller.layer('facilities');
+    vi.mocked(api.result).mockRejectedValue(
+      new CheckupError('明细已按保留期到期', 410, DETAILS_EXPIRED));
+
+    await controller.retry();
+
+    // 410 不是"体检失败"：没有 error，只有保留视图。
+    expect(controller.state.error).toBeUndefined();
+    expect(controller.state.retained).toBeDefined();
+    expect(controller.state.snapshot).toBeUndefined();
+    expect(controller.state.layers).toBeUndefined();
+  });
+
+  it('refuses to fetch a layer even when no summary could be read', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    vi.mocked(api.status).mockResolvedValue(task({ status: 'completed', stage: 'ready',
+      revision: 5, retention: retentionView({ detailsAvailable: false, reason: 'cleared',
+        cleared: true }) }));
+    vi.mocked(api.retainedResult).mockRejectedValue(
+      new CheckupError('没有留存汇总', 409, 'checkup_retained_summary_missing'));
+
+    await controller.retry();
+
+    // 读不到替代品不是"继续显示明细"的理由：任务视图已经说了明细到期，那就一层都不去要。
+    expect(controller.state.retained).toBeUndefined();
+    expect(await controller.layer('facilities')).toBeUndefined();
+    expect(vi.mocked(api.layer)).not.toHaveBeenCalled();
+  });
+
+  it('turns an expired route detail into the expiry explanation, not a route error', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    vi.mocked(api.route).mockRejectedValue(
+      new CheckupError('明细已按保留期到期', 410, DETAILS_EXPIRED));
+    vi.mocked(api.retainedResult).mockResolvedValue(retainedView());
+
+    await controller.detail('synthetic:pharmacy-1');
+
+    expect(controller.state.routeError).toBeUndefined();
+    expect(controller.state.retained).toBeDefined();
+    expect(controller.state.route).toBeUndefined();
+  });
+
+  it('clears the detail even when the summary itself cannot be read', async () => {
+    const api = service();
+    const controller = new CheckupController(api, () => {});
+    await controller.start(input);
+    vi.mocked(api.result).mockRejectedValue(
+      new CheckupError('明细已按保留期到期', 410, DETAILS_EXPIRED));
+    vi.mocked(api.retainedResult).mockRejectedValue(
+      new CheckupError('没有留存汇总', 409, 'checkup_retained_summary_missing'));
+
+    await controller.retry();
+
+    // 旧修订没有留存汇总时，明细**照样**清掉：不能因为"读不到替代品"就把已经到期的
+    // 明细继续显示在屏幕上。
+    expect(controller.state.snapshot).toBeUndefined();
+    expect(controller.state.retained).toBeUndefined();
+    expect(controller.state.task?.status).toBe('completed');
   });
 });
 

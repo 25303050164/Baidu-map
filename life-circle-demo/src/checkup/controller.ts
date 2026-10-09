@@ -17,9 +17,9 @@
  * 都会让旧的一轮作废，而它可能正好在这时返回。
  */
 import type { CheckupLayer, CheckupTaskView, FacilityExtensionView, FacilityRetryView,
-  MajorCategory } from './contract';
+  MajorCategory, RetainedCheckupView } from './contract';
 import type { LayerId } from './validate';
-import { CheckupError, DETAIL_BUDGET_EXHAUSTED, RETRY_IN_PROGRESS, isNotFound,
+import { CheckupError, DETAIL_BUDGET_EXHAUSTED, DETAILS_EXPIRED, RETRY_IN_PROGRESS, isNotFound,
   type CheckupService } from './client';
 import type { CheckupHandle, CheckupInput, CheckupState } from './types';
 import { isCheckupBusy, isTerminal } from './types';
@@ -166,6 +166,33 @@ export class CheckupController {
     await this.follow(next);
   }
 
+  /**
+   * 换成"明细已到期"的那份视图，并**清掉**内存里所有含明细的东西。
+   *
+   * 清掉是这件事的实质，不是附带的卫生：修订里有设施名称、UID 与坐标，图层与点击路线
+   * 也都是明细。留着它们，屏幕上就仍然在显示已经到了期的数据 —— 而那正是这条规则要
+   * 阻止的事。迟到的响应由 `current()` 拦住：清掉之后这一轮就不再算数。
+   */
+  private async showRetained(run: Run, task: CheckupTaskView) {
+    await this.switchToRetained(task, run);
+  }
+
+  private async switchToRetained(task: CheckupTaskView, run?: Run) {
+    if (run !== undefined && !this.current(run)) return;
+    if (this.state.task?.taskId !== task.taskId) return;
+    let retained: RetainedCheckupView | undefined;
+    try {
+      retained = await this.api.retainedResult(task.taskId, task.revision);
+    } catch {
+      // 连汇总都读不到（旧修订没有留存汇总）：仍然要把明细清掉，并说清是哪条期限，
+      // 而不是回退到"显示原来的报告" —— 那份报告已经不该被显示了。
+      retained = undefined;
+    }
+    if (this.state.task?.taskId !== task.taskId) return;
+    this.set({ ...this.state, phase: 'completed', task, snapshot: undefined, retained,
+      layers: undefined, route: undefined, routeError: undefined, error: undefined });
+  }
+
   private async execute(run: Run) {
     run.creating = true;
     let created: CheckupTaskView;
@@ -261,14 +288,27 @@ export class CheckupController {
     if (!this.current(run)) return true;
     if (task.status === 'completed') {
       this.patch({ phase: 'fetching', task });
+      // 任务视图每次都带着保留期：**先问它**。明细已经到期时一个明细字段都不去要 ——
+      // 请求它只会换来一次必然的 410，而 410 不是错误，是"这份数据的寿命到了"。
+      if (detailsGone(task)) { await this.showRetained(run, task); return true; }
       // 取的是任务视图报告的那一版修订，而不是"最新的一版"：两者不一致时，说明
       // 服务端还有一版没被这次轮询看到，取最新会让报告和任务状态描述不同的结论。
-      const snapshot = await this.api.result(run.id!, task.revision, run.abort.signal);
+      let snapshot;
+      try {
+        snapshot = await this.api.result(run.id!, task.revision, run.abort.signal);
+      } catch (error) {
+        // 就在这两次请求之间到期了（或者别人刚清完）：换成保留视图，而不是报一句
+        // "体检失败"——体检没有失败，是明细不再被授权查看。
+        if (!isDetailsExpired(error)) throw error;
+        await this.showRetained(run, task);
+        return true;
+      }
       if (!this.current(run)) return true;
       if (snapshot.revision !== task.revision) {
         throw new CheckupError('体检修订与任务状态不符，请检查服务版本', 0, 'mismatched_revision');
       }
-      this.set({ phase: 'completed', input: run.input, task, snapshot, layers: this.state.layers });
+      this.set({ phase: 'completed', input: run.input, task, snapshot, retained: undefined,
+        layers: this.state.layers });
       return true;
     }
     if (task.status === 'cancelled') { this.patch({ phase: 'cancelled', task }); return true; }
@@ -310,9 +350,19 @@ export class CheckupController {
   async layer(layerId: LayerId): Promise<CheckupLayer | undefined> {
     const task = this.state.task;
     if (!task) throw new CheckupError('任务尚未创建，无法取图层', 0, 'no_task');
+    // 明细已经到期：图层整组不可用。这里直接返回 undefined，让调用方知道"这一层没画"，
+    // 而不是让它去撞一次必然的 410 再把它显示成一个图层错误。
+    if (detailsGone(task) || this.state.retained !== undefined) return undefined;
     const cached = this.state.layers?.[layerId];
     if (cached && cached.revision === task.revision) return cached;
-    const layer = await this.api.layer(task.taskId, layerId, task.revision);
+    let layer: CheckupLayer;
+    try {
+      layer = await this.api.layer(task.taskId, layerId, task.revision);
+    } catch (error) {
+      if (!isDetailsExpired(error)) throw error;
+      await this.switchToRetained(task);
+      return undefined;
+    }
     // 取的过程里任务换了（清除后重开、或者修订又前进了一版）：这一张属于上一版，
     // 丢掉而不是画上去 —— 图上画着旧灰区、面板写着新面积是最难发现的一类错。
     const now = this.state.task;
@@ -332,6 +382,11 @@ export class CheckupController {
       this.patch({ route });
     } catch (error) {
       if (this.state.task?.taskId !== task.taskId) return;
+      if (isDetailsExpired(error)) {
+        // 到期之后连"这一条设施"都不该再被点开：走的是同一条到期路径，不是一条路线错误。
+        await this.switchToRetained(task);
+        return;
+      }
       const message = error instanceof CheckupError ? error.message : '未能取到这条设施的步行路线';
       this.patch({ routeError: message,
         ...(error instanceof CheckupError && error.code === DETAIL_BUDGET_EXHAUSTED ? { route: undefined } : {}) });
@@ -586,6 +641,17 @@ function mergeRetry(
 ): FacilityRetryView[] {
   const rest = (list ?? []).filter(item => item.retryId !== view.retryId);
   return [...rest, view];
+}
+
+/** 任务视图说这份明细已经到期了。判据只有服务端那一处。 */
+function detailsGone(task: CheckupTaskView): boolean {
+  return task.retention !== null && task.retention !== undefined
+    && task.retention.detailsAvailable === false;
+}
+
+/** 明细接口的具名拒绝。它说的是"这份数据的寿命到了"，不是"这次请求失败"。 */
+function isDetailsExpired(error: unknown): boolean {
+  return error instanceof CheckupError && error.code === DETAILS_EXPIRED;
 }
 
 /** 同一个补查只保留最新的一条视图：轮询回来的那一版才是它的当前状态。 */

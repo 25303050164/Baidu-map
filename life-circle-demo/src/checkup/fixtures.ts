@@ -10,7 +10,7 @@
  */
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, CoverageRow,
   FacilityExtensionDocument, FacilityExtensionView, FacilityRetryView, FacilityRoute,
-  RetentionView, SessionView,
+  RetainedCheckupView, RetentionView, SessionView,
   ReportEvidence, ServiceZone, WaterDataEvidence } from './contract';
 import type { Capabilities, EngineOption } from './validate';
 
@@ -368,4 +368,27 @@ export function retentionView(overrides: Partial<RetentionView> = {}): Retention
 export function sessionView(overrides: Partial<SessionView> = {}): SessionView {
   return { sessionId: 'session-1', tabId: 'tab-1', leaseSeconds: 300,
     expiresAt: SERVER_TIME + 300, resumed: false, openTabs: 1, tasks: 0, ...overrides };
+}
+
+/**
+ * 明细到期之后的那一份视图（§5 B2 决策 2）。默认是"会话结束导致的到期"：
+ * 结论与汇总都在，明细一个都没有 —— 这正是它要表达的状态。
+ */
+export function retainedView(overrides: Partial<RetainedCheckupView> = {}): RetainedCheckupView {
+  return {
+    taskId: 'task-1', revision: 5, stage: 'reporting', businessStatus: 'partial',
+    resultHash: 'hash-5',
+    summary: {
+      facilitiesStatus: 'partial',
+      facilities: { queryStatus: 'partial', stopReason: 'network_budget_exhausted',
+        counts: { facilities: 3 },
+        queryAreaCoverage: { status: 'unmet', target: 0.8, sharedCompletionRatio: 0.5 } },
+      scores: { overall: { available: true, coverageLowerPct: 40, coverageUpperPct: 70,
+        assessablePct: 88.5 } },
+    },
+    retention: retentionView({ detailsAvailable: false, reason: 'session_closed',
+      expiresAt: STARTED_AT, cleared: true, sources: ['task-1'] }),
+    notes: ['明细（设施名称、UID、地址与坐标）已按保留期到期不再提供；这里的结论、分数与汇总是到期前定稿的那一份，未重算。'],
+    ...overrides,
+  };
 }

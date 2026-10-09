@@ -12,10 +12,11 @@
  */
 import type { CheckupLayer, CheckupRequest, CheckupSnapshot, CheckupTaskView,
   FacilityExtensionDocument, FacilityExtensionRequest, FacilityExtensionView, FacilityRetryRequest,
-  FacilityRetryView, FacilityRoute, SessionOpenRequest, SessionView } from './contract';
+  FacilityRetryView, FacilityRoute, RetainedCheckupView, SessionOpenRequest,
+  SessionView } from './contract';
 import { validCapabilities, validFacilityExtensionDocument, validFacilityExtensionView,
-  validFacilityRetryView, validFacilityRoute, validLayer, validSessionView, validSnapshot,
-  validTaskView, type Capabilities, type LayerId } from './validate';
+  validFacilityRetryView, validFacilityRoute, validLayer, validRetainedCheckupView,
+  validSessionView, validSnapshot, validTaskView, type Capabilities, type LayerId } from './validate';
 import { sessionHeader } from './browserSession';
 
 export class CheckupError extends Error {
@@ -29,6 +30,8 @@ export const ROUTE_UNAVAILABLE = 'checkup_route_unavailable';
 /** 补查在花钱之前就被拒的两个原因：界面要把"要多少次、剩多少次"原样显示出来。 */
 export const EXTENSION_BUDGET_TOO_SMALL = 'checkup_extension_budget_too_small';
 export const EXTENSION_DAILY_BUDGET = 'checkup_extension_daily_budget';
+/** 明细已按保留期到期：它**不是**可重试错误，界面要换成"还能看什么"。 */
+export const DETAILS_EXPIRED = 'checkup_details_expired';
 /** 重试被拒的四个原因；它们各自对应完全不同的下一步，所以不能合并成一句"失败"。 */
 export const RETRY_NOT_NEEDED = 'checkup_retry_not_needed';
 export const RETRY_IN_PROGRESS = 'checkup_retry_in_progress';
@@ -71,6 +74,13 @@ export type CheckupService = {
   sessionOpen: (body: SessionOpenRequest) => Promise<SessionView>;
   sessionHeartbeat: (sessionId: string, tabId: string) => Promise<SessionView>;
   sessionClose: (sessionId: string, tabId: string, keepalive?: boolean) => Promise<SessionView>;
+  /**
+   * 明细到期之后仍然可以读的那一部分（§5 B2 决策 2）。
+   *
+   * 它与 ``result`` 是两个问题：``result`` 问"这一版查到了什么"，它会因为到期而**具名
+   * 拒绝**；这个方法问"到期之后还剩下什么"，它在明细被删掉之后依然成立。
+   */
+  retainedResult: (taskId: string, revision?: number) => Promise<RetainedCheckupView>;
 };
 
 const NOT_FOUND = new Set(['checkup_task_not_found', 'checkup_unknown_engine']);
@@ -277,6 +287,17 @@ export function createCheckupService(
       const view = checked<FacilityRetryView>(value, validFacilityRetryView, '重试状态');
       if (view.taskId !== taskId || view.retryId !== retryId) {
         throw new CheckupError('体检服务返回了另一次重试的状态，请检查服务版本', 0, 'mismatched_task');
+      }
+      return view;
+    },
+    async retainedResult(taskId, revision) {
+      const query = revision === undefined ? '' : `?revision=${revision}`;
+      const path = `/${encodeURIComponent(taskId)}/retained-result${query}`;
+      const { body: value } = await request(path, 'GET');
+      const view = checked<RetainedCheckupView>(value, validRetainedCheckupView, '保留汇总');
+      if (view.taskId !== taskId || (revision !== undefined && view.revision !== revision)) {
+        throw new CheckupError('保留汇总与请求的任务或版本不符，请检查服务版本', 0,
+          'mismatched_revision');
       }
       return view;
     },

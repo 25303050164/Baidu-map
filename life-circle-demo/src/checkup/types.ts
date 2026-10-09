@@ -1,6 +1,6 @@
 import type { Center } from '../types';
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityExtensionView,
-  FacilityRetryView, FacilityRoute, MajorCategory } from './contract';
+  FacilityRetryView, FacilityRoute, MajorCategory, RetainedCheckupView } from './contract';
 import type { Contact, Reconnect } from './live';
 import { STAGES, type LayerId, type Stage } from './validate';
 
@@ -74,6 +74,11 @@ export type CheckupState = {
   retries?: FacilityRetryView[];
   retrying?: boolean;
   retryError?: string;
+  /**
+   * §5 B2 决策 2：明细到期之后仍然读到的那一部分。它在场就意味着**明细都不在了** ——
+   * 修订、图层与点击路线必须同时清空，否则屏幕上会留下"从上一版抄下来"的设施。
+   */
+  retained?: RetainedCheckupView;
   error?: string;
 };
 

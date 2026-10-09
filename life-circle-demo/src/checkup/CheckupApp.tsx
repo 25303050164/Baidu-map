@@ -33,6 +33,7 @@ import { CATEGORY_ORDER, categoryLabel, coverageItems, percent } from './report'
 import { missingCoreMajors, estimatedFirstRoundPages, splitScope } from './categories';
 import { extensionLines } from './extensions';
 import { isRetryTerminal, retryActionLabel, retryLines } from './retry';
+import { expiryLine, expiryNotice, retainedSummaryLines } from './retained';
 import type { MajorCategory } from './contract';
 import { nearestEmptyNote, nearestFacilities } from './nearest';
 import { queryCoverageLine, queryCoverageRetryLine } from './queryCoverage';
@@ -442,7 +443,11 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   const sawLive = useRef(false);
   useEffect(() => {
     if (LIVE_PHASES.has(state.phase)) sawLive.current = true;
-    if (state.phase === 'completed' && sawLive.current) { sawLive.current = false; setReportOpen(true); }
+    // 明细到期时不要自动打开报告抽屉：那里已经不给报告了，弹出来只会让人以为出了问题。
+    if (state.phase === 'completed' && sawLive.current) {
+      sawLive.current = false;
+      if (state.retained === undefined) setReportOpen(true);
+    }
   }, [state.phase]);
 
   /** 水系标注与版本标识都只认当前这一版修订：换版就换，不留上一版的标注。 */
@@ -454,6 +459,12 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   // 新的回答可能比上一次时钟跳动更晚到：以两者中较晚的为"此刻"，读数不会倒退成负数。
   const now = Math.max(clock, state.contact?.at ?? 0, state.reconnect?.since ?? 0);
   const liveNow = liveView(state, now);
+
+  // §5 B2 决策 2：到期之后，明细一个字段都不再显示，只留结论与汇总。
+  const retained = state.retained;
+  const expiry = expiryNotice(retained?.retention);
+  const expiresSoon = expiryLine(task?.retention);
+  const retainedFacts = retained ? retainedSummaryLines(retained.summary) : [];
 
   const overall = snapshot?.report?.overall ?? snapshot?.scores?.overall ?? null;
   const items = useMemo(() => snapshot ? coverageItems(snapshot) : [], [snapshot]);
@@ -832,6 +843,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
           <h2 className="wb-h">周边设施 · 每类最近 5 处</h2>
           {queryCoverage && <p className="wb-hint"
             data-testid="checkup-query-coverage">{queryCoverage}</p>}
+          {expiresSoon && <p className="wb-hint"
+            data-testid="checkup-expiry-line">{expiresSoon}</p>}
           {queryCoverageNext && <div className="wb-retry" data-testid="checkup-retry">
             <p className="wb-hint" data-testid="checkup-query-coverage-next">
               {queryCoverageNext}</p>
@@ -886,6 +899,23 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
               && selectedPoint.properties.name.length > 0 ? selectedPoint.properties.name : null} />
         </section>}
 
+        {expiry && <section className="wb-sec wb-expired" data-testid="checkup-expired">
+          <h2 className="wb-h">这次体检的明细已到期</h2>
+          <p className="wb-hint" data-testid="checkup-expired-notice">{expiry}</p>
+          {retained && <>
+            <p className="wb-hint" data-testid="checkup-retained-revision">
+              {`保留的是第 ${retained.revision} 版（${retained.stage}）的定稿汇总。`}</p>
+            {retainedFacts.length > 0 && <ul className="wb-expired-facts"
+              data-testid="checkup-retained-facts">
+              {retainedFacts.map(line => <li key={line} className="wb-hint">{line}</li>)}
+            </ul>}
+            {retained.notes.map(note => <p key={note} className="wb-hint"
+              data-testid="checkup-retained-note">{note}</p>)}
+          </>}
+          {!retained && <p className="wb-hint" data-testid="checkup-retained-missing">
+            这一版没有留存汇总，只有任务状态可用；明细按保留期不再提供。</p>}
+        </section>}
+
         {task && <Fold title="任务信息" className="wb-task">
           {facts}
           {state.input && <p className="wb-hint wb-center">
@@ -905,6 +935,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     <Drawer title="体检报告" open={reportOpen} onClose={() => setReportOpen(false)} size={960}
       rootClassName="rp-drawer">
       {snapshot ? <CheckupReport snapshot={snapshot} stale={stale} waterReviews={view?.waterReviews} />
+        : retained ? <p className="api-muted" data-testid="checkup-report-expired">
+            这次体检的明细已到期，报告不再提供；结论与汇总在左侧"明细已到期"一栏。</p>
         : <p className="api-muted">体检完成后在这里显示报告。</p>}
     </Drawer>
   </main>;

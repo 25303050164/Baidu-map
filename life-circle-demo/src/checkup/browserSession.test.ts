@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HEARTBEAT_MS, closeBrowserSession, currentSessionId, heartbeatBrowserSession,
   openBrowserSession, resetBrowserSession, sessionHeader, startBrowserSession } from './browserSession';
 import { CheckupError, type CheckupService } from './client';
-import { sessionView } from './fixtures';
+import { retainedView, sessionView } from './fixtures';
 
 class MemoryStorage implements Storage {
   data = new Map<string, string>();
@@ -34,6 +34,7 @@ function service(overrides: Partial<CheckupService> = {}): CheckupService {
     sessionOpen: vi.fn(async () => sessionView()),
     sessionHeartbeat: vi.fn(async () => sessionView({ resumed: true })),
     sessionClose: vi.fn(async () => sessionView({ openTabs: 0 })),
+    retainedResult: vi.fn(async () => retainedView()),
     ...overrides,
   } as unknown as CheckupService;
 }

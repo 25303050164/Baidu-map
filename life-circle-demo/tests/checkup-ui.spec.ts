@@ -10,8 +10,8 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { installMapSdk } from './mapSdk';
-import { capabilities, collection, feature, layer, point, polygon, report, retryView, snapshot,
-  task, zone } from '../src/checkup/fixtures';
+import { capabilities, collection, feature, layer, point, polygon, report, retainedView,
+  retentionView, retryView, snapshot, task, zone } from '../src/checkup/fixtures';
 
 const REVISION = 5;
 const HASH = 'hash-5';
@@ -40,6 +40,8 @@ type Options = {
   runningFirst?: boolean;
   /** 设施检索没达标：面板上要出现"继续检索缺口"的入口，并且点得动。 */
   unmetCoverage?: boolean;
+  /** 明细已到期：任务视图说明细不可用，明细接口一律 410，保留汇总仍可读。 */
+  detailsExpired?: boolean;
 };
 
 async function setup(page: Page, options: Options = {}) {
@@ -96,13 +98,28 @@ async function setup(page: Page, options: Options = {}) {
     }
     const layerMatch = url.pathname.match(/\/layers\/([a-z_]+)$/);
     if (layerMatch) {
+      if (options.detailsExpired) {
+        return route.fulfill({ status: 410, json: { code: 'checkup_details_expired',
+          message: '这次体检的明细已按保留期到期。' } });
+      }
       if (layerMatch[1] === 'service_gaps' && options.gapsNotReady) {
         return route.fulfill({ status: 409, json: { code: 'checkup_service_gaps_not_ready',
           message: '服务灰区图层尚未生成，请等待该阶段完成' } });
       }
       return route.fulfill({ json: layerFor(layerMatch[1], options) });
     }
+    if (url.pathname.endsWith('/retained-result')) {
+      // 任务视图与保留汇总报的是**同一条**期限：它们在后端出自同一个 retention_of，
+      // 这里也必须一致，否则用例会去验证一个真实后端不会产生的组合。
+      return route.fulfill({ json: retainedView({ retention: retentionView({
+        detailsAvailable: false, reason: 'legacy', cleared: true }) }) });
+    }
     if (url.pathname.endsWith('/result')) {
+      if (options.detailsExpired) {
+        return route.fulfill({ status: 410, json: { code: 'checkup_details_expired',
+          message: '这次体检的明细已按保留期到期（它是保留期开始之前的数据）：设施名称、UID、'
+            + '地址与坐标不再提供。' } });
+      }
       return route.fulfill({ json: snapshotFor(options, submitted!) });
     }
     if (url.pathname.endsWith('/cancel')) {
@@ -126,7 +143,9 @@ async function setup(page: Page, options: Options = {}) {
         budget: 400, engine: submitted?.engine ?? 'baidu_e82' }) });
     }
     return route.fulfill({ json: task({ status: 'completed', stage: 'ready', revision: REVISION,
-      businessStatus: 'partial', budget: 400, engine: submitted?.engine ?? 'baidu_e82' }) });
+      businessStatus: 'partial', budget: 400, engine: submitted?.engine ?? 'baidu_e82',
+      ...(options.detailsExpired ? { retention: retentionView({ detailsAvailable: false,
+        reason: 'legacy', cleared: true }) } : {}) }) });
   });
   return { retries };
 }
@@ -232,14 +251,16 @@ function counted(markers: { options: { title: string } }[]): number {
 const openTab = (page: Page, tab: '我的位置' | '采样与引擎' | '图层备注') =>
   page.getByRole('tab', { name: tab }).click();
 
-const pickAndStart = async (page: Page, options: { serviceGaps?: boolean } = {}) => {
+const pickAndStart = async (page: Page,
+  options: { serviceGaps?: boolean; done?: string } = {}) => {
   if (options.serviceGaps) {
     await openTab(page, '图层备注');
     await page.getByRole('checkbox', { name: '服务灰区', exact: true }).check();
   }
   await page.getByTestId('checkup-map').click();
   await page.getByRole('button', { name: '开始体检', exact: true }).click();
-  await expect(page.getByTestId('checkup-report')).toBeVisible();
+  // 等这一轮结束：默认等报告，明细到期的用例等的是那一栏说明 —— 那时候没有报告可等。
+  await expect(page.getByTestId(options.done ?? 'checkup-report')).toBeVisible();
   await page.keyboard.press('Escape');
 };
 
@@ -701,5 +722,39 @@ test('未达标时给出继续检索入口，点一次就提交一次重试', as
   await expect(page.getByTestId('checkup-retry-facts').first()).toContainText('本轮预算 240');
   expect(harness.retries).toHaveLength(1);
   expect(harness.retries[0]).toMatch(/^[0-9a-f-]{36}$/);
+  expect(errors).toEqual([]);
+});
+
+/**
+ * §5 B2 决策 2 的到期反应。单元测试钉住了时序，这里钉的是**屏幕上真的没有明细**：
+ * 到期之后不能再有任何设施、图层或报告，只剩说明与保留汇总 —— 而且"到期"不是"体检失败"。
+ */
+test('明细到期后只剩结论与汇总，一个设施都不显示', async ({ page }) => {
+  const errors: string[] = [];
+  await setup(page, { detailsExpired: true });
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await pickAndStart(page, { done: 'checkup-expired' });
+
+  // 说清是哪条期限，而不是一句"数据过期"。
+  await expect(page.getByTestId('checkup-expired-notice'))
+    .toContainText('开始记录保留期之前');
+  await expect(page.getByTestId('checkup-expired-notice')).toContainText('不再提供');
+  // 到期之后仍然看得到结论与关键数字，并且被告知没有重算。
+  await expect(page.getByTestId('checkup-retained-revision')).toContainText('第 5 版');
+  await expect(page.getByTestId('checkup-retained-facts')).toContainText('检索到的设施：3 处');
+  await expect(page.getByTestId('checkup-retained-note')).toContainText('未重算');
+
+  // 明细一个都不在：设施清单、地图图层、报告抽屉都不该出现。
+  await expect(page.getByTestId('checkup-nearest')).toHaveCount(0);
+  await expect(page.getByTestId('checkup-query-coverage')).toHaveCount(0);
+  // 图上不该有设施标记（"N 个点"那种）。中心标记仍在，它不是明细 —— 地图总得有一个中心。
+  const drawn = await audit(page);
+  expect(drawn.markers.map(marker => marker.options.title)
+    .filter(title => /^\d+ 个点/.test(title))).toEqual([]);
+  expect(drawn.paths).toHaveLength(0);
+
+  // 到期不是可重试错误：没有"继续检索缺口"，也不该冒出一句体检失败。
+  await expect(page.getByTestId('checkup-retry-run')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHECKUP_STORAGE_PREFIX, checkupSession, readStored, resetCheckupSessions } from './sessions';
 import type { CheckupService } from './client';
-import { CENTER, capabilities, extensionDocument, extensionView, layer, retryView, route, sessionView, snapshot,
+import { CENTER, capabilities, extensionDocument, extensionView, layer, retainedView, retryView, route, sessionView, snapshot,
   task } from './fixtures';
 
 class MemoryStorage {
@@ -40,6 +40,7 @@ function service(): CheckupService {
     sessionOpen: vi.fn(async () => sessionView()),
     sessionHeartbeat: vi.fn(async () => sessionView({ resumed: true })),
     sessionClose: vi.fn(async () => sessionView({ openTabs: 0 })),
+    retainedResult: vi.fn(async () => retainedView()),
   };
 }
 

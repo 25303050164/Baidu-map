@@ -18,7 +18,7 @@
  */
 import type { CheckupLayer, CheckupSnapshot, CheckupTaskView, FacilityExtensionDocument,
   FacilityExtensionView, FacilityRetryView, FacilityRoute, Origin, ReportEvidence, RetentionView,
-  ServiceZone, SessionView, TaskProgress } from './contract';
+  RetainedCheckupView, ServiceZone, SessionView, TaskProgress } from './contract';
 
 type RecordValue = Record<string, unknown>;
 const object = (value: unknown): value is RecordValue =>
@@ -412,6 +412,24 @@ export function validSessionView(value: unknown): value is SessionView {
     && count(value.openTabs) && count(value.tasks);
 }
 
+/**
+ * 明细到期之后仍然给得出的那一部分：结论、汇总与到期原因。
+ *
+ * 校验它存在的理由是**不许把"没有汇总"读成"这次没有结论"**：``summary`` 必须是对象，
+ * 而 ``revision`` 必须是真的一版 —— 一份没有版本的"保留结果"没法与任何一次体检对上。
+ */
+export function validRetainedCheckupView(value: unknown): value is RetainedCheckupView {
+  return object(value)
+    && text(value.taskId) && value.taskId.length > 0
+    && count(value.revision) && value.revision >= 1
+    && oneOf(value.stage, STAGES)
+    && oneOf(value.businessStatus, BUSINESS)
+    && text(value.resultHash) && value.resultHash.length > 0
+    && object(value.summary)
+    && validRetentionView(value.retention)
+    && Array.isArray(value.notes) && value.notes.every(text);
+}
+
 /** 任务视图上的保留期：明细还能不能提供、为什么、什么时候到期。 */
 export function validRetentionView(value: unknown): value is RetentionView {
   if (!object(value) || typeof value.detailsAvailable !== 'boolean') return false;
@@ -419,6 +437,7 @@ export function validRetentionView(value: unknown): value is RetentionView {
   if (!(value.reason === null || oneOf(value.reason,
     ['session_closed', 'superseded', 'legacy', 'cleared'] as const))) return false;
   if (!Array.isArray(value.sources) || !value.sources.every(text)) return false;
+  if (typeof value.cleared !== 'boolean') return false;
   // 明细还能提供时不该同时给一个"已经到期的原因"：两者放在一起就是一份自相矛盾的状态。
   return value.detailsAvailable ? value.reason === null : true;
 }
