@@ -4,7 +4,10 @@
 **执行时间**：2026-10-09（重写；上一版 2026-10-08 的两条结论已按 §3 撤回）
 **环境**：同一台机器、同一虚拟环境（`backend/.venv`，Python 3.12.3，pytest 9.1.1）、同一依赖清单；
 `conftest.py` 在导入任何应用模块之前就拒绝全部外连，测试结束打印尝试次数。
-**被验代码**：`655e17dd69c5b6c128bc229ff3f764163cb8ceae`（分支 `delivery/facility-budget-cache`）
+**被验代码**：`655e17dd69c5b6c128bc229ff3f764163cb8ceae`（分支 `delivery/facility-budget-cache`）；
+冻结后在最终提交 `e515ad0` 上**再跑一次全量复核**，结果与失败节点集合完全一致（见表首两行）。
+其余提交只新增 `backend/tools/poi_benchmark_*.py`（`pytest.ini` 的 `testpaths = tests`，不被收集）
+与 `evidence/*`，不触及任何被测代码路径。
 **基线对照**：`decce8784e0505fb9601c1d493c522d919c1e348`，在 `.tmp/baseline-tree` 的
 `git worktree`（detached）中以**同一解释器**运行，`-p no:cacheprovider`。
 
@@ -19,6 +22,7 @@
 | 命令 | 结果 | 日志 |
 | --- | --- | --- |
 | `cd backend && .venv/bin/python -m pytest -q -rf` | **31 failed / 1016 passed / 10 skipped**（558.18s），exit 1 | `.tmp/verify/full-A-final.txt` |
+| 同上，在**最终提交 `e515ad0`** 上再跑一次（冻结后复核） | **31 failed / 1016 passed / 10 skipped**（617.22s），exit 1；失败节点集合与上一次**完全相同**（集合差为空） | `.tmp/verify/full-A-final-tip.txt` |
 | 同上，在 `.tmp/baseline-tree/backend`（基线检出） | **42 failed / 963 passed / 10 skipped**（482.23s），exit 1 | `.tmp/verify/baseline-full.txt` |
 | 把本轮的 31 个失败节点逐个在基线检出重放 | **31 failed**（69.35s）——与当前失败集**逐项一致** | `.tmp/verify/baseline-repro.txt` |
 | `cd life-circle-demo && npm test` | **41 files / 462 tests passed**，exit 0 | `.tmp/verify/frontend-unit.txt` |
