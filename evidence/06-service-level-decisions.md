@@ -308,7 +308,36 @@
 清单本身也提前说明：每条带 `summaryRecorded`，汇总数字里多一个 `totals.withoutSummary`。
 "删完才发现结论跟着没了"这件事，现在在删之前就看得见。
 
-### 7.7 一处必须说明的副作用
+### 7.7 v1 hybrid 运行残留：已清（另一个所有者）
+
+`/api/v1/analysis/hybrid` 每跑一次就把 `plan/ledger/partial-result/diagnostics/failure/result`
+写进 `hybrid_ledger_dir/<task_id>/`，而它**从来不删**：`HybridManager.prune()` 清的只是内存里的
+job（1800 秒、或最近 20 个）。磁盘上的这些文件**只有一个写入点、没有任何读取点**——
+`hybrid_ledger_dir` 在整个 `app/` 里只出现一次，就是拼出写入路径那一行；接口的读取全部走
+内存里的 `jobs`。所以它们是纯诊断残留，删掉不影响任何服务。
+
+`tools/hybrid_ledger_manifest.py` 的判据**不是另发明一套**，而是把 `prune()` 的口径搬到磁盘：
+内存里还留着哪几次运行，磁盘上就留哪几次（`--keep-runs 20 --keep-seconds 1800` 即该函数的
+两个常量）。默认只读；`--apply` 只删清单里逐条列出的**一级目录**，不是目录的条目只报告、绝不删。
+
+**2026-10-09 执行**：
+
+| | 前 | 后 |
+| --- | --- | --- |
+| `.hybrid-ledgers` | 108 MB | 28 MB |
+| 运行目录 | 61 | 20 |
+| 文件 | 227 | 68 |
+| 清理的运行 | — | 41（83,613,895 字节，全部 `beyond_memory_prune`） |
+| 额度账本 | 12,288 字节 | **一字未动** |
+
+清单与执行结果：`evidence/hybrid-ledger-manifest-2026-10-09.json`、`evidence/hybrid-ledger-cleanup-2026-10-09.json`。
+v1 hybrid 接口的 44 个用例在清理后照常通过。
+
+**残留的一点**：`prune()` 仍然只清内存，所以这些文件还会继续长回来。判据现在有了工具，
+但"定期跑一次"这件事还没有自动化 —— 这是它的接口所有者（v1 分析接口）该决定要不要加的事，
+不是本次改动顺手替他决定的。
+
+### 7.8 一处必须说明的副作用
 
 `build_checkups()` 在应用对象构造时就会 `create_schema()`，所以**任何** `import app.main`
 （包括我在验证期间跑的 `python -c "import app.main"`）都会对真实数据目录做一次**加列迁移**

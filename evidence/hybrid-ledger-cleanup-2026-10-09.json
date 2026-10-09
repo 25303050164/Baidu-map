@@ -1,0 +1,2110 @@
+{
+  "plan": {
+    "hybridLedgerDir": ".hybrid-ledgers",
+    "exists": true,
+    "keepRuns": 20,
+    "keepSeconds": 1800.0,
+    "runs": [
+      {
+        "taskId": "b134c5f8-8876-4f19-8fa5-f8aad1b1c2a4",
+        "finishedAt": 1791214626.1366122,
+        "ageSeconds": 334830.873,
+        "bytes": 120246,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "d476b2c1-a274-4d0f-b108-0dd1e173f655",
+        "finishedAt": 1791214615.8962927,
+        "ageSeconds": 334841.113,
+        "bytes": 120219,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "17acd112-ac4d-4645-9177-52ba34cc48d1",
+        "finishedAt": 1791214269.9713383,
+        "ageSeconds": 335187.038,
+        "bytes": 120226,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "1783b49e-318f-411d-b412-46947dc7dff5",
+        "finishedAt": 1790608134.4087124,
+        "ageSeconds": 941322.601,
+        "bytes": 3053390,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "a3cca8ac-f756-4518-936b-614c7eb65015",
+        "finishedAt": 1790607554.9680948,
+        "ageSeconds": 941902.042,
+        "bytes": 1093,
+        "files": [
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "abda3dfe-10d6-4583-8da6-156c279c2f44",
+        "finishedAt": 1790607457.8126523,
+        "ageSeconds": 941999.197,
+        "bytes": 20852,
+        "files": [
+          "ledger.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "fc9e0f60-62d2-4124-968d-6c2d248e1a70",
+        "finishedAt": 1790607262.0295777,
+        "ageSeconds": 942194.98,
+        "bytes": 3053440,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "743a7475-3b8c-437c-a94d-9e229a8e18b9",
+        "finishedAt": 1790606545.367971,
+        "ageSeconds": 942911.642,
+        "bytes": 3081860,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "a099cda0-7033-489e-91e0-205a120e967c",
+        "finishedAt": 1790606128.528419,
+        "ageSeconds": 943328.481,
+        "bytes": 3186824,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "15c4cc7f-cadc-414a-8dde-5758d43eb9dd",
+        "finishedAt": 1790605915.2217293,
+        "ageSeconds": 943541.788,
+        "bytes": 1442865,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "17774613-dd2f-49ed-8795-c24b292f8667",
+        "finishedAt": 1790602461.2875862,
+        "ageSeconds": 946995.722,
+        "bytes": 3433611,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "63eec8e5-d1e5-4be6-b41d-3c99753a8524",
+        "finishedAt": 1790601885.12374,
+        "ageSeconds": 947571.886,
+        "bytes": 3433646,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "02a6f5b1-58fd-474b-a7cc-ff2ffaf77561",
+        "finishedAt": 1790528433.7261944,
+        "ageSeconds": 1021023.284,
+        "bytes": 3431528,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "d840a73c-3a45-44c2-82b8-56e8cd52d411",
+        "finishedAt": 1790526547.5574746,
+        "ageSeconds": 1022909.452,
+        "bytes": 1093,
+        "files": [
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "ed3e5d2f-841e-4f8e-bff9-5fbbfe77b101",
+        "finishedAt": 1790525275.9869356,
+        "ageSeconds": 1024181.023,
+        "bytes": 1093,
+        "files": [
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "526dd786-568e-4255-93f0-c10a4b161a42",
+        "finishedAt": 1790085199.0320005,
+        "ageSeconds": 1464257.978,
+        "bytes": 297415,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "13fb7190-71ab-4352-81df-067b41d19de9",
+        "finishedAt": 1790085192.8240073,
+        "ageSeconds": 1464264.186,
+        "bytes": 233294,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "a47b09f5-fa8f-46d6-b73b-ee8b483bc0f1",
+        "finishedAt": 1790085187.156479,
+        "ageSeconds": 1464269.853,
+        "bytes": 236589,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "c5767084-eea5-47aa-b3e5-820b79b4f35b",
+        "finishedAt": 1790085175.1951468,
+        "ageSeconds": 1464281.815,
+        "bytes": 267082,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "95ad55e9-bbb8-4700-9c46-3463fd4b2d18",
+        "finishedAt": 1790083610.9682856,
+        "ageSeconds": 1465846.041,
+        "bytes": 2991401,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "363fac63-aa99-4a99-817f-7fbc11389e22",
+        "finishedAt": 1790083506.6674683,
+        "ageSeconds": 1465950.342,
+        "bytes": 110342,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "6de5415e-3e38-4508-93dc-8786de14f4eb",
+        "finishedAt": 1790083459.6704957,
+        "ageSeconds": 1465997.339,
+        "bytes": 110344,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "be987710-e613-4b63-893d-f8dca7842020",
+        "finishedAt": 1790083268.471877,
+        "ageSeconds": 1466188.538,
+        "bytes": 4100342,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "abe25b8d-9961-4021-9003-d4a4ecf3319a",
+        "finishedAt": 1790083010.2989545,
+        "ageSeconds": 1466446.711,
+        "bytes": 4007034,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "c775316a-d778-4c53-983b-ab435ab2afc9",
+        "finishedAt": 1790082660.2837422,
+        "ageSeconds": 1466796.726,
+        "bytes": 3429310,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "b3a0725c-60e5-4e27-8486-1965ea66b6aa",
+        "finishedAt": 1790079692.4793854,
+        "ageSeconds": 1469764.53,
+        "bytes": 3043775,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "54dca7d1-7dd4-46f3-a846-be9ba3c99c23",
+        "finishedAt": 1790079306.3612294,
+        "ageSeconds": 1470150.649,
+        "bytes": 3694915,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "203dfb40-3156-4410-80f2-b58f44756080",
+        "finishedAt": 1790077097.6530015,
+        "ageSeconds": 1472359.357,
+        "bytes": 3694924,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "cb32df7f-7d7e-44bc-b572-254c9d689e15",
+        "finishedAt": 1790076636.1310487,
+        "ageSeconds": 1472820.879,
+        "bytes": 3203811,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "46cb0cf5-7766-4208-af93-2bff7d17d5ae",
+        "finishedAt": 1790073713.7730935,
+        "ageSeconds": 1475743.237,
+        "bytes": 3179687,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "2c059097-bd52-4eae-b872-306f67d15f53",
+        "finishedAt": 1790072377.830394,
+        "ageSeconds": 1477079.179,
+        "bytes": 3179712,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "0f022e08-a95a-4f9c-8650-f3c294d742a2",
+        "finishedAt": 1790072175.066001,
+        "ageSeconds": 1477281.944,
+        "bytes": 3224027,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "599589cd-a518-44fc-a711-bfadb32cb408",
+        "finishedAt": 1790071561.8041027,
+        "ageSeconds": 1477895.206,
+        "bytes": 3224005,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "d5ac2f03-6f22-49b9-8927-3e2f67c582f9",
+        "finishedAt": 1790070948.2417438,
+        "ageSeconds": 1478508.768,
+        "bytes": 3272553,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "6fea4dac-0bef-48a3-a9f4-653ebfdfa228",
+        "finishedAt": 1789992995.5588088,
+        "ageSeconds": 1556461.451,
+        "bytes": 40429,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "5d3cbcf1-8636-4cf5-bebe-4b6b1110c114",
+        "finishedAt": 1789992985.6429286,
+        "ageSeconds": 1556471.367,
+        "bytes": 26741,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "17d06ced-f885-409e-8bfd-54ae4426345b",
+        "finishedAt": 1789992874.7982793,
+        "ageSeconds": 1556582.211,
+        "bytes": 42655,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "0f6c1b5d-632c-47c8-b16e-03bc7eb21282",
+        "finishedAt": 1789989481.2220404,
+        "ageSeconds": 1559975.788,
+        "bytes": 2485727,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "fd7b9c05-0ccb-40f5-b3a9-a6ffae0f3437",
+        "finishedAt": 1789987356.872206,
+        "ageSeconds": 1562100.138,
+        "bytes": 3070465,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "2eb739cd-cdbf-470e-8984-98bca071e209",
+        "finishedAt": 1789986428.7132761,
+        "ageSeconds": 1563028.296,
+        "bytes": 942215,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "85f376db-1ce9-4dc0-b901-bf6515a2dcb6",
+        "finishedAt": 1789986341.4592788,
+        "ageSeconds": 1563115.55,
+        "bytes": 32711,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "b7f21ff1-9224-4321-930b-f4c77940e551",
+        "finishedAt": 1789986327.8360958,
+        "ageSeconds": 1563129.174,
+        "bytes": 32712,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "0b1fd759-aa6d-469f-bb6e-7d49fe088e3b",
+        "finishedAt": 1789984320.1405427,
+        "ageSeconds": 1565136.869,
+        "bytes": 3134748,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "165d2bce-d394-498b-85c2-7ceaf70ae7cf",
+        "finishedAt": 1789983782.8245995,
+        "ageSeconds": 1565674.185,
+        "bytes": 3227085,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "28b9220f-4582-4cc9-b7c4-2d2ec3273861",
+        "finishedAt": 1789983410.0520031,
+        "ageSeconds": 1566046.958,
+        "bytes": 3127747,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "3b69286c-aa70-464b-9a3a-cdefa1bc84d1",
+        "finishedAt": 1789972971.8837512,
+        "ageSeconds": 1576485.126,
+        "bytes": 3215142,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "9375a8c6-f845-4b55-b3dc-826b46a5329c",
+        "finishedAt": 1789972742.3521743,
+        "ageSeconds": 1576714.658,
+        "bytes": 3424370,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "eda4d131-eaa9-4b2c-bf10-316eab0bb413",
+        "finishedAt": 1789972530.3081944,
+        "ageSeconds": 1576926.702,
+        "bytes": 32688,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "54e04884-374f-4d8a-a3a8-df9fa5c8ff6b",
+        "finishedAt": 1789972372.4714172,
+        "ageSeconds": 1577084.538,
+        "bytes": 3424366,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "364eb26f-c793-4749-9ffa-4d632a3f045b",
+        "finishedAt": 1789971813.7290292,
+        "ageSeconds": 1577643.281,
+        "bytes": 2148929,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "0dda2cdc-5c68-49bc-8957-145b3e83d8ba",
+        "finishedAt": 1789971713.6223056,
+        "ageSeconds": 1577743.387,
+        "bytes": 10822,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "53f1950b-25a3-4dfa-9cd4-887c1886c8d9",
+        "finishedAt": 1789971662.7479353,
+        "ageSeconds": 1577794.262,
+        "bytes": 3273750,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "625f7065-617f-49d9-96ad-a7b8971b654a",
+        "finishedAt": 1789971449.1733682,
+        "ageSeconds": 1578007.836,
+        "bytes": 32672,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "9612a71c-45dc-43f7-b6ca-ced9700a6eeb",
+        "finishedAt": 1789971394.7475767,
+        "ageSeconds": 1578062.262,
+        "bytes": 32670,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "bfe33f71-5797-459f-bcc6-a6753d1c92b0",
+        "finishedAt": 1789971389.5477095,
+        "ageSeconds": 1578067.462,
+        "bytes": 32669,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "fee7d0b7-dc82-4b97-ba8f-dd0455b96710",
+        "finishedAt": 1789970928.5636904,
+        "ageSeconds": 1578528.446,
+        "bytes": 3111393,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "68d4c3a3-c714-4917-87e2-721cecaeef4d",
+        "finishedAt": 1789969832.7436166,
+        "ageSeconds": 1579624.266,
+        "bytes": 3219078,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "235d2d12-6ae8-4832-9182-9b04d1e98583",
+        "finishedAt": 1789969601.7014315,
+        "ageSeconds": 1579855.308,
+        "bytes": 751501,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "2fa1845f-8c7c-4f66-9fe6-4401ab771b5e",
+        "finishedAt": 1789969535.875899,
+        "ageSeconds": 1579921.134,
+        "bytes": 20523,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "7e5cb25e-e8e2-402f-9d9f-878e447fb962",
+        "finishedAt": 1789967112.401088,
+        "ageSeconds": 1582344.609,
+        "bytes": 3203792,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "01c773b0-d781-4b49-a335-0e6549c85815",
+        "finishedAt": 1789966851.4870195,
+        "ageSeconds": 1582605.523,
+        "bytes": 41514,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      }
+    ],
+    "toClear": [
+      {
+        "taskId": "363fac63-aa99-4a99-817f-7fbc11389e22",
+        "finishedAt": 1790083506.6674683,
+        "ageSeconds": 1465950.342,
+        "bytes": 110342,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "6de5415e-3e38-4508-93dc-8786de14f4eb",
+        "finishedAt": 1790083459.6704957,
+        "ageSeconds": 1465997.339,
+        "bytes": 110344,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "be987710-e613-4b63-893d-f8dca7842020",
+        "finishedAt": 1790083268.471877,
+        "ageSeconds": 1466188.538,
+        "bytes": 4100342,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "abe25b8d-9961-4021-9003-d4a4ecf3319a",
+        "finishedAt": 1790083010.2989545,
+        "ageSeconds": 1466446.711,
+        "bytes": 4007034,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "c775316a-d778-4c53-983b-ab435ab2afc9",
+        "finishedAt": 1790082660.2837422,
+        "ageSeconds": 1466796.726,
+        "bytes": 3429310,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "b3a0725c-60e5-4e27-8486-1965ea66b6aa",
+        "finishedAt": 1790079692.4793854,
+        "ageSeconds": 1469764.53,
+        "bytes": 3043775,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "54dca7d1-7dd4-46f3-a846-be9ba3c99c23",
+        "finishedAt": 1790079306.3612294,
+        "ageSeconds": 1470150.649,
+        "bytes": 3694915,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "203dfb40-3156-4410-80f2-b58f44756080",
+        "finishedAt": 1790077097.6530015,
+        "ageSeconds": 1472359.357,
+        "bytes": 3694924,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "cb32df7f-7d7e-44bc-b572-254c9d689e15",
+        "finishedAt": 1790076636.1310487,
+        "ageSeconds": 1472820.879,
+        "bytes": 3203811,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "46cb0cf5-7766-4208-af93-2bff7d17d5ae",
+        "finishedAt": 1790073713.7730935,
+        "ageSeconds": 1475743.237,
+        "bytes": 3179687,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "2c059097-bd52-4eae-b872-306f67d15f53",
+        "finishedAt": 1790072377.830394,
+        "ageSeconds": 1477079.179,
+        "bytes": 3179712,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "0f022e08-a95a-4f9c-8650-f3c294d742a2",
+        "finishedAt": 1790072175.066001,
+        "ageSeconds": 1477281.944,
+        "bytes": 3224027,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "599589cd-a518-44fc-a711-bfadb32cb408",
+        "finishedAt": 1790071561.8041027,
+        "ageSeconds": 1477895.206,
+        "bytes": 3224005,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "d5ac2f03-6f22-49b9-8927-3e2f67c582f9",
+        "finishedAt": 1790070948.2417438,
+        "ageSeconds": 1478508.768,
+        "bytes": 3272553,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "6fea4dac-0bef-48a3-a9f4-653ebfdfa228",
+        "finishedAt": 1789992995.5588088,
+        "ageSeconds": 1556461.451,
+        "bytes": 40429,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "5d3cbcf1-8636-4cf5-bebe-4b6b1110c114",
+        "finishedAt": 1789992985.6429286,
+        "ageSeconds": 1556471.367,
+        "bytes": 26741,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "17d06ced-f885-409e-8bfd-54ae4426345b",
+        "finishedAt": 1789992874.7982793,
+        "ageSeconds": 1556582.211,
+        "bytes": 42655,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "0f6c1b5d-632c-47c8-b16e-03bc7eb21282",
+        "finishedAt": 1789989481.2220404,
+        "ageSeconds": 1559975.788,
+        "bytes": 2485727,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "fd7b9c05-0ccb-40f5-b3a9-a6ffae0f3437",
+        "finishedAt": 1789987356.872206,
+        "ageSeconds": 1562100.138,
+        "bytes": 3070465,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "2eb739cd-cdbf-470e-8984-98bca071e209",
+        "finishedAt": 1789986428.7132761,
+        "ageSeconds": 1563028.296,
+        "bytes": 942215,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "85f376db-1ce9-4dc0-b901-bf6515a2dcb6",
+        "finishedAt": 1789986341.4592788,
+        "ageSeconds": 1563115.55,
+        "bytes": 32711,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "b7f21ff1-9224-4321-930b-f4c77940e551",
+        "finishedAt": 1789986327.8360958,
+        "ageSeconds": 1563129.174,
+        "bytes": 32712,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "0b1fd759-aa6d-469f-bb6e-7d49fe088e3b",
+        "finishedAt": 1789984320.1405427,
+        "ageSeconds": 1565136.869,
+        "bytes": 3134748,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "165d2bce-d394-498b-85c2-7ceaf70ae7cf",
+        "finishedAt": 1789983782.8245995,
+        "ageSeconds": 1565674.185,
+        "bytes": 3227085,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "28b9220f-4582-4cc9-b7c4-2d2ec3273861",
+        "finishedAt": 1789983410.0520031,
+        "ageSeconds": 1566046.958,
+        "bytes": 3127747,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "3b69286c-aa70-464b-9a3a-cdefa1bc84d1",
+        "finishedAt": 1789972971.8837512,
+        "ageSeconds": 1576485.126,
+        "bytes": 3215142,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "9375a8c6-f845-4b55-b3dc-826b46a5329c",
+        "finishedAt": 1789972742.3521743,
+        "ageSeconds": 1576714.658,
+        "bytes": 3424370,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "eda4d131-eaa9-4b2c-bf10-316eab0bb413",
+        "finishedAt": 1789972530.3081944,
+        "ageSeconds": 1576926.702,
+        "bytes": 32688,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "54e04884-374f-4d8a-a3a8-df9fa5c8ff6b",
+        "finishedAt": 1789972372.4714172,
+        "ageSeconds": 1577084.538,
+        "bytes": 3424366,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "364eb26f-c793-4749-9ffa-4d632a3f045b",
+        "finishedAt": 1789971813.7290292,
+        "ageSeconds": 1577643.281,
+        "bytes": 2148929,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "0dda2cdc-5c68-49bc-8957-145b3e83d8ba",
+        "finishedAt": 1789971713.6223056,
+        "ageSeconds": 1577743.387,
+        "bytes": 10822,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "53f1950b-25a3-4dfa-9cd4-887c1886c8d9",
+        "finishedAt": 1789971662.7479353,
+        "ageSeconds": 1577794.262,
+        "bytes": 3273750,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "625f7065-617f-49d9-96ad-a7b8971b654a",
+        "finishedAt": 1789971449.1733682,
+        "ageSeconds": 1578007.836,
+        "bytes": 32672,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "9612a71c-45dc-43f7-b6ca-ced9700a6eeb",
+        "finishedAt": 1789971394.7475767,
+        "ageSeconds": 1578062.262,
+        "bytes": 32670,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "bfe33f71-5797-459f-bcc6-a6753d1c92b0",
+        "finishedAt": 1789971389.5477095,
+        "ageSeconds": 1578067.462,
+        "bytes": 32669,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "fee7d0b7-dc82-4b97-ba8f-dd0455b96710",
+        "finishedAt": 1789970928.5636904,
+        "ageSeconds": 1578528.446,
+        "bytes": 3111393,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "68d4c3a3-c714-4917-87e2-721cecaeef4d",
+        "finishedAt": 1789969832.7436166,
+        "ageSeconds": 1579624.266,
+        "bytes": 3219078,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "235d2d12-6ae8-4832-9182-9b04d1e98583",
+        "finishedAt": 1789969601.7014315,
+        "ageSeconds": 1579855.308,
+        "bytes": 751501,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "2fa1845f-8c7c-4f66-9fe6-4401ab771b5e",
+        "finishedAt": 1789969535.875899,
+        "ageSeconds": 1579921.134,
+        "bytes": 20523,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "7e5cb25e-e8e2-402f-9d9f-878e447fb962",
+        "finishedAt": 1789967112.401088,
+        "ageSeconds": 1582344.609,
+        "bytes": 3203792,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      },
+      {
+        "taskId": "01c773b0-d781-4b49-a335-0e6549c85815",
+        "finishedAt": 1789966851.4870195,
+        "ageSeconds": 1582605.523,
+        "bytes": 41514,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": false,
+        "withinSeconds": false,
+        "keep": false,
+        "reason": "beyond_memory_prune"
+      }
+    ],
+    "kept": [
+      {
+        "taskId": "b134c5f8-8876-4f19-8fa5-f8aad1b1c2a4",
+        "finishedAt": 1791214626.1366122,
+        "ageSeconds": 334830.873,
+        "bytes": 120246,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "d476b2c1-a274-4d0f-b108-0dd1e173f655",
+        "finishedAt": 1791214615.8962927,
+        "ageSeconds": 334841.113,
+        "bytes": 120219,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "17acd112-ac4d-4645-9177-52ba34cc48d1",
+        "finishedAt": 1791214269.9713383,
+        "ageSeconds": 335187.038,
+        "bytes": 120226,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "1783b49e-318f-411d-b412-46947dc7dff5",
+        "finishedAt": 1790608134.4087124,
+        "ageSeconds": 941322.601,
+        "bytes": 3053390,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "a3cca8ac-f756-4518-936b-614c7eb65015",
+        "finishedAt": 1790607554.9680948,
+        "ageSeconds": 941902.042,
+        "bytes": 1093,
+        "files": [
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "abda3dfe-10d6-4583-8da6-156c279c2f44",
+        "finishedAt": 1790607457.8126523,
+        "ageSeconds": 941999.197,
+        "bytes": 20852,
+        "files": [
+          "ledger.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "fc9e0f60-62d2-4124-968d-6c2d248e1a70",
+        "finishedAt": 1790607262.0295777,
+        "ageSeconds": 942194.98,
+        "bytes": 3053440,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "743a7475-3b8c-437c-a94d-9e229a8e18b9",
+        "finishedAt": 1790606545.367971,
+        "ageSeconds": 942911.642,
+        "bytes": 3081860,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "a099cda0-7033-489e-91e0-205a120e967c",
+        "finishedAt": 1790606128.528419,
+        "ageSeconds": 943328.481,
+        "bytes": 3186824,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "15c4cc7f-cadc-414a-8dde-5758d43eb9dd",
+        "finishedAt": 1790605915.2217293,
+        "ageSeconds": 943541.788,
+        "bytes": 1442865,
+        "files": [
+          "ledger.json",
+          "partial-result.json",
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "17774613-dd2f-49ed-8795-c24b292f8667",
+        "finishedAt": 1790602461.2875862,
+        "ageSeconds": 946995.722,
+        "bytes": 3433611,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "63eec8e5-d1e5-4be6-b41d-3c99753a8524",
+        "finishedAt": 1790601885.12374,
+        "ageSeconds": 947571.886,
+        "bytes": 3433646,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "02a6f5b1-58fd-474b-a7cc-ff2ffaf77561",
+        "finishedAt": 1790528433.7261944,
+        "ageSeconds": 1021023.284,
+        "bytes": 3431528,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "d840a73c-3a45-44c2-82b8-56e8cd52d411",
+        "finishedAt": 1790526547.5574746,
+        "ageSeconds": 1022909.452,
+        "bytes": 1093,
+        "files": [
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "ed3e5d2f-841e-4f8e-bff9-5fbbfe77b101",
+        "finishedAt": 1790525275.9869356,
+        "ageSeconds": 1024181.023,
+        "bytes": 1093,
+        "files": [
+          "plan.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "526dd786-568e-4255-93f0-c10a4b161a42",
+        "finishedAt": 1790085199.0320005,
+        "ageSeconds": 1464257.978,
+        "bytes": 297415,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "13fb7190-71ab-4352-81df-067b41d19de9",
+        "finishedAt": 1790085192.8240073,
+        "ageSeconds": 1464264.186,
+        "bytes": 233294,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "a47b09f5-fa8f-46d6-b73b-ee8b483bc0f1",
+        "finishedAt": 1790085187.156479,
+        "ageSeconds": 1464269.853,
+        "bytes": 236589,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "c5767084-eea5-47aa-b3e5-820b79b4f35b",
+        "finishedAt": 1790085175.1951468,
+        "ageSeconds": 1464281.815,
+        "bytes": 267082,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      },
+      {
+        "taskId": "95ad55e9-bbb8-4700-9c46-3463fd4b2d18",
+        "finishedAt": 1790083610.9682856,
+        "ageSeconds": 1465846.041,
+        "bytes": 2991401,
+        "files": [
+          "diagnostics.json",
+          "ledger.json",
+          "plan.json",
+          "result.json"
+        ],
+        "withinNewestRuns": true,
+        "withinSeconds": false,
+        "keep": true,
+        "reason": "within_newest_runs"
+      }
+    ],
+    "foreignEntries": [],
+    "totals": {
+      "runs": 61,
+      "toClear": 41,
+      "bytesToClear": 83613895,
+      "bytesKept": 28527767,
+      "foreignEntries": 0
+    }
+  },
+  "result": {
+    "removed": [
+      {
+        "taskId": "363fac63-aa99-4a99-817f-7fbc11389e22",
+        "bytes": 110342
+      },
+      {
+        "taskId": "6de5415e-3e38-4508-93dc-8786de14f4eb",
+        "bytes": 110344
+      },
+      {
+        "taskId": "be987710-e613-4b63-893d-f8dca7842020",
+        "bytes": 4100342
+      },
+      {
+        "taskId": "abe25b8d-9961-4021-9003-d4a4ecf3319a",
+        "bytes": 4007034
+      },
+      {
+        "taskId": "c775316a-d778-4c53-983b-ab435ab2afc9",
+        "bytes": 3429310
+      },
+      {
+        "taskId": "b3a0725c-60e5-4e27-8486-1965ea66b6aa",
+        "bytes": 3043775
+      },
+      {
+        "taskId": "54dca7d1-7dd4-46f3-a846-be9ba3c99c23",
+        "bytes": 3694915
+      },
+      {
+        "taskId": "203dfb40-3156-4410-80f2-b58f44756080",
+        "bytes": 3694924
+      },
+      {
+        "taskId": "cb32df7f-7d7e-44bc-b572-254c9d689e15",
+        "bytes": 3203811
+      },
+      {
+        "taskId": "46cb0cf5-7766-4208-af93-2bff7d17d5ae",
+        "bytes": 3179687
+      },
+      {
+        "taskId": "2c059097-bd52-4eae-b872-306f67d15f53",
+        "bytes": 3179712
+      },
+      {
+        "taskId": "0f022e08-a95a-4f9c-8650-f3c294d742a2",
+        "bytes": 3224027
+      },
+      {
+        "taskId": "599589cd-a518-44fc-a711-bfadb32cb408",
+        "bytes": 3224005
+      },
+      {
+        "taskId": "d5ac2f03-6f22-49b9-8927-3e2f67c582f9",
+        "bytes": 3272553
+      },
+      {
+        "taskId": "6fea4dac-0bef-48a3-a9f4-653ebfdfa228",
+        "bytes": 40429
+      },
+      {
+        "taskId": "5d3cbcf1-8636-4cf5-bebe-4b6b1110c114",
+        "bytes": 26741
+      },
+      {
+        "taskId": "17d06ced-f885-409e-8bfd-54ae4426345b",
+        "bytes": 42655
+      },
+      {
+        "taskId": "0f6c1b5d-632c-47c8-b16e-03bc7eb21282",
+        "bytes": 2485727
+      },
+      {
+        "taskId": "fd7b9c05-0ccb-40f5-b3a9-a6ffae0f3437",
+        "bytes": 3070465
+      },
+      {
+        "taskId": "2eb739cd-cdbf-470e-8984-98bca071e209",
+        "bytes": 942215
+      },
+      {
+        "taskId": "85f376db-1ce9-4dc0-b901-bf6515a2dcb6",
+        "bytes": 32711
+      },
+      {
+        "taskId": "b7f21ff1-9224-4321-930b-f4c77940e551",
+        "bytes": 32712
+      },
+      {
+        "taskId": "0b1fd759-aa6d-469f-bb6e-7d49fe088e3b",
+        "bytes": 3134748
+      },
+      {
+        "taskId": "165d2bce-d394-498b-85c2-7ceaf70ae7cf",
+        "bytes": 3227085
+      },
+      {
+        "taskId": "28b9220f-4582-4cc9-b7c4-2d2ec3273861",
+        "bytes": 3127747
+      },
+      {
+        "taskId": "3b69286c-aa70-464b-9a3a-cdefa1bc84d1",
+        "bytes": 3215142
+      },
+      {
+        "taskId": "9375a8c6-f845-4b55-b3dc-826b46a5329c",
+        "bytes": 3424370
+      },
+      {
+        "taskId": "eda4d131-eaa9-4b2c-bf10-316eab0bb413",
+        "bytes": 32688
+      },
+      {
+        "taskId": "54e04884-374f-4d8a-a3a8-df9fa5c8ff6b",
+        "bytes": 3424366
+      },
+      {
+        "taskId": "364eb26f-c793-4749-9ffa-4d632a3f045b",
+        "bytes": 2148929
+      },
+      {
+        "taskId": "0dda2cdc-5c68-49bc-8957-145b3e83d8ba",
+        "bytes": 10822
+      },
+      {
+        "taskId": "53f1950b-25a3-4dfa-9cd4-887c1886c8d9",
+        "bytes": 3273750
+      },
+      {
+        "taskId": "625f7065-617f-49d9-96ad-a7b8971b654a",
+        "bytes": 32672
+      },
+      {
+        "taskId": "9612a71c-45dc-43f7-b6ca-ced9700a6eeb",
+        "bytes": 32670
+      },
+      {
+        "taskId": "bfe33f71-5797-459f-bcc6-a6753d1c92b0",
+        "bytes": 32669
+      },
+      {
+        "taskId": "fee7d0b7-dc82-4b97-ba8f-dd0455b96710",
+        "bytes": 3111393
+      },
+      {
+        "taskId": "68d4c3a3-c714-4917-87e2-721cecaeef4d",
+        "bytes": 3219078
+      },
+      {
+        "taskId": "235d2d12-6ae8-4832-9182-9b04d1e98583",
+        "bytes": 751501
+      },
+      {
+        "taskId": "2fa1845f-8c7c-4f66-9fe6-4401ab771b5e",
+        "bytes": 20523
+      },
+      {
+        "taskId": "7e5cb25e-e8e2-402f-9d9f-878e447fb962",
+        "bytes": 3203792
+      },
+      {
+        "taskId": "01c773b0-d781-4b49-a335-0e6549c85815",
+        "bytes": 41514
+      }
+    ],
+    "failed": [],
+    "bytesFreed": 83613895
+  }
+}
