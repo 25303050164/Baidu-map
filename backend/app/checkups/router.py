@@ -221,8 +221,10 @@ def checkup_router(manager: CheckupManager):
         return manager.view(manager.get(task_id))
 
     @router.get("/{task_id}/result", response_model=CheckupSnapshot)
-    async def result(task_id: str):
-        return _latest(manager, task_id)[0]
+    async def result(task_id: str, revision: int | None = None):
+        # 客户端一直带着 `?revision=`（重试会为同一次体检发布新修订），而这里曾经不看它：
+        # 想要第 3 版的人会拿到第 4 版，并且因为响应里的版本号与请求不符而被判为"契约异常"。
+        return _latest(manager, task_id, revision)[0]
 
     @router.get("/{task_id}/layers/{layer_id}")
     async def layer(task_id: str, layer_id: str, request: Request, revision: int | None = None):

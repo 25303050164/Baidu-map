@@ -1005,10 +1005,20 @@ class CheckupManager:
     # -- reads and cancellation -------------------------------------------
 
     def snapshot(self, task_id: str, revision: int | None = None):
-        """The newest published revision, or a named not-ready refusal."""
+        """The newest published revision, or a named not-ready refusal.
+
+        An explicit revision that does not exist is refused **by name**: "no result
+        yet" and "that revision is gone" are different answers, and a client that
+        asked for a version to keep its own view consistent must be told which one
+        it got rather than silently served something else.
+        """
         self.get(task_id)
         stored = self.store.revision(task_id, revision)
         if stored is None:
+            if revision is not None:
+                raise CheckupError(409, "checkup_revision_not_found",
+                                   f"这次体检没有第 {revision} 版修订（可能是另一版已发布，"
+                                   f"或它已被清理）；请读取当前最新版本。")
             raise CheckupError(409, "checkup_result_not_ready", "尚无可用结果快照")
         # Re-validated from the stored mapping so a hand-edited file cannot widen
         # the contract; serialization always goes through the model.

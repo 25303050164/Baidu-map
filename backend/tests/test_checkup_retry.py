@@ -130,6 +130,35 @@ def test_a_finished_checkup_has_nothing_to_retry(tmp_path):
         assert app.state.checkups.retries(task_id) == []
 
 
+def test_a_requested_revision_is_the_one_served(tmp_path):
+    """显式要哪一版就给哪一版，缺那一版就具名拒绝。
+
+    客户端在重试结束后要按**指定的**修订读取结果与图层（否则图上画的是上一版的灰区、
+    面板里写着这一版的面积），而结果接口曾经根本不看 `?revision=`：想要旧版的人会拿到
+    最新版，然后因为响应里的版本号与请求不符被判成"契约异常"。
+    """
+    places = SyntheticPlaces(two_page_rows)
+    app = make_app(tmp_path, places)
+    with TestClient(app) as client:
+        task_id, first = start_partial_checkup(client)
+        original = first["revision"]
+        view = submit_retry(client, task_id, "retry-1", maxPoiRequests=120)
+        finish_retry(client, task_id, view["retryId"])
+        assert document(client, task_id)["revision"] > original
+
+        kept = client.get(f"/api/v2/checkups/{task_id}/result?revision={original}")
+        assert kept.status_code == 200, kept.text
+        assert kept.json()["revision"] == original
+        assert kept.json()["facilities"]["queryStatus"] == "partial"
+        layer = client.get(f"/api/v2/checkups/{task_id}/layers/facilities?revision={original}")
+        assert layer.status_code == 200, layer.text
+        assert layer.json()["revision"] == original
+
+        missing = client.get(f"/api/v2/checkups/{task_id}/result?revision={original + 99}")
+        assert missing.status_code == 409, missing.text
+        assert missing.json()["code"] == "checkup_revision_not_found"
+
+
 def test_a_retry_cannot_change_the_categories_it_is_continuing(tmp_path):
     """类别不在重试请求里给。
 
