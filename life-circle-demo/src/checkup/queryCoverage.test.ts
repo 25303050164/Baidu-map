@@ -13,7 +13,7 @@ import { queryCoverageLine, queryCoverageRetryLine, readQueryAreaCoverage } from
 
 const group = (overrides: Partial<FacilityGroup> = {}): FacilityGroup => Object.assign({
   queryStatus: 'completed', catalogCompleteness: 'unverified', provider: 'baidu_place',
-  apiVersion: '3.0', dataSource: 'baidu_place', queryDomain: {}, dataObtainedAt: null,
+  apiVersion: '3.0', dataSource: 'baidu_place', queryDomain: {}, dataObtainedAt: null, sourceTasks: null,
   initialPlan: null, countsByCategory: {}, facilities: [], nearbyFacilities: [],
   reviewCandidates: [], excludedCandidates: [], quarantine: [], queryCoverage: [],
   queryIncompleteRegions: null, queryAreaCoverage: null, statistics: {}, warnings: [],

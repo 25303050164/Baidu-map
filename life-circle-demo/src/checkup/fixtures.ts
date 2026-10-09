@@ -289,6 +289,8 @@ export function extensionDocument(
     categories: ['dining', 'leisure'], status: 'completed', facilitiesStatus: 'complete',
     group: { queryStatus: 'completed', catalogCompleteness: 'unverified',
       provider: 'synthetic:checkup-tests', apiVersion: '3.0', dataSource: 'synthetic',
+      // 这份补查文档是"自己取的"：来源就是它自己，或者没有记录。
+      sourceTasks: null,
       queryDomain: { coordinateSystem: 'bd09ll', origin: [116.404, 39.915], paddingMeters: 50,
         widened: false, envelopeLocalMeters: [-1300, -1300, 1300, 1300],
         polygonLocalMeters: [] },
@@ -358,7 +360,8 @@ export function water(overrides: Partial<WaterDataEvidence> = {}): WaterDataEvid
  * 期限"（既没有会话租约、也还没到第三次后续体检），不是"永远不会到期"。
  */
 export function retentionView(overrides: Partial<RetentionView> = {}): RetentionView {
-  return { detailsAvailable: true, expiresAt: null, reason: null, sources: [], ...overrides };
+  return { detailsAvailable: true, expiresAt: null, reason: null, sources: [], cleared: false,
+    ...overrides };
 }
 
 /** 一个浏览会话此刻的状态：租约 300 秒、一个标签页、名下还没有体检。 */

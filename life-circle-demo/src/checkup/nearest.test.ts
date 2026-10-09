@@ -101,7 +101,7 @@ describe('nearest facilities', () => {
 describe('empty facilities note', () => {
   const group = (overrides: Partial<FacilityGroup> = {}): FacilityGroup => Object.assign({
     queryStatus: 'completed', catalogCompleteness: 'unverified', provider: 'synthetic',
-    apiVersion: '3.0', dataSource: 'synthetic', queryDomain: {}, dataObtainedAt: null,
+    apiVersion: '3.0', dataSource: 'synthetic', queryDomain: {}, dataObtainedAt: null, sourceTasks: null,
     initialPlan: null, countsByCategory: {}, facilities: [], nearbyFacilities: [],
     reviewCandidates: [], excludedCandidates: [], quarantine: [], queryCoverage: [],
     queryIncompleteRegions: null, queryAreaCoverage: null, statistics: {}, warnings: [],
