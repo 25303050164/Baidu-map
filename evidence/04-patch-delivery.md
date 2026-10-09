@@ -56,7 +56,7 @@
 | 前端 | `life-circle-demo/src/checkup/*`（含新增 `extensions.ts`）、`life-circle-demo/README.md` | 补查事实、诊断行、**失败不再渲染成"没有设施"** |
 | 浏览器套件 | `life-circle-demo/{playwright*.config.ts,tests/browser.ts,tests/checkup-browser.spec.ts,tests/demo.spec.ts,scripts/ensure-browser-libs.sh}` | 三套件可在本机真实运行；自带 Chromium；外连断言 |
 | C 阶段工具 | `backend/tools/{poi_query_benchmark,poi_benchmark_world,poi_benchmark_merge,poi_benchmark_guard}.py` | C0 基准与 C2 隔离 PoC |
-| 证据 | `evidence/00`–`04`、`07`、`08`、`PR-DRAFT.md` | A/C 阶段记录 |
+| 证据 | `evidence/00`–`09`、`PR-DRAFT.md` | A 阶段记录（00–04）、B 阶段核实与决策表单（05–06）、C 阶段记录（07–09） |
 | 启动脚本 | `start.command`、`.gitattributes` | 用户改动并入（§1） |
 
 ---
