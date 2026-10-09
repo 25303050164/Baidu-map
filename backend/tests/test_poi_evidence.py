@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from life_circle.models import RouteObservation
 from life_circle.coordinates import LocalProjection
 
-from app.contracts import PoiEvidence, Facility, RouteEvidence, AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest
+from app.contracts import PoiEvidence, Facility, RouteEvidence, AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest, FacilityCatalog
 from app.hybrid_contracts import HybridRequest, HybridResultResponse, HybridError
 from app.poi_evidence import poi_evidence, route_evidence
 from tools.endpoint_e83_poi import confirmed_poi
@@ -81,8 +81,11 @@ def test_route_assembly_retains_both_diagnostics_and_legacy_invalid_duration():
 
 
 def test_typescript_matches_current_serialization_contract():
+    # 这份清单必须与 ``tools.export_contract.build`` 给旧契约的那一份逐项一致：漏一个
+    # 模型，这条断言就会去和一份"少了 FacilityCatalog（连同它带出来的 CatalogCategory）"
+    # 的生成物比较，于是永远红着 —— 而它本来要证明的是"生成物等于这段代码产生的"。
     expected = typescript([AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest,
-        HybridRequest, HybridResultResponse, HybridError],
+        FacilityCatalog, HybridRequest, HybridResultResponse, HybridError],
         request_models=[OsmOfflineRequest, HybridRequest])
     actual = Path(__file__).resolve().parents[2] / "life-circle-demo/src/api-contract.ts"
     assert actual.read_text(encoding="utf-8") == expected
