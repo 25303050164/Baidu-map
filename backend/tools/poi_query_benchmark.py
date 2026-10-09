@@ -53,7 +53,8 @@ from app.poi.models import PoiCollectRequest
 from app.poi.models import Point as WirePoint
 from app.poi.normalize import merge_entities, normalize
 from app.poi.online import (PROCESSING_STEP_LIMIT, OnlinePlanner, QueryDomain, RunLimits,
-                            clip_to_domain, coarse_blocks)
+                            clip_to_domain)
+from app.poi.planner import RULES
 from app.quota import PLACE, Quota
 from life_circle.coordinates import LocalProjection
 from life_circle.models import CancelToken
@@ -338,7 +339,7 @@ def measure_result(*, result, fetch, session, quota, task, ledger_before, spent_
 
 async def run_arm(*, scenario, world, cache, ledger_path, task_id, guard, arm='baseline',
                   budget=None, daily_budget=None, plan_version='baseline-primary-keywords',
-                  token=None, hook=None) -> dict:
+                  token=None, hook=None, queries=None) -> dict:
     """One measured retrieval: precheck, run, and every number it produced."""
     categories = tuple(scenario.categories)
     budget = scenario.task_budget if budget is None else budget
@@ -353,12 +354,13 @@ async def run_arm(*, scenario, world, cache, ledger_path, task_id, guard, arm='b
               'taskBudget': budget, 'dailyBudget': daily_budget,
               'tier': quota.tiers.active().label, 'day': quota.ledger.day(),
               'minorCategories': len(categories), 'categories': list(categories),
-              'worldPlaces': len(world)}
+              'worldPlaces': len(world),
+              'keywordsPerCategory': {c: len(RULES['queries'][c]) for c in categories}}
 
     # The stage's own precheck, reused rather than restated: it decides on the pages
     # the planner will really ask for, under the keys the cache really uses.
     plan = poi_plan.initial_plan(domain, ORIGIN, categories, provider=provider,
-                                 api_version=api_version)
+                                 api_version=api_version, queries=queries)
     estimate = poi_plan.estimate(plan, cache, task_id=task_id,
                                  remaining_task_budget=task.remaining(POI_POOL),
                                  remaining_daily_budget=quota.remaining(PLACE))
@@ -379,7 +381,7 @@ async def run_arm(*, scenario, world, cache, ledger_path, task_id, guard, arm='b
     session = BenchmarkSession(service, quota.place, budget=task, deadline=deadline, hook=hook)
     fetch = CachedPages(cache, session, provider=service, task_id=task_id)
     planner = OnlinePlanner(domain=domain, origin=ORIGIN, categories=list(categories),
-                            queries=poi_plan.primary_queries(categories),
+                            queries=poi_plan.primary_queries(categories) if queries is None else queries,
                             budget=task.remaining(POI_POOL), source='synthetic',
                             limits=RunLimits(processing_steps=PROCESSING_STEP_LIMIT,
                                              drain_after_budget_refusal=True),
@@ -521,19 +523,26 @@ class CompareCase(Scenario):
 
     cancel_after: int | None = None
     plans: tuple = ('base', 'synonym')
+    #: Share of a category's facilities reachable only through a *non-primary* keyword.
+    #: Zero is this fixture's default because it is what the baseline plan assumes when
+    #: it sends primary keywords only; the comparison needs it non-zero, or the extra
+    #: keywords match nothing and merging them is a silent no-op. 0.4 is an explicit
+    #: modelling assumption, not a measurement: it says "the synonyms in the dictionary
+    #: are there because they find facilities the primary word does not".
+    extra_keyword_share: float = 0.4
 
 
 COMPARE_CASES = (
     CompareCase('sparse-cold', '稀疏 · 冷启动 · 额度充足', 300, GENEROUS_BUDGET,
-                plans=('base', 'synonym', 'chunk3')),
+                plans=('base', 'allkw', 'synonym', 'chunk3')),
     CompareCase('moderate-cold', '适中 · 冷启动 · 额度充足', 1200, GENEROUS_BUDGET,
-                plans=('base', 'synonym', 'chunk2', 'chunk3', 'chunk5', 'chunk10')),
+                plans=('base', 'allkw', 'synonym', 'chunk2', 'chunk3', 'chunk5', 'chunk10')),
     CompareCase('dense-cold', '密集 · 冷启动 · 额度充足', 5000, GENEROUS_BUDGET,
-                plans=('base', 'synonym')),
+                plans=('base', 'allkw', 'synonym')),
     CompareCase('dense-tight-60', '密集 · 紧预算 60', 5000, DEFAULT_POI_REQUESTS,
-                plans=('base', 'synonym')),
+                plans=('base', 'allkw', 'synonym')),
     CompareCase('moderate-same-major', '适中 · 同大类装箱', 1200, GENEROUS_BUDGET,
-                plans=('base', 'major3')),
+                plans=('base', 'allkw', 'major3')),
     CompareCase('moderate-full-cache', '适中 · 全缓存重放（任务与日余额 0）', 1200, 0,
                 daily_budget=0, prefilled=True, plans=('base', 'synonym')),
     CompareCase('moderate-no-match', '适中 · 服务答"无匹配"', 1200, GENEROUS_BUDGET,
@@ -578,28 +587,26 @@ async def run_grouped_arm(*, case, plan, world, cache, ledger_path, task_id, gua
     first round and the candidate were not.
     """
     from tools.poi_benchmark_merge import (IDENTITY, PLAN_VERSION, GroupedRunner,
-                                          MergeService, attribution_report)
+                                          MergeService, attribution_report, initial_estimate)
 
     categories = tuple(case.categories)
     settings = benchmark_settings(daily_budget=daily_budget, ledger_path=ledger_path)
     quota = Quota(settings, clock=controlled_clock, ledger_path=ledger_path)
     task = quota.task_budget(isochrone=1, poi=budget)
     domain = QueryDomain.circle(DOMAIN_RADIUS_M)
-    blocks = coarse_blocks(domain)
     record = {'arm': plan.key, 'planVersion': PLAN_VERSION, 'scenario': case.key,
               'label': f'{case.label} · {plan.label}', 'densityPerKm2': case.density_per_km2,
               'taskBudget': budget, 'dailyBudget': daily_budget,
               'tier': quota.tiers.active().label, 'day': quota.ledger.day(),
               'minorCategories': len(categories), 'categories': list(categories),
               'worldPlaces': len(world), 'transportIdentity': IDENTITY,
+              'extraKeywordShare': case.extra_keyword_share,
               'attribution': attribution_report(plan, categories)}
-    first_round = len(blocks) * len(plan.groups)
-    estimate = poi_plan.InitialEstimate(
-        initial_page_count=first_round, reusable_initial_page_count=0,
-        estimated_new_initial_calls=first_round,
-        remaining_task_budget=task.remaining(POI_POOL),
-        remaining_daily_budget=quota.remaining(PLACE),
-        blocks=len(blocks), minor_categories=len(categories), primary_queries_only=False)
+    estimate = initial_estimate(plan, domain, ORIGIN, provider=IDENTITY,
+                                api_version=MergeService.api_version, cache=cache,
+                                task_id=task_id,
+                                remaining_task_budget=task.remaining(POI_POOL),
+                                remaining_daily_budget=quota.remaining(PLACE))
     record['initialPlan'] = estimate.as_contract()
     refusal = poi_plan.admission_refusal(estimate)
     record['admissionRefusal'] = refusal
@@ -645,7 +652,17 @@ async def run_compare_suite(cases, *, output: Path, seed: int, only_case: str | 
         for plan_key in case.plans:
             if only_plan and plan_key != only_plan:
                 continue
-            plan = plan_for(plan_key, categories)
+            # ``allkw`` is the fair equal-coverage comparison: the *production* planner
+            # with every keyword of every category sent as its own query. Without it,
+            # a merged arm would look better or worse only because it sends more
+            # keywords than the primary-keyword baseline does, which is a coverage
+            # change rather than a query-plan change.
+            all_keywords = plan_key == 'allkw'
+            plan = None if all_keywords else plan_for(plan_key, categories)
+            queries = ({category: tuple(RULES['queries'][category]) for category in categories}
+                       if all_keywords else None)
+            plan_version = ('baseline-all-keywords' if all_keywords
+                            else 'baseline-primary-keywords')
             cache = KeyedCache()
             task_id = f'benchmark:{case.key}:{plan_key}'
             # One ledger per (case, plan): the arms must be independent measurements,
@@ -659,7 +676,8 @@ async def run_compare_suite(cases, *, output: Path, seed: int, only_case: str | 
                     return await run_arm(scenario=case, world=world, cache=cache,
                                          ledger_path=ledger_path, task_id=task_id, guard=guard,
                                          arm=label, budget=budget, daily_budget=daily_budget,
-                                         token=token, hook=hook)
+                                         token=token, hook=hook, queries=queries,
+                                         plan_version=plan_version)
                 return await run_grouped_arm(case=case, plan=plan, world=world, cache=cache,
                                              ledger_path=ledger_path, task_id=task_id, guard=guard,
                                              budget=budget, daily_budget=daily_budget,

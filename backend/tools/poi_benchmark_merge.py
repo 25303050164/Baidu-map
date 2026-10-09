@@ -123,6 +123,47 @@ def same_major_plan(categories, size: int) -> GroupPlan:
     return GroupPlan(f'major{size}', f'同大类装箱（每组 {size} 词）', 'same-major', tuple(groups))
 
 
+def group_query(plan: GroupPlan, index: int, block, projection) -> dict:
+    """The one mapping for one (block, group). The runner and its precheck both use it.
+
+    Two places computing "which query is this" would eventually disagree, and the
+    disagreement would show up as a precheck that cannot see the pages the run will
+    really ask for — which is precisely the defect the facility stage was repaired for.
+    """
+    group = plan.groups[index]
+    keywords = [keyword for _, keyword in group]
+    category = group[0][0] if len({c for c, _ in group}) == 1 else f'group{index}'
+    return sequence(block.tile_id, block.x, block.y, block.edge, category,
+                    '$'.join(keywords), projection)
+
+
+def initial_estimate(plan: GroupPlan, domain, origin, *, provider, api_version, cache, task_id,
+                     remaining_task_budget, remaining_daily_budget):
+    """The candidate's own first round, under the keys its run will really look up.
+
+    The reusable count is a read-only lookup on the real page keys, exactly as the
+    production precheck does it. Reporting zero instead would refuse a replay the
+    cache could answer in full — a merged plan would then look worse than it is for a
+    reason that has nothing to do with merging.
+    """
+    from app.poi import plan as poi_plan
+    from app.poi.cache import page_key
+
+    blocks = coarse_blocks(domain)
+    projection = LocalProjection((origin[0], origin[1]))
+    keys = [page_key(group_query(plan, index, block, projection), 0, provider=provider,
+                     api_version=api_version)
+            for block in blocks for index in range(len(plan.groups))]
+    reusable = sum(1 for key in keys if cache.get(key, task_id=task_id) is not None)
+    return poi_plan.InitialEstimate(
+        initial_page_count=len(keys), reusable_initial_page_count=reusable,
+        estimated_new_initial_calls=len(keys) - reusable,
+        remaining_task_budget=remaining_task_budget,
+        remaining_daily_budget=remaining_daily_budget, blocks=len(blocks),
+        minor_categories=len({category for group in plan.groups for category, _ in group}),
+        primary_queries_only=False)
+
+
 @dataclass
 class _GroupedQuery:
     """One (block, group) query and what it established."""
@@ -209,16 +250,12 @@ class GroupedRunner:
                 self._enqueue(block, group, index)
 
     def _enqueue(self, block, group, index):
-        keywords = [keyword for _, keyword in group]
-        query = '$'.join(keywords)
-        category = group[0][0] if len({c for c, _ in group}) == 1 else f"group{index}"
-        key = (block.tile_id, query)
+        from app.place_protocol import Pagination
+        key = (block.tile_id, '$'.join(keyword for _, keyword in group))
         if key in self.queries:
             return None
-        from app.place_protocol import Pagination
         state = _GroupedQuery(block=block, group=group, pagination=Pagination(),
-                              mapping=sequence(block.tile_id, block.x, block.y, block.edge,
-                                               category, query, self.projection))
+                              mapping=group_query(self.plan, index, block, self.projection))
         self.queries[key] = state
         self.queue.append(state)
         return state
