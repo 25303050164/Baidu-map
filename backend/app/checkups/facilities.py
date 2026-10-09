@@ -23,7 +23,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 
 from life_circle.coordinates import LocalProjection, normalize as normalize_point
-from shapely.geometry import Point
+from shapely.geometry import Point, box
+from shapely.ops import unary_union
 
 from .. import catalog
 from ..cache import KeyedCache
@@ -241,6 +242,53 @@ async def collect_facilities(payload: CheckupRequest, snapshot, *, settings, con
                    network=budget.spent.get(POI_POOL, 0) - reserved)
 
 
+#: §5 B2 决策 1：普通体检必须查到完整结果，**最多允许残余 20% 的地段**。
+#: 这里定义的是"残余"的口径，不是"现实中有多少设施已被找到"—— 后者永远无法由关键词
+#: 检索证明（``catalog_completeness`` 恒为 ``unverified``）。
+SHARED_COMPLETION_TARGET = 0.80
+
+
+def shared_completion(incomplete: dict, boundary, *,
+                      target: float = SHARED_COMPLETION_TARGET) -> dict:
+    """How much of the boundary *every* selected category finished searching.
+
+    The measure is the **intersection of all categories' finished areas**, not the
+    average of per-category coverage. The difference is the whole point: a run that
+    finished nine categories and never asked about the tenth scores 90% by average
+    and 0% here, and only the second number answers "may a reader treat this report
+    as covering the area?". So the gaps are unioned across categories first, and
+    overlapping gaps are therefore counted once rather than once per category.
+
+    The denominator is the computed boundary, so the query padding can neither help
+    nor hurt the ratio. ``unknown`` is reserved for "cannot be measured" — no
+    boundary, or no area to take a fraction of. A run whose queries failed reports
+    ``unmet``: unfinished is unfinished, and it must not read as *unknown* just to
+    look less conclusive.
+    """
+    domain_area = float(boundary.area)
+    categories = sorted(incomplete or {})
+    if domain_area <= 0:
+        return {'status': 'unknown', 'reason': 'empty_boundary_area', 'target': target,
+                'boundaryAreaM2': 0.0, 'sharedCompletedAreaM2': 0.0,
+                'sharedCompletionRatio': None, 'residualRatio': None,
+                'categories': categories}
+    gaps = [box(x0, y0, x1, y1)
+            for bounds in (incomplete or {}).values() for x0, y0, x1, y1 in bounds]
+    # Clipped to the boundary: a gap block can stick out past it, and the part that
+    # was never inside the reported area is not a residual of the reported area.
+    gap = unary_union(gaps).intersection(boundary) if gaps else None
+    gap_area = 0.0 if gap is None or gap.is_empty else float(gap.area)
+    completed = min(domain_area, max(0.0, domain_area - gap_area))
+    ratio = completed / domain_area
+    return {'target': target,
+            'status': 'met' if ratio >= target else 'unmet',
+            'boundaryAreaM2': round(domain_area, 6),
+            'sharedCompletedAreaM2': round(completed, 6),
+            'sharedCompletionRatio': round(ratio, 6),
+            'residualRatio': round(1.0 - ratio, 6),
+            'categories': categories}
+
+
 def _incomplete_regions(incomplete: dict, projection) -> dict:
     """Unfinished query blocks (local metres) → bd09ll polygons, per category."""
     regions = {}
@@ -324,6 +372,9 @@ def _report(payload, snapshot, result, fetch, domain, widened, boundary, origin,
         # tells them apart, and a nearby facility stays evidence for the region.
         quarantine=quarantine + outside_domain + outside_boundary, query_coverage=coverage,
         query_incomplete_regions=_incomplete_regions(result.incomplete, projection),
+        # 同一个不完整集合的两种呈现：多边形给地图画图，面积比例给"这次体检算不算查完"。
+        # 两者出自同一个 ``result.incomplete``，所以地图上的空白与报告里的比例不会互相矛盾。
+        query_area_coverage=shared_completion(result.incomplete, boundary),
         statistics={
             'rawRecords': sum(entry['returned'] for entry in coverage),
             'invalidRecords': len(quarantine),

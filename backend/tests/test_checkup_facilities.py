@@ -415,6 +415,12 @@ def test_both_engines_close_the_loop_over_their_own_boundary(tmp_path):
             assert group["warnings"] == ["classification_needs_review", "primary_queries_only"]
             assert group["queryDomain"]["paddingMeters"] == 1300
             assert group["dataObtainedAt"] > 0
+            # §5 B2 决策 1：全部小类都查完了，所以"共同完成"就是整个圈面 ——
+            # 服务目标 met，而这一条与 queryStatus 是两件事（见下面 partial 的用例）。
+            assert group["queryAreaCoverage"]["status"] == "met"
+            assert group["queryAreaCoverage"]["sharedCompletionRatio"] == 1.0
+            assert group["queryAreaCoverage"]["residualRatio"] == 0.0
+            assert group["queryAreaCoverage"]["categories"]
             # 首轮计划与它实际的执行一致：56 页、没有缓存可复用、需要 56 次新增调用。
             assert group["initialPlan"] == {
                 "initialPageCount": CORE_PAGES, "reusableInitialPageCount": 0,
@@ -507,6 +513,11 @@ def test_a_facility_run_that_fails_every_page_is_a_failed_query(tmp_path):
         # The stage ran and reported itself: an empty list here is a failed
         # retrieval, which the status and the page errors both say.
         assert group["queryStatus"] == "failed"
+        # §5 B2 决策 1：一页都没查成 → 共同完成 0。必须是 unmet 而不是 unknown：
+        # "算不出来"和"算出来没达标"是两件事，用前者描述后者等于替失败开脱。
+        assert group["queryAreaCoverage"]["status"] == "unmet"
+        assert group["queryAreaCoverage"]["sharedCompletionRatio"] == 0.0
+        assert group["queryAreaCoverage"]["residualRatio"] == 1.0
         assert group["facilities"] == [] and group["countsByCategory"] == {
             "shopping": 0, "medical": 0, "education": 0}
         assert "upstream_error" in group["warnings"]

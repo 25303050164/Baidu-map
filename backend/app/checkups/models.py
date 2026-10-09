@@ -158,6 +158,10 @@ class FacilityGroup(CheckupModel):
     #: did not finish. The assessment refuses a gap within service reach of them.
     #: ``None`` means not recorded (an older revision): the task-wide status applies.
     query_incomplete_regions: dict[str, list[dict]] | None = None
+    #: §5 B2 决策 1：所有所选小类**共同**完成检索的圈面比例。它算的是各小类未完成区域
+    #: 取并集后的残余，而不是各小类覆盖率的平均 —— 后者会让"某一类整块没查、其余全部查完"
+    #: 读成 90%。``None`` 表示未记录（旧修订），不表示 0。
+    query_area_coverage: dict | None = None
     statistics: dict = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     stop_reason: str | None = None
