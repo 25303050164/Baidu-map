@@ -42,11 +42,26 @@ def new_task(store, task_id="task-1"):
 
 # -- the store ---------------------------------------------------------------
 
+def _tasks_table_without_the_later_columns() -> str:
+    """``SCHEMA`` 的 tasks 表，但去掉所有"后来才加的列"。
+
+    只在 tasks 这一块里替换：``ADDED_COLUMNS`` 说的就是这张表。早先的写法是在整份 SCHEMA
+    上做字符串替换，于是 ``session_id`` 这个既属于新 ``session_tabs`` 表、又是 tasks 的
+    后加列的名字，被从 **session_tabs** 里删掉了 —— 造出来的"老库"于是带着一条指向不存在
+    的列的索引，而那是这段模拟自己的错，不是迁移的错。
+    """
+    schema = store_module.SCHEMA
+    start = schema.index("CREATE TABLE IF NOT EXISTS tasks (")
+    end = schema.index(");", start) + len(");")
+    block = schema[start:end]
+    for name, declaration in store_module.ADDED_COLUMNS:
+        block = block.replace(f",\n    {name} {declaration}", "")
+    return schema[:start] + block + schema[end:]
+
+
 def test_a_store_from_before_the_progress_columns_is_migrated_in_place(tmp_path):
     store = CheckupStore(tmp_path / "checkups")
-    old = store_module.SCHEMA
-    for name, declaration in store_module.ADDED_COLUMNS:
-        old = old.replace(f",\n    {name} {declaration}", "")
+    old = _tasks_table_without_the_later_columns()
     assert "activity_at" not in old
     with sqlite3.connect(store.path) as connection:
         connection.executescript(old)

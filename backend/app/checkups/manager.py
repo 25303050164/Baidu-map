@@ -456,7 +456,13 @@ class CheckupManager:
                 tabs = self.store.session_tabs(record.session_id)
                 arms.append(("session_closed",
                              self._lease_end(row, tabs=tabs) + SESSION_LEASE_SECONDS))
-        later = self.store.later_terminal_instants(record.task_id, limit=CHECKUPS_BEFORE_EXPIRY)
+        try:
+            later = self.store.later_terminal_instants(record.task_id,
+                                                       limit=CHECKUPS_BEFORE_EXPIRY)
+        except TaskNotFound:
+            # 手里这个记录在库里没有对应行（构造出来的记录、或者一行被清掉的库）：
+            # 没有提交顺序可数，这一条期限就**不成立**，而不是让整个视图报错。
+            later = []
         if len(later) == CHECKUPS_BEFORE_EXPIRY and later[-1] is not None:
             arms.append(("superseded", later[-1]))
         if not arms:
