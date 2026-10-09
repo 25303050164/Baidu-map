@@ -25,11 +25,16 @@ TaskStatus = Literal["queued", "running", "cancelling", "completed", "failed", "
 BusinessStatus = Literal["complete", "partial", "insufficient"]
 Stage = Literal["isochrone", "poi", "accessibility", "verification", "reporting", "ready"]
 
-# The default remains conservative for the core scope. Explicitly requesting
-# the expanded taxonomy may raise the task pool up to the primary-query bound.
-DEFAULT_POI_REQUESTS = 60
+# The default is sized so that one checkup of the core three majors can actually
+# reach the 80% coverage goal. Measured cost of a 4-block core-three area (C0,
+# synthetic fixture, ``evidence/07``): 59 dispatches sparse, 203 moderate, 1379
+# dense. 240 completes the moderate case in a single pass; 1600 leaves room for the
+# dense one. The operator authorised both on 2026-10-09, along with a 2000/day
+# application budget. A ceiling is not a default: the dense case still has to be
+# asked for, and every page stays bounded by the pool at the moment of dispatch.
+DEFAULT_POI_REQUESTS = 240
 DEFAULT_ROUTE_REQUESTS = 120
-MAX_POI_REQUESTS = 160
+MAX_POI_REQUESTS = 1600
 MAX_ROUTE_REQUESTS = 120
 DETAIL_ROUTE_REQUESTS = 20
 

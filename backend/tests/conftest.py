@@ -83,3 +83,45 @@ def _thaw_the_heap():
     behind is still collected."""
     yield
     gc.unfreeze()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _scratch_deployment_paths(tmp_path_factory):
+    """Keep an explicitly-configured ``Settings`` off the deployment's own files.
+
+    ``Settings`` names the paths a real deployment uses, so a test that writes
+    ``Settings(_env_file=None, ...)`` without overriding them aims its ledger at
+    ``backend/.quota/quota.sqlite3`` and its checkup store at ``backend/.checkups``.
+    Constructing them is enough to create the schema, and a test that reserved an
+    attempt would spend the deployment's own day — the accounting this suite exists
+    to protect. A test is about behaviour, not about which directory the deployment
+    happens to use.
+
+    Two limits keep the redirect honest:
+
+    * Only a construction that *asks* for an explicit configuration is redirected,
+      and a path the test itself passes always wins, so a test that means to point
+      somewhere specific still does.
+    * ``load_settings()`` is untouched. A test that calls it is asking about the
+      ambient deployment configuration, and must keep getting the real answer.
+    """
+    from app.config import Settings
+
+    root = tmp_path_factory.mktemp("deployment-paths")
+    scratch = {"quota_ledger_path": str(root / "quota.sqlite3"),
+               "checkup_dir": str(root / "checkups"),
+               "hybrid_ledger_dir": str(root / "ledgers")}
+    original = Settings.__init__
+
+    def isolated(self, **values):
+        if "_env_file" in values:
+            for name, path in scratch.items():
+                values.setdefault(name, path)
+        original(self, **values)
+
+    patcher = pytest.MonkeyPatch()
+    patcher.setattr(Settings, "__init__", isolated)
+    try:
+        yield root
+    finally:
+        patcher.undo()

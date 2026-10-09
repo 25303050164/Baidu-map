@@ -84,6 +84,9 @@ def make_app(tmp_path, provider_factory=None, **overrides):
         # 档位切换点必须固定在测试里：默认值是一个真实日期，过了那天这个夹具就会
         # 悄悄换成保守档，能力表和额度断言的失败与代码无关。
         baidu_quota_fallback_at="2099-01-01T00:00:00+08:00",
+        # 日额度同样固定在测试里：本文件要验的是"能力表把应用自己的预算报出来"，
+        # 不是随部署默认值浮动。出厂默认值是 80，见 test_quota 的同名断言。
+        baidu_place_daily_budget=1600,
         checkup_dir=tmp_path / "checkups", hybrid_ledger_dir=tmp_path / "ledgers",
         quota_ledger_path=tmp_path / "quota.sqlite3",
         hybrid_obstacle_path=Path("missing-checkup-obstacles"),
@@ -191,7 +194,7 @@ def test_isochrone_stage_publishes_a_revision_without_a_second_facility_search(t
         # Every pool of the task is on the record, spent or not. The synthetic
         # transport issues no request, so the boundary reports none.
         assert trace["budgets"] == {"isochrone": {"limit": 200, "spent": 0},
-                                    "poi": {"limit": 60, "spent": 0},
+                                    "poi": {"limit": 240, "spent": 0},
                                     "route": {"limit": 120, "spent": 0},
                                     "detail": {"limit": 20, "spent": 0}}
 
@@ -452,7 +455,10 @@ def test_capabilities_report_both_engines_and_the_fixed_distance_rule(tmp_path):
         assert rules["distance"]["tolerance_m"] == 100
         # The uncertainty band is never presented as a radius enlargement.
         assert rules["bandIsNotRadiusExpansion"] is True
-        assert document["budgets"]["poiRequests"] == 60
+        # 单任务默认 240：合成夹具实测"适中"密度整轮 203 次派发，240 才够一次查到 80%
+        # 覆盖目标（2026-10-09 运营者授权）。
+        assert document["budgets"]["poiRequests"] == 240
+        assert document["budgets"]["maxPoiRequests"] == 1600
         assert document["budgets"]["routeRequests"] == 120
         # 一次检索的最小次数是"查询分块 × 检索小类"，请求体里算不出来：客户端要能
         # 在提交前用它判断预算够不够，而不是提交后拿到一个预算不足的失败任务。
@@ -486,10 +492,10 @@ def test_capabilities_report_the_application_budget_never_the_account_balance(tm
         assert quota["tier"] == "current" and quota["matrixEnabled"] is False
         # The two services are separate pools, and only place has a day budget.
         assert quota["services"]["direction"] == {
-            "qps": 16, "maxInflight": 1, "dailyBudget": None,
+            "qps": 3, "maxInflight": 1, "dailyBudget": None,
             "spentToday": None, "remainingToday": None}
         assert quota["services"]["place"] == {
-            "qps": 8, "maxInflight": 1, "dailyBudget": 1600,
+            "qps": 10, "maxInflight": 1, "dailyBudget": 1600,
             "spentToday": 0, "remainingToday": 1600}
         # Nothing may present this as the account's own remaining allowance.
         assert quota["claimsAccountBalance"] is False

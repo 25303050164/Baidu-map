@@ -44,7 +44,6 @@ from zoneinfo import ZoneInfo
 
 from app import catalog
 from app.cache import KeyedCache
-from app.checkups.models import DEFAULT_POI_REQUESTS
 from app.checkups.places import POI_POOL
 from app.config import Settings
 from app.poi import plan as poi_plan
@@ -77,6 +76,11 @@ RUN_TIMEOUT_S = 600.0
 #: Not a product default and not a proposal — the local processing ceiling still caps
 #: the run, which is exactly what such a scenario is meant to reveal.
 GENEROUS_BUDGET = 100_000
+#: The single-task default the C0/C2 evidence was measured at. Pinned instead of read
+#: from ``models.DEFAULT_POI_REQUESTS``: the deployment default became 240 on
+#: 2026-10-09, and a scenario named ``-60`` that silently ran at 240 would make the
+#: recorded results unreproducible while still looking comparable to them.
+RECORDED_DEFAULT_BUDGET = 60
 #: Fixture pacing. Production pacing is exercised by the test suite, not here.
 OFFLINE_QPS = 10_000.0
 SHANGHAI = ZoneInfo('Asia/Shanghai')
@@ -117,8 +121,8 @@ BASELINE_SCENARIOS = (
     Scenario('sparse-generous', '稀疏 · 冷启动 · 额度充足', 300, GENEROUS_BUDGET),
     Scenario('moderate-generous', '适中 · 冷启动 · 额度充足', 1200, GENEROUS_BUDGET),
     Scenario('dense-generous', '密集 · 冷启动 · 额度充足', 5000, GENEROUS_BUDGET),
-    Scenario('dense-default-60', '密集 · 冷启动 · 默认单任务 60', 5000, DEFAULT_POI_REQUESTS),
-    Scenario('dense-ten-majors-60', '密集 · 十类 · 默认单任务 60', 5000, DEFAULT_POI_REQUESTS,
+    Scenario('dense-default-60', '密集 · 冷启动 · 默认单任务 60', 5000, RECORDED_DEFAULT_BUDGET),
+    Scenario('dense-ten-majors-60', '密集 · 十类 · 默认单任务 60', 5000, RECORDED_DEFAULT_BUDGET,
              majors=catalog.majors()),
     Scenario('dense-ten-majors-generous', '密集 · 十类 · 额度充足', 5000, GENEROUS_BUDGET,
              majors=catalog.majors()),
@@ -539,7 +543,7 @@ COMPARE_CASES = (
                 plans=('base', 'allkw', 'synonym', 'chunk2', 'chunk3', 'chunk5', 'chunk10')),
     CompareCase('dense-cold', '密集 · 冷启动 · 额度充足', 5000, GENEROUS_BUDGET,
                 plans=('base', 'allkw', 'synonym')),
-    CompareCase('dense-tight-60', '密集 · 紧预算 60', 5000, DEFAULT_POI_REQUESTS,
+    CompareCase('dense-tight-60', '密集 · 紧预算 60', 5000, RECORDED_DEFAULT_BUDGET,
                 plans=('base', 'allkw', 'synonym')),
     CompareCase('moderate-same-major', '适中 · 同大类装箱', 1200, GENEROUS_BUDGET,
                 plans=('base', 'allkw', 'major3')),

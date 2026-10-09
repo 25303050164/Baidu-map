@@ -13,6 +13,20 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 # a claim about when the console entitlement actually lapses.
 DEFAULT_FALLBACK_AT = "2026-09-30T00:00:00+08:00"
 
+# The account's own ceilings, as its console reported them on 2026-10-09:
+# ``地点检索`` 50,000 calls/day at 10 QPS, ``步行路线规划(轻量)`` 5,000 calls/day at
+# 3 QPS (balance ¥0.00, nothing purchased — these are the free-tier allowances).
+# They are recorded here so a deployment's own settings can be checked against the
+# real bound instead of against memory. This application's ledger bounds only what
+# *this application* spends; a configured ceiling above the account's is not
+# headroom, it is a setting that can only fail upstream.
+VERIFIED_ENTITLEMENT = {
+    "placeQps": 10.0,
+    "placeDailyCalls": 50_000,
+    "walkingQps": 3.0,
+    "walkingDailyCalls": 5_000,
+}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -41,17 +55,30 @@ class Settings(BaseSettings):
     # assumed, and an entry is never permanently fresh.
     cache_freshness_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     # Per-service route and place pools. Both algorithms and the facility stages
-    # draw from these; nothing allocates quota outside this entry.
-    baidu_direction_qps: float = Field(default=16, gt=0, allow_inf_nan=False)
-    baidu_place_qps: float = Field(default=8, gt=0, allow_inf_nan=False)
+    # draw from these; nothing allocates quota outside this entry. Both ceilings are
+    # set to what the account actually grants (``VERIFIED_ENTITLEMENT``): the walking
+    # gate used to ask for 16 QPS against a 3 QPS entitlement, which is a 429 waiting
+    # for a busy day rather than headroom.
+    baidu_direction_qps: float = Field(default=3, gt=0, allow_inf_nan=False)
+    baidu_place_qps: float = Field(default=10, gt=0, allow_inf_nan=False)
     baidu_direction_max_inflight: int = Field(default=1, ge=1, le=1)
     baidu_place_max_inflight: int = Field(default=1, ge=1, le=1)
-    baidu_place_daily_budget: int = Field(default=1600, ge=0)
+    # What *this application* may spend in a day — 4% of the account's 50,000, so the
+    # browser SDK, other applications and future manual use keep the rest. It is no
+    # longer 80: the operator raised it on 2026-10-09 so that one checkup can reach the
+    # 80% coverage goal, which the measured cost of a moderate area (203 dispatches)
+    # never could under 80. Raising it further is a business decision, not a code one.
+    baidu_place_daily_budget: int = Field(default=2000, ge=0)
     baidu_matrix_enabled: Literal[False] = False
     baidu_quota_fallback_at: datetime = DEFAULT_FALLBACK_AT
-    baidu_fallback_direction_qps: float = Field(default=2, gt=0, allow_inf_nan=False)
-    baidu_fallback_place_qps: float = Field(default=2, gt=0, allow_inf_nan=False)
-    baidu_fallback_place_daily_budget: int = Field(default=80, ge=0)
+    # The two tiers now carry the same numbers. The switch was introduced on the
+    # assumption that the console entitlement would lapse, and the console shows it has
+    # not; what used to be a 20x cliff at a clock boundary is therefore gone. The knob
+    # stays because removing a configuration surface is its own decision, and it is
+    # still the place a future downgrade would be expressed.
+    baidu_fallback_direction_qps: float = Field(default=3, gt=0, allow_inf_nan=False)
+    baidu_fallback_place_qps: float = Field(default=10, gt=0, allow_inf_nan=False)
+    baidu_fallback_place_daily_budget: int = Field(default=2000, ge=0)
     quota_ledger_path: Path = BACKEND_DIR / ".quota/quota.sqlite3"
     hybrid_risk_path: Path | None = None
     hybrid_obstacle_path: Path | None = None

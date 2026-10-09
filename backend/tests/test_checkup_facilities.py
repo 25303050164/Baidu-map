@@ -31,7 +31,8 @@ from app.checkups.facility_stage import query_domain
 from app.checkups.places import POI_POOL, declared_identity
 from app.checkups.routes import ROUTE_POOL
 from app.config import Settings
-from app.checkups.models import DEFAULT_POI_REQUESTS, QUERY_PADDING_M, CheckupRequest
+from app.checkups.models import (DEFAULT_POI_REQUESTS, QUERY_PADDING_M, CheckupRequest,
+                                 FacilityExtensionRequest)
 from app.engines import EngineContext
 from app.main import create_app
 from app.poi import plan as poi_plan
@@ -292,8 +293,13 @@ def make_app(tmp_path, places=None, routes=None, **overrides):
     configured = dict(
         baidu_map_ak=SECRET if places is not None else "",
         analysis_provider="synthetic", baidu_place_qps=10000, baidu_direction_qps=10000,
-        # The fixture's tier must not switch with the calendar mid-suite.
+        # The fixture's tier must not switch with the calendar mid-suite, and its day
+        # ceiling is pinned for the same reason: this file asserts retrieval behaviour,
+        # so a number that moves whenever the deployment default moves would fail here
+        # for a reason that is not this file's subject. The sections that need a
+        # different ceiling pass it explicitly (``FALLBACK_SHAPE``).
         baidu_quota_fallback_at="2099-01-01T00:00:00+08:00",
+        baidu_place_daily_budget=1600,
         checkup_dir=tmp_path / "checkups", hybrid_ledger_dir=tmp_path / "ledgers",
         quota_ledger_path=tmp_path / "quota.sqlite3",
         hybrid_obstacle_path=Path("missing-checkup-obstacles"),
@@ -412,7 +418,7 @@ def test_both_engines_close_the_loop_over_their_own_boundary(tmp_path):
             # 首轮计划与它实际的执行一致：56 页、没有缓存可复用、需要 56 次新增调用。
             assert group["initialPlan"] == {
                 "initialPageCount": CORE_PAGES, "reusableInitialPageCount": 0,
-                "estimatedNewInitialCalls": CORE_PAGES, "remainingTaskBudget": 60,
+                "estimatedNewInitialCalls": CORE_PAGES, "remainingTaskBudget": 240,
                 "remainingDailyBudget": 1600, "blocks": 4, "minorCategories": CORE_MINORS,
                 "primaryQueriesOnly": True, "isReservation": False}
 
@@ -424,7 +430,7 @@ def test_both_engines_close_the_loop_over_their_own_boundary(tmp_path):
             assert document_["businessStatus"] == "partial"
             assert app.state.checkups.store.revisions(task_id)[4]["stage"] == "reporting"
             assert document_["trace"]["ruleVersions"]["classification"] == RULES["version"]
-            assert document_["trace"]["budgets"]["poi"] == {"limit": 60, "spent": CORE_PAGES}
+            assert document_["trace"]["budgets"]["poi"] == {"limit": 240, "spent": CORE_PAGES}
             assert document_["trace"]["budgets"]["route"] == {"limit": 120, "spent": 0}
             assert document_["trace"]["budgets"]["detail"] == {"limit": 20, "spent": 0}
             assert document_["trace"]["budgets"]["isochrone"]["limit"] == 200
@@ -483,14 +489,18 @@ def test_a_deployment_without_a_key_names_its_refusal_and_never_a_zero(tmp_path)
                     if item["code"] == "FACILITIES_UNAVAILABLE"]
         assert len(refusals) == 1 and refusals[0]["severity"] == "error"
         assert "AK" in refusals[0]["message"]
-        assert document_["trace"]["budgets"]["poi"] == {"limit": 60, "spent": 0}
+        assert document_["trace"]["budgets"]["poi"] == {"limit": 240, "spent": 0}
 
 
 def test_a_facility_run_that_fails_every_page_is_a_failed_query(tmp_path):
     places = SyntheticPlaces(failing())
     app = make_app(tmp_path, places)
     with TestClient(app) as client:
-        task_id, view = run(client, body())
+        # 显式钉住 60 次：这一节测的是"额度在重试中途用完时，被拒的页面按名字记下来，
+        # 而不是让整轮消失"。它必须是一个会中途用完的预算，不能跟着部署默认值走 ——
+        # 默认值现在是 240，足够把 56 个序列的两次尝试都发完，那样这个分支就没人测了。
+        task_id, view = run(client, body(facilities={"categories": CORE_MAJORS,
+                                                     "maxPoiRequests": 60}))
         assert view["status"] == "completed", view
         document_ = document(client, task_id)
         group = document_["facilities"]
@@ -1090,46 +1100,46 @@ def test_a_fully_cached_extension_is_accepted_with_no_allowance_left(tmp_path):
         assert app.state.quota.ledger.spent(PLACE) == spent_before
 
 
-def test_a_partly_cached_extension_spends_its_allowance_on_the_missing_pages(tmp_path):
-    """§四/§五：部分命中时按缺页执行，不按完整冷启动页数拒绝 —— 额度只花在缺页上。
-
-    父任务只查 dining，它的 8 页进了同一个任务的缓存；补查 dining+leisure 首轮共 20 页。
-    先给"比缺页还少一次"的预算：受理（缓存那 8 页是可取得的证据，不该被冷启动口径挡掉），
-    缺页只能发出 11 次，结果是 partial 且逐页记名。再用新标识给刚好够缺页的预算：只需
-    最后 1 次就查完 —— 前一次已经把 11 页缺页取回来了。若还按冷启动 20 页来卡，第二次
-    会被要求 20 次，这正是要修掉的行为。
-    """
-    places = SyntheticPlaces(at_origin())
-    app = make_app(tmp_path, places)
-    with TestClient(app) as client:
-        task_id, _view = run(client, body(facilities={"categories": ["dining"]}))
-        shared = 4 * len(poi_keys(["dining"]))
-        total = 4 * len(EXTENDED_MINORS)
-        missing = total - shared
-        assert 0 < shared < total
-        spent_before = app.state.quota.ledger.spent(PLACE)
-
-        created = submit_extension(client, task_id, "ext-partial-short", EXTENDED,
-                                   maxPoiRequests=missing - 1)
-        short = extension_of(client, task_id, created["extensionId"])
-        assert short["status"] == "partial", short
-        assert short["requests"] == total                 # 20 页都处理了
-        assert short["networkRequests"] == missing - 1    # 只有缺页花了网络
-        assert short["stopReason"] == "network_budget_exhausted"
-        plan = short["initialPlan"]
-        assert (plan["initialPageCount"], plan["reusableInitialPageCount"],
-                plan["estimatedNewInitialCalls"]) == (total, shared, missing)
-        assert app.state.quota.ledger.spent(PLACE) == spent_before + missing - 1
-
-        # 上一次把 11 页缺页取回来了，所以这次只差 1 页：额度用在新增检索上。
-        created = submit_extension(client, task_id, "ext-partial", EXTENDED,
-                                   maxPoiRequests=missing)
-        view = extension_of(client, task_id, created["extensionId"])
-        assert view["status"] == "completed", view
-        assert view["networkRequests"] == 1
-        assert view["initialPlan"]["reusableInitialPageCount"] == total - 1
-        assert view["initialPlan"]["estimatedNewInitialCalls"] == 1
-        assert app.state.quota.ledger.spent(PLACE) == spent_before + missing
+def test_a_partly_cached_extension_spends_its_allowance_on_the_missing_pages(tmp_path):
+    """§四/§五：部分命中时按缺页执行，不按完整冷启动页数拒绝 —— 额度只花在缺页上。
+
+    父任务只查 dining，它的 8 页进了同一个任务的缓存；补查 dining+leisure 首轮共 20 页。
+    先给"比缺页还少一次"的预算：受理（缓存那 8 页是可取得的证据，不该被冷启动口径挡掉），
+    缺页只能发出 11 次，结果是 partial 且逐页记名。再用新标识给刚好够缺页的预算：只需
+    最后 1 次就查完 —— 前一次已经把 11 页缺页取回来了。若还按冷启动 20 页来卡，第二次
+    会被要求 20 次，这正是要修掉的行为。
+    """
+    places = SyntheticPlaces(at_origin())
+    app = make_app(tmp_path, places)
+    with TestClient(app) as client:
+        task_id, _view = run(client, body(facilities={"categories": ["dining"]}))
+        shared = 4 * len(poi_keys(["dining"]))
+        total = 4 * len(EXTENDED_MINORS)
+        missing = total - shared
+        assert 0 < shared < total
+        spent_before = app.state.quota.ledger.spent(PLACE)
+
+        created = submit_extension(client, task_id, "ext-partial-short", EXTENDED,
+                                   maxPoiRequests=missing - 1)
+        short = extension_of(client, task_id, created["extensionId"])
+        assert short["status"] == "partial", short
+        assert short["requests"] == total                 # 20 页都处理了
+        assert short["networkRequests"] == missing - 1    # 只有缺页花了网络
+        assert short["stopReason"] == "network_budget_exhausted"
+        plan = short["initialPlan"]
+        assert (plan["initialPageCount"], plan["reusableInitialPageCount"],
+                plan["estimatedNewInitialCalls"]) == (total, shared, missing)
+        assert app.state.quota.ledger.spent(PLACE) == spent_before + missing - 1
+
+        # 上一次把 11 页缺页取回来了，所以这次只差 1 页：额度用在新增检索上。
+        created = submit_extension(client, task_id, "ext-partial", EXTENDED,
+                                   maxPoiRequests=missing)
+        view = extension_of(client, task_id, created["extensionId"])
+        assert view["status"] == "completed", view
+        assert view["networkRequests"] == 1
+        assert view["initialPlan"]["reusableInitialPageCount"] == total - 1
+        assert view["initialPlan"]["estimatedNewInitialCalls"] == 1
+        assert app.state.quota.ledger.spent(PLACE) == spent_before + missing
 
 
 def test_a_replay_keeps_its_original_revision_after_the_parent_publishes_another(tmp_path):
@@ -1199,15 +1209,16 @@ def test_an_omitted_budget_replay_survives_a_changed_default(tmp_path, monkeypat
         task_id, _view = run(client, body())
         first = submit_extension(client, task_id, "ext-default", EXTENDED)
         extension_of(client, task_id, first["extensionId"])
-        assert first["budget"]["limit"] == 60           # 省略 → 取下限 60
+        assert first["budget"]["limit"] == 240          # 省略 → 取部署默认值
 
-        monkeypatch.setattr("app.checkups.manager.DEFAULT_POI_REQUESTS", 120)
+        raised = DEFAULT_POI_REQUESTS * 2              # 一个比当前默认更大的新默认
+        monkeypatch.setattr("app.checkups.manager.DEFAULT_POI_REQUESTS", raised)
         replay = submit_extension(client, task_id, "ext-default", EXTENDED)
         assert replay["extensionId"] == first["extensionId"]
 
         # 同一个新默认下，新标识按新默认解析；缓存已满，所以照样受理。
         fresh = submit_extension(client, task_id, "ext-default-new", EXTENDED)
-        assert fresh["budget"]["limit"] == 120
+        assert fresh["budget"]["limit"] == raised
 
         # 显式给少了照样当场拒绝：修的是身份口径，不是把校验删了。默认值只保证
         # 首轮够用，它不会把一个显式的过小预算悄悄改大。
@@ -1277,6 +1288,12 @@ def test_a_row_written_before_the_identity_column_is_still_replayable(tmp_path):
         task_id, _view = run(client, body())
         store = app.state.checkups.store
         revision = store.revision(task_id)["revision"]
+        # 旧行冻的是"当时按默认值解析出来的那个数"，所以这里必须写当前默认真正解析出的
+        # 预算，而不是一个字面量：等价规则比的是这个数，不是默认值本身。默认值从 60 变成
+        # 240 之后，写死 60 会让这一行看起来"预算不同"，测的就不再是旧行的重放了。
+        frozen = app.state.checkups._extension_boundary(
+            task_id, FacilityExtensionRequest(client_request_id="probe",
+                                              categories=EXTENDED)).requested
         now = time.time()
         with store._connection() as connection:
             connection.execute(
@@ -1284,7 +1301,7 @@ def test_a_row_written_before_the_identity_column_is_still_replayable(tmp_path):
                 " fingerprint, base_revision, categories, budget, status, created_at, updated_at)"
                 " VALUES (?,?,?,?,?,?,?,'failed',?,?)",
                 ("legacy-row", task_id, "ext-legacy", "old-fingerprint", revision,
-                 json.dumps(list(reversed(EXTENDED)), ensure_ascii=False), 60, now, now))
+                 json.dumps(list(reversed(EXTENDED)), ensure_ascii=False), frozen, now, now))
 
         # 类别原序不同但集合相同、预算省略：仍然是同一次请求。
         replayed = submit_extension(client, task_id, "ext-legacy", EXTENDED)
@@ -1387,7 +1404,10 @@ def test_an_allowance_that_runs_out_after_the_precheck_still_bounds_every_dispat
 CORE_MAJORS = list(default_analysis_majors())
 #: 单任务请求上限的默认值（60）。首轮 56 页只是"至少"，密集数据下整轮要 112 页 ——
 #: 这个差距正是本节要测的东西，所以每次请求都显式写它，不靠默认值恰好也是 60。
-REQUEST_LIMIT = DEFAULT_POI_REQUESTS
+#: 单任务请求上限。这一节要的是"预算会在中途用完"的那种情形（首轮 56 页、整轮 112 页、
+#: 每次只给 60），所以显式钉住 60，而不是读部署默认值 —— 默认值现在是 240，够把整轮一次
+#: 跑完，"跨日推进"这一节就不再成立了。
+REQUEST_LIMIT = 60
 
 
 class FixedClock:

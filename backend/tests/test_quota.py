@@ -46,6 +46,15 @@ def make_pool(tmp_path, name, *, budget=1600, ledger=None, gate=None, switch_at=
 
 
 def settings_with(tmp_path, **overrides):
+    # The day ceiling is pinned rather than inherited from the deployment default:
+    # this file is about tier arithmetic, and a fixture whose number moves with a
+    # config edit would fail for a reason that is not this file's subject. What the
+    # shipped default itself is has its own test below.
+    overrides.setdefault("baidu_place_daily_budget", 1600)
+    # Both tiers are pinned, not just the current one: this file also asserts that
+    # crossing the switch instant changes nothing about what may be spent, and a
+    # fixture that pinned only one tier would invent the very cliff being denied.
+    overrides.setdefault("baidu_fallback_place_daily_budget", 1600)
     return Settings(_env_file=None, quota_ledger_path=tmp_path / "q.sqlite3", **overrides)
 
 
@@ -227,12 +236,18 @@ def test_the_service_cap_is_authoritative_for_its_pool(tmp_path):
 
 def test_the_configured_qps_cap_is_the_tier_ceiling(tmp_path):
     quota = Quota(settings_with(tmp_path), clock=before_switch)
-    assert (quota.direction.ceiling(), quota.place.ceiling()) == (16, 8)
-    assert (quota.direction.gate.qps, quota.place.gate.qps) == (16, 8)
-    # After the switch instant the conservative tier applies without a restart.
+    assert (quota.direction.ceiling(), quota.place.ceiling()) == (3, 10)
+    assert (quota.direction.gate.qps, quota.place.gate.qps) == (3, 10)
+    # The switch instant still selects a tier without a restart — that mechanism is
+    # unchanged — but the tier it selects no longer grants different ceilings. The
+    # downgrade was written for an entitlement expiry the console says has not
+    # happened, so "crossing the instant changes what may be sent" is no longer true,
+    # and asserting the old 16/8 → 2/2 cliff would be asserting a bug.
     downgraded = Quota(settings_with(tmp_path), clock=after_switch)
-    assert (downgraded.direction.ceiling(), downgraded.place.ceiling()) == (2, 2)
-    assert downgraded.tiers.active().place_daily_budget == 80
+    assert quota.tiers.active().label == "current"
+    assert downgraded.tiers.active().label == "fallback"
+    assert (downgraded.direction.ceiling(), downgraded.place.ceiling()) == (3, 10)
+    assert downgraded.tiers.active().place_daily_budget == quota.tiers.active().place_daily_budget
 
 
 # -- one scheduling point --------------------------------------------------
@@ -367,6 +382,34 @@ def test_a_pool_reservation_is_the_number_the_balance_reports(tmp_path):
 
 # -- configuration ---------------------------------------------------------
 
+def test_both_tiers_carry_the_same_ceiling_and_stay_inside_the_account():
+    """Both tiers now carry the account's verified numbers, and the same day ceiling.
+
+    Two corrections meet here. The "current" tier's 1600 was an operator-confirmed
+    error — never an entitlement anyone had checked — and the walking gate asked for
+    16 QPS against an account that grants 3, which is a 429 waiting for a busy day
+    rather than headroom. The switch instant stays (removing a configuration surface
+    is its own decision) but it no longer changes behaviour, so the deployment cannot
+    silently start or stop spending 20x more at a clock boundary.
+
+    A configured ceiling above the account's is not a budget: it can only fail
+    upstream. That is what this test locks, so a later edit has to argue with the
+    console rather than with this file.
+    """
+    from app.config import VERIFIED_ENTITLEMENT
+
+    settings = Settings(_env_file=None)
+    assert settings.baidu_place_daily_budget == 2000
+    assert settings.baidu_place_daily_budget == settings.baidu_fallback_place_daily_budget
+    assert settings.baidu_place_qps <= VERIFIED_ENTITLEMENT["placeQps"]
+    assert settings.baidu_fallback_place_qps <= VERIFIED_ENTITLEMENT["placeQps"]
+    assert settings.baidu_direction_qps <= VERIFIED_ENTITLEMENT["walkingQps"]
+    assert settings.baidu_fallback_direction_qps <= VERIFIED_ENTITLEMENT["walkingQps"]
+    # The application's own day budget is a share of what the account grants, not an
+    # independent number: the rest is left for the browser SDK and other callers.
+    assert settings.baidu_place_daily_budget < VERIFIED_ENTITLEMENT["placeDailyCalls"]
+
+
 def test_matrix_stays_disabled_for_this_release(tmp_path):
     quota = Quota(settings_with(tmp_path), clock=before_switch)
     assert quota.matrix_enabled is False
@@ -392,7 +435,7 @@ def test_the_balance_reports_an_application_budget_not_an_account_balance(tmp_pa
     quota.ledger.reserve(PLACE, 1600, cost=26)
     report = quota.balance()
     assert report["tier"] == "current" and report["matrixEnabled"] is False
-    assert report["services"][PLACE] == {"qps": 8, "maxInflight": 1, "dailyBudget": 1600,
+    assert report["services"][PLACE] == {"qps": 10, "maxInflight": 1, "dailyBudget": 1600,
                                         "spentToday": 26, "remainingToday": 1574}
     assert report["services"][DIRECTION]["dailyBudget"] is None
     assert report["claimsAccountBalance"] is False
