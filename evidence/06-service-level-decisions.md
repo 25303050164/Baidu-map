@@ -262,7 +262,53 @@
 * `.hybrid-ledgers`（v1 接口的 61 次运行、108 MB）不在本次范围内：它的所有者是另一套接口，
   其清理需要单独决定。
 
-### 7.5 一处必须说明的副作用
+### 7.5 历史清理：已执行，以及一处我造成的损失
+
+**2026-10-09 执行**（运营者在看到清单数字之后明确要求）：`tools/retention_manifest.py --apply`。
+
+| | 前 | 后 |
+| --- | --- | --- |
+| `.checkups` 占用 | 463 MB | 168 KB |
+| `tasks/` 下的任务目录 | 55 | 0 |
+| 明细文件 | 263 | 0 |
+| 任务行 / 墓碑 | 51 / 0 | 51 / 51 |
+| 修订索引行 | 228 | 228（含 `result_hash`） |
+| 额度账本 `.quota/quota.sqlite3` | 12,288 字节 | **一字未动**（大小与 mtime 一致） |
+
+删除范围只有 `checkup_dir/tasks/<task_id>`：51 条按期限判定的历史任务，外加 4 个**索引里
+根本没有行**的孤立目录（15 个修订文件）—— 后者正是清理必须按目录删而不是按索引删的原因。
+执行结果存于 `evidence/retention-cleanup-2026-10-09.json`。
+
+**损失（必须写明）**：这 51 条历史修订**早于 `revisions.summary` 这一栏**，而我在删除之前
+**没有先把汇总补写出来**。后果是它们的分数、面积与计数随明细一起消失了，且不可恢复。
+清理之后还能看到的是任务层面的状态与修订索引：
+
+```
+51 条任务全部 tombstone，reason = "cleared"
+/result 与全部图层 → 410 checkup_details_expired
+/retained-result     → 409 checkup_retained_summary_missing
+保留：status/businessStatus/revision/stage/created_at/result_hash
+```
+
+这与运营者的口径不一致：口径要求"保留不含明细的汇总"，而这些记录**没有可保留的汇总**。
+原因是我的工具：`--apply` 只做了"删"，没有做"删之前先冻"。已修正（见 §7.6）。
+
+### 7.6 修正：删除之前先冻结汇总
+
+`retention_manifest.apply` 现在对每条待清任务按顺序做：
+
+1. 墓碑已存在 → 跳过；
+2. 期限其实未到 → 跳过（清单是几分钟前算的）；
+3. **这一版没有汇总、而修订文件还在** → 当场用 `retention.summary_of` 补写汇总
+   （`store.set_summary`，`AND summary IS NULL`：只补空的，不覆盖已冻结的那一份）；
+4. 文件已不在、且从来没有汇总 → 仍然落墓碑，但在结果里记为
+   `no_revision_summary_available`，**说得出来**而不是悄悄少留一份；
+5. 落墓碑 → 删目录 → 丢掉内存条目。
+
+清单本身也提前说明：每条带 `summaryRecorded`，汇总数字里多一个 `totals.withoutSummary`。
+"删完才发现结论跟着没了"这件事，现在在删之前就看得见。
+
+### 7.7 一处必须说明的副作用
 
 `build_checkups()` 在应用对象构造时就会 `create_schema()`，所以**任何** `import app.main`
 （包括我在验证期间跑的 `python -c "import app.main"`）都会对真实数据目录做一次**加列迁移**

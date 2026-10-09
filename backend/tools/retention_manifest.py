@@ -47,8 +47,13 @@ def manifest(manager, *, now: float | None = None) -> dict:
     rows, to_clear, kept = [], [], []
     for record in store.terminal_tasks():
         view = manager.retention_of(record, now=now)
+        latest = store.revision_row(record.task_id)
         row = {
             "taskId": record.task_id,
+            # 到期之后还能看到什么，取决于**有没有冻结过汇总**。历史数据的修订早于这一栏，
+            # 所以清单必须在删之前把这件事说出来，而不是删完才发现结论跟着没了。
+            "summaryRecorded": (latest is not None
+                                and store.summary(record.task_id, latest["revision"]) is not None),
             "status": record.status,
             "sessionId": record.session_id,
             "createdAt": record.created_at,
@@ -77,6 +82,7 @@ def manifest(manager, *, now: float | None = None) -> dict:
         "orphanDirectories": orphans,
         "totals": {
             "tasks": len(rows),
+            "withoutSummary": sum(1 for row in rows if not row["summaryRecorded"]),
             "toClear": len(to_clear),
             "alreadyCleared": sum(1 for row in rows if row["alreadyCleared"]),
             "orphanDirectories": len(orphans),
@@ -91,6 +97,26 @@ def _directory_bytes(directory: Path) -> int:
     if not directory.is_dir():
         return 0
     return sum(item.stat().st_size for item in directory.rglob("*") if item.is_file())
+
+
+def _freeze_summary(store, task_id: str) -> str:
+    """删之前把汇总补上。返回 ``kept``／``frozen``／``absent``。
+
+    "到期就是一次纯删除"这句话有一个前提：汇总**已经**存在。对早于这一栏的修订它不成立，
+    而那时删掉的就同时是结论本身 —— 不可恢复，而且清单上只看得出"字节数少了很多"。
+    所以删除前在这里补一次：明细还在，就还能当场导出汇总。
+    """
+    stored = store.revision_row(task_id)
+    if stored is None:
+        return "absent"
+    if store.summary(task_id, stored["revision"]) is not None:
+        return "kept"
+    path = store.root / stored["payload"]
+    if not path.is_file():
+        return "absent"
+    store.set_summary(task_id, stored["revision"],
+                      retention_module.summary_of(json.loads(path.read_text("utf-8"))))
+    return "frozen"
 
 
 def apply(manager, plan: dict) -> dict:
@@ -109,12 +135,18 @@ def apply(manager, plan: dict) -> dict:
         if manager.retention_of(record).details_available:
             skipped.append({"taskId": row["taskId"], "reason": "no_longer_expired"})
             continue
+        # 删之前先确保汇总存在：否则这一步删掉的就不只是明细，而是结论本身。
+        summary = _freeze_summary(store, record.task_id)
         if not store.mark_details_cleared(record.task_id, now=time.time()):
             skipped.append({"taskId": row["taskId"], "reason": "lost_the_claim"})
             continue
         leftovers = retention_module.delete_details(store.root, record.task_id)
         manager.cache.drop_task(record.task_id)
-        (failed if leftovers else cleared).append({"taskId": row["taskId"]})
+        entry = {"taskId": row["taskId"], "summary": summary}
+        if summary == "absent":
+            # 明细已经不在、也从来没有汇总：这一条只剩任务层面的状态，删不掉什么，也补不回来。
+            entry["reason"] = "no_revision_summary_available"
+        (failed if leftovers else cleared).append(entry)
     for row in plan["orphanDirectories"]:
         leftovers = retention_module.delete_details(store.root, row["taskId"])
         (failed if leftovers else cleared).append(
@@ -162,18 +194,23 @@ def main(argv=None) -> int:
                         **({} if options.checkup_dir is None
                            else {"checkup_dir": options.checkup_dir}))
     # 清单工具**默认只读**：一份为了被审阅而跑的工具，不该顺手改动它正在回答的那份数据。
-    # ``--apply`` 时仍然用只读连接算清单，写墓碑交给 apply 自己那一次写入。
-    manager = _manager(settings, read_only=True)
+    # 只有 ``--apply`` 才换成可写连接 —— 否则 apply 会在只读连接上写墓碑，而这正是
+    # "只读"这个选项存在的意义：它必须真的只读，也必须只在被要求时才可写。
+    manager = _manager(settings, read_only=not options.apply)
     plan = manifest(manager)
-    print(json.dumps(plan, ensure_ascii=False, indent=2)
-          if options.json else _report_text(plan))
     if not options.apply:
+        print(json.dumps(plan, ensure_ascii=False, indent=2)
+              if options.json else _report_text(plan))
         # JSON 输出要能直接被机器读走，所以这条说明走 stderr，不混进那一份 JSON 里。
         print("（只读清单：加 --apply 才会删除上面逐条列出的受管目录。）",
               file=sys.stderr if options.json else sys.stdout)
         return 0
     result = apply(manager, plan)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    # 一份 JSON 就够机器读：清单与执行结果放在同一个文档里，两个顶层数组会让 stdout
+    # 变成两段 JSON —— 看起来能解析，实际只能解析出前一半。
+    print(json.dumps({"plan": plan, "result": result}, ensure_ascii=False, indent=2)
+          if options.json else _report_text(plan) + "\n\n"
+          + json.dumps(result, ensure_ascii=False, indent=2))
     return 1 if result["failed"] else 0
 
 

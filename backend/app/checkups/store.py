@@ -732,6 +732,18 @@ class CheckupStore:
                     " WHERE task_id=? AND revision=?", (task_id, revision)).fetchone()
         return None if row is None else dict(row)
 
+    def set_summary(self, task_id: str, revision: int, summary: dict) -> bool:
+        """给一条**还没有**汇总的修订补写汇总。返回是否写进去了。
+
+        ``AND summary IS NULL`` 是刻意的：已经冻结的汇总不接受覆盖 —— 它是那一版结论的
+        记录，而"补写"只能发生在明细还在、能当场导出的时候。
+        """
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "UPDATE revisions SET summary=? WHERE task_id=? AND revision=? AND summary IS NULL",
+                (retention.dump(summary), task_id, revision))
+            return cursor.rowcount == 1
+
     def summary(self, task_id: str, revision: int | None = None) -> dict | None:
         """某一版冻结下来的白名单汇总；没有就是没有（旧修订、或那一版还没有汇总）。"""
         self._get(task_id)

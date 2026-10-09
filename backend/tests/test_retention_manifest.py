@@ -137,3 +137,87 @@ def test_orphan_directories_are_listed_and_removed(tmp_path):
         result = retention_manifest.apply(manager, plan)
         assert {"taskId": "orphan-task", "reason": "orphan_directory"} in result["cleared"]
         assert not orphan.exists()
+
+
+def test_the_command_line_only_apply_touches_the_store(tmp_path, capsys):
+    """命令行这一条路：默认只读，``--apply`` 才写。两条都走一遍。
+
+    这是这个工具被使用时真正经过的那条路 —— 单测直接调 ``apply()`` 时用的是可写的
+    manager，所以"清单默认只读"这件事在命令行上从来没被验证过：`--apply` 曾在一个
+    只读连接上写墓碑。
+    """
+    app = make_app(tmp_path, SyntheticPlaces(at_origin()))
+    with TestClient(app) as client:
+        task_id, _view = run_one(client)
+        store = app.state.checkups.store
+        directory = store.root / "tasks" / task_id
+        with sqlite3.connect(store.path) as connection:
+            created = connection.execute(
+                "SELECT created_at FROM tasks WHERE task_id=?", (task_id,)).fetchone()[0]
+            connection.execute("INSERT OR REPLACE INTO meta (key, value) VALUES"
+                               " ('retention_baseline_at', ?)", (repr(created + 1),))
+        ledger = app.state.quota.ledger.path
+        ledger_before = ledger.read_bytes()
+        sqlite_before = (store.path.stat().st_size, store.path.stat().st_mtime)
+
+        # 默认：只打印清单，一个字节都不改。
+        assert retention_manifest.main(["--checkup-dir", str(store.root), "--json"]) == 0
+        assert directory.is_dir()
+        assert manager_store(store).get(task_id).details_cleared_at is None
+        assert (store.path.stat().st_size, store.path.stat().st_mtime) == sqlite_before
+        capsys.readouterr()
+
+        # --apply：真的删掉，墓碑落下，账本与别的东西不动。
+        assert retention_manifest.main(["--checkup-dir", str(store.root), "--apply",
+                                        "--json"]) == 0
+        assert not directory.exists()
+        assert manager_store(store).get(task_id).details_cleared_at is not None
+        assert ledger.read_bytes() == ledger_before
+
+
+def manager_store(store):
+    """同一份库的另一个只读句柄：断言"数据落下了没有"不该依赖被测对象自己的状态。"""
+    return CheckupStore(store.root, read_only=True)
+
+
+def test_the_summary_is_frozen_before_the_detail_is_deleted(tmp_path):
+    """早于汇总栏的历史修订：删之前必须先把汇总补上，否则删掉的是结论本身。
+
+    这一条是这次真实清理换来的：51 条历史修订都没有汇总栏，删完之后结论与分数再也拿不
+    回来 —— 而"保留不含明细的汇总"正是运营者口径里的一环。所以补写发生在**删除之前**，
+    而且只补空的、不覆盖已经冻结的那一份。
+    """
+    app = make_app(tmp_path, SyntheticPlaces(at_origin()))
+    with TestClient(app) as client:
+        task_id, _view = run_one(client)
+        store = app.state.checkups.store
+        revision_row = store.revision_row(task_id)
+        revision = revision_row["revision"]
+        # 把汇总清成"这一版早于汇总栏"的样子。
+        with sqlite3.connect(store.path) as connection:
+            connection.execute("UPDATE revisions SET summary=NULL WHERE task_id=? AND revision=?",
+                               (task_id, revision))
+            created = connection.execute(
+                "SELECT created_at FROM tasks WHERE task_id=?", (task_id,)).fetchone()[0]
+            connection.execute("INSERT OR REPLACE INTO meta (key, value) VALUES"
+                               " ('retention_baseline_at', ?)", (repr(created + 1),))
+
+        manager = manager_for(Settings(_env_file=None, checkup_dir=store.root,
+                                       hybrid_ledger_dir=tmp_path / "ledgers",
+                                       quota_ledger_path=tmp_path / "quota.sqlite3"))
+        plan = retention_manifest.manifest(manager)
+        # 清单先说出来：哪几条没有汇总。删完再发现就晚了。
+        assert plan["totals"]["withoutSummary"] == 1
+        assert plan["toClear"][0]["summaryRecorded"] is False
+
+        result = retention_manifest.apply(manager, plan)
+        assert result["cleared"] == [{"taskId": task_id, "summary": "frozen"}]
+        # 明细删了，汇总留下了 —— 而且是**这一版**的。
+        frozen = manager_store(store).summary(task_id, revision)
+        assert frozen is not None
+        assert frozen["facilitiesStatus"] == "complete"
+        assert "coordinates" not in json.dumps(frozen, ensure_ascii=False)
+        assert not (store.root / "tasks" / task_id).exists()
+        # 再跑一次是空操作，也不会去覆盖已经冻结的汇总。
+        assert retention_manifest.apply(manager, retention_manifest.manifest(manager))["cleared"] == []
+        assert manager_store(store).summary(task_id, revision) == frozen
