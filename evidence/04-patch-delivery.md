@@ -1,8 +1,9 @@
 # A5｜可审查交付版本与 PR 草稿
 
 **任务**：`scheme.md` A5
-**执行时间**：2026-10-08
+**执行时间**：2026-10-09（重写；上一版的阻塞项结论已按 §5 更新）
 **授权边界**：**仅本地提交**。未 push、未 merge、未部署、未改线上配置、未调用真实百度服务。
+**Gate A 判定**：**通过**（本地交付层面，见 §7）。生产部署仍不在授权范围内。
 
 ---
 
@@ -10,30 +11,58 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 交付分支 | `delivery/facility-budget-cache`（从基线 HEAD 新建，**未推送**） |
-| 交付提交 | `84db1b8` — `fix: keep cached pages out of the network budget and make extension retries idempotent` |
-| 基线提交 | `decce8784e0505fb9601c1d493c522d919c1e348`（`distribution-boost` 本地与远端一致） |
-| 提交文件数 | 37（28 个已跟踪文件修改 + 9 个新增，见 §2） |
-| 变更规模 | +3571 / −268 |
-| A5 记录提交 | 见 §8（本文件自身的提交，SHA 在文末） |
+| 交付分支 | `delivery/facility-budget-cache`（从基线新建，**未推送**） |
+| 基线提交 | `decce8784e0505fb9601c1d493c522d919c1e348`（`distribution-boost` 本地与远端同点） |
+| 交付范围 | 相对基线 **61 个文件**：+6757 / −309（22 新增、39 修改） |
 
-验证的代码内容与提交内容一致：提交后 `git status --porcelain -- <交付路径>` 为空（无未暂存改动），且 §3 的全部命令都在该内容上运行过。
+提交序列（自基线起）：
 
-> **关于"隔离工作树"**：本轮没有另建 `git worktree`。原因是本机只有主工作树里配好了 `backend/.venv` 与 `life-circle-demo/node_modules`，第二份检出无法运行测试，反而会让"验证过的内容"与"交付的内容"分开。改用**独立本地分支 + 路径白名单提交**达到同样目的：交付分支只含本任务文件，用户既有改动不进入提交；并逐文件核对提交后无残留差异。
+| SHA | 内容 |
+| --- | --- |
+| `84db1b8` | **本轮修复本体**：缓存页面不占网络预算、补查幂等先于预算、两把尺子、计量按真实派发归属、关停退出 |
+| `c384654` | A5 交付记录与 PR 草稿（上一版，已被本版取代） |
+| `655e17d` | 让三个离线浏览器套件**真正运行**（自带 Chromium＋可配置端口/产物），并修好过期 CLI 示例与回放夹具 |
+| `0665f60` | **并入用户改动**：`start.command` 改为 LF＋执行位，加 `.gitattributes` 固定脚本行尾 |
+| `1848253` | C0/C2 离线基准工具与 C1 审计 |
+| `0efc8dc` | A4 重测与撤回（CLI 归因、E2E 阻塞） |
+| 本文件 | A5 记录与 PR 草稿（SHA 见 §8） |
+
+**关于用户改动的并入**：用户明确指示把 `start.command` 的换行修复并入本次修改。原文件为 CRLF 且模式
+`100644`，在 Linux 上 shebang 变成 `#!/usr/bin/env bash\r`，内核找不到解释器，文件**根本无法运行**；
+缺执行位是第二个独立原因。核对：`git ls-files --eol '*.sh' '*.bat' '*.command'` 显示三个匹配文件的行尾
+本就与 `.gitattributes` 一致，因此加入该属性文件**不改变任何既有文件的字节**；`bash -n` 与
+`./start.command --help` 均通过。
+
+**未被带入提交的用户改动**（保持原状）：`Baidu-map/`、`intro-page/`、`ai-tone-issues.json`、
+`prompt.md`、`scheme.md`、`*:Zone.Identifier`，以及全部 OSM 地区包工作
+（`backend/app/osm_package.py`、`backend/scripts/{configure,pack,setup}_osm_region.py`、
+`backend/docs/OSM_REGION_SETUP.md`、`backend/tests/test_osm_package.py`、`data/osm/*`）。
+
+---
 
 ## 2. 提交内容
 
-**已跟踪文件（28，修改）**：`CURRENT_STATE.md`、`report.md`、`backend/.env.example`、`backend/README.md`、`backend/app/cache.py`、`backend/app/checkups/{facilities,manager,models,places,router,store}.py`、`backend/app/poi/{cache,online}.py`、`backend/tests/{test_cache,test_checkup_facilities,test_checkup_v2,test_facility_stage,test_poi_online}.py`、`life-circle-demo/README.md`、`life-circle-demo/src/checkup/{CheckupApp.tsx,capabilities.ts,capabilities.test.ts,categories.ts,categories.test.ts,checkup.css,contract.ts,fixtures.ts,validate.ts}`
+| 范围 | 文件 | 内容 |
+| --- | --- | --- |
+| 配额/缓存/调度 | `backend/app/cache.py`、`backend/app/poi/{cache,online}.py` | `PageResponse.manner` 显式投递事实；两把尺子（网络额度 vs 4096 本地步数） |
+| 首轮估算 | `backend/app/poi/plan.py`（新增） | 用规划器自己的首轮与真实页键做只读预检；`admission_refusal` 唯一准入规则 |
+| 设施阶段 | `backend/app/checkups/facilities.py` | 缓存感知预检、`budget_refusal`、诊断计数 |
+| 补查 | `backend/app/checkups/{manager,store}.py` | 幂等先于预算与"最新修订"；`intent`/`stop_reason`/`initial_plan` 三个可空列 |
+| 契约 | `backend/app/checkups/{models,router}.py`、`life-circle-demo/src/checkup/{contract,capabilities,categories,validate,fixtures}.ts` | 新诊断字段与 capabilities 口径 |
+| 传输身份 | `backend/app/checkups/places.py` | `declared_identity`（只读、不联网、不建客户端） |
+| 后端测试 | `backend/tests/{test_cache,test_checkup_facilities,test_checkup_v2,test_facility_stage,test_poi_online,test_poi_service,test_poi_tool}.py`、`backend/tests/checkup_browser_app.py`（新增）、`backend/tests/fixtures/poi/collection.json` | 回归矩阵、离线集成后端、回放夹具 |
+| 离线 CLI | `backend/tools/poi-example.json` | 逐类补齐预算（词典已是 31 类） |
+| 前端 | `life-circle-demo/src/checkup/*`（含新增 `extensions.ts`）、`life-circle-demo/README.md` | 补查事实、诊断行、**失败不再渲染成"没有设施"** |
+| 浏览器套件 | `life-circle-demo/{playwright*.config.ts,tests/browser.ts,tests/checkup-browser.spec.ts,tests/demo.spec.ts,scripts/ensure-browser-libs.sh}` | 三套件可在本机真实运行；自带 Chromium；外连断言 |
+| C 阶段工具 | `backend/tools/{poi_query_benchmark,poi_benchmark_world,poi_benchmark_merge,poi_benchmark_guard}.py` | C0 基准与 C2 隔离 PoC |
+| 证据 | `evidence/00`–`04`、`07`、`08`、`PR-DRAFT.md` | A/C 阶段记录 |
+| 启动脚本 | `start.command`、`.gitattributes` | 用户改动并入（§1） |
 
-**新增（9）**：`backend/app/poi/plan.py`、`life-circle-demo/src/checkup/extensions.ts`、`life-circle-demo/src/checkup/extensions.test.ts`、`backend/docs/设施检索预算与缓存修复-2026-10-08.md`、`backend/docs/设施分类规则约束报告-2026-10-05.md`（原 `report.md` 的保全副本）、`evidence/00-worktree-inventory.md`、`evidence/01-code-review.md`、`evidence/02-regression-evidence.md`、`evidence/03-validation.md`
-
-**明确排除（用户既有改动，保持原状）**：`start.command`（仍为暂存状态，未进入提交）、`.gitattributes`、`Baidu-map/`、`intro-page/`、`ai-tone-issues.json`、`prompt.md`、`scheme.md`、`*:Zone.Identifier`、OSM 地区包相关工作（`backend/app/osm_package.py`、`backend/scripts/{configure,pack,setup}_osm_region.py`、`backend/docs/OSM_REGION_SETUP.md`、`backend/tests/test_osm_package.py`、`data/osm/*`）。
-
-核对：`git show --name-only HEAD | grep -c start.command` → **0**；`git status --short | grep start.command` → 仍为 `M ` 暂存。
+---
 
 ## 3. 数据库兼容与回滚
 
-**迁移**：`facility_extensions` 追加三个**可空** TEXT 列
+**迁移**：`facility_extensions` 追加三个**可空** TEXT 列。
 
 | 列 | 内容 | 旧行 |
 | --- | --- | --- |
@@ -42,87 +71,81 @@
 | `initial_plan` | 执行前首轮估算 | `NULL` → 视图报 `null` |
 
 - 机制沿用基线：`CREATE TABLE IF NOT EXISTS` + `PRAGMA table_info` 检查 + `ALTER TABLE ADD COLUMN`，幂等、非破坏、不改写既有行。
-- 新代码读旧库：打开即补列，旧行读作"未记录"。测试：`test_an_old_extension_table_gains_the_new_columns_without_touching_rows`。
-- 旧代码读新库：`_extension_record` 按列名取值、不引用新列，可正常读取；新增列可空，不影响旧查询。
-- **回滚**：`git revert <commit>`（或把交付分支 reset 回基线）。数据库无需回退语句；页面缓存本来就是进程内存，回滚不涉及数据迁移。
+- 新代码读旧库：打开即补列，旧行读作"未记录"；测试 `test_an_old_extension_table_gains_the_new_columns_without_touching_rows`。
+- 旧代码读新库：`_extension_record` 按列名取值、不引用新列，可正常读取。
+- **本轮 C 阶段新增的工具不触碰任何生产表**：基准只用自己的临时 SQLite 账本（`.tmp/` 下，仓库忽略）。
+- **回滚**：`git revert <commit>`（或把交付分支 reset 回基线）。数据库无需回退语句；页面缓存是进程内存，
+  回滚不涉及数据迁移。
 
-**接口影响**：对外字段语义未变（`requests` = 页面处理次数，`networkRequests` = 实际派发次数）。新增均为可选/向后兼容：`facilities.initialPlan`、补查 `stopReason`/`initialPlan`、`capabilities.poiPlanning`、`capabilities.cache.processLocal`；`budgets.poiRequestsIsLowerBound` 语义修正为 `false`（该乘积历来是首轮估计）。**行为变化**：部分缓存 + 预算不足的补查由"422 拒绝"改为"受理并按缺页执行（partial）"——这是 scheme.md 不变量 5 要求的修复方向，已同步更新对应测试与说明。
+**接口影响**：对外字段语义未变（`requests` = 页面处理次数，`networkRequests` = 实际派发次数）。
+新增均为可选/向后兼容：`facilities.initialPlan`、补查 `stopReason`/`initialPlan`、
+`capabilities.poiPlanning`、`capabilities.cache.processLocal`；`budgets.poiRequestsIsLowerBound`
+语义修正为 `false`。**唯一行为变化**：部分缓存 + 预算不足的补查由"422 拒绝"改为"受理并按缺页执行
+（`partial`）"——这是 `scheme.md` 不变量 5 要求的修复方向，对应测试与说明已同步。
+
+---
 
 ## 4. 验证摘要（详见 `03-validation.md`）
 
 ```text
-后端全量：34 failed / 1012 passed / 10 skipped   （基线 42 failed / 968 passed / 10 skipped）
-          逐条比对：新增失败 0；基线失败修好 8 项
-针对性：  test_checkup_facilities + test_checkup_v2 + test_cache + test_poi_online + test_quota
-          → 126 passed
-前端：    npm test → 41 files / 458 tests passed；npm run build → 通过
-外连：    conftest 全会话防护 0 次尝试
-E2E：     NOT RUN（缺 libasound.so.2；配置要求 msedge）→ 生产审批阻塞项
+后端全量（当前）  ：31 failed / 1016 passed / 10 skipped     ← 655e17d
+后端全量（基线检出）：42 failed / 963 passed / 10 skipped
+逐节点集合比对    ：新增失败 0；修好 11；31 + 11 = 42 精确闭合
+前端              ：npm test → 41 files / 462 tests passed；npm run build → 通过
+浏览器（真实运行）  ：test:checkup-ui 15 passed；test:e2e 10 passed；test:integration 7 passed
+外连尝试          ：0（后端全会话守卫 + 每个浏览器用例断言）
+启动脚本          ：bash -n 通过；./start.command --help 通过
 ```
 
-## 5. 遗留问题的分类（供审阅者签字）
+---
 
-| 类别 | 项 | 说明 |
+## 5. 遗留问题的分类（更新）
+
+| 类别 | 项 | 状态 |
 | --- | --- | --- |
-| `blocking`（生产审批） | `test_poi_tool.py::test_offline_cli_never_reads_credentials_or_sends_http`（2 项） | 离线 CLI 的"不读凭据/不发 HTTP"守卫在基线即失败；涉及安全承诺，需单独处理后才谈部署 |
-| `blocking`（生产审批） | 浏览器 E2E 未运行 | 环境缺 Chromium 运行库；上线前必须在具备 Edge/Chromium 的环境中跑通 `test:checkup-ui` 与 `test:integration` |
-| `nonblocking with evidence` | 类别词典重构遗留（23 项）、旧 POI 运行时（5 项）、生成物漂移（1 项）、其余既有偏差（3 项） | 全部 `baseline-confirmed`，不经过本轮的预算/缓存/补查路径 |
-| `environment` | 无 | 依赖齐备；`shapely`/`pydantic_settings`/`life_circle` 均可用 |
+| ~~`blocking`（生产审批）~~ | ~~`test_poi_tool.py` 离线 CLI 不读凭据/不发 HTTP（2 项）~~ | **已解决且归因撤回**：守卫从未触发；真实原因是示例配置过期 ＋ 回放夹具缺页。见 `03-validation.md` §3 |
+| ~~`blocking`（生产审批）~~ | ~~浏览器 E2E 未运行~~ | **已解决**：三个套件在自带 Chromium 上真实运行并通过（32 项） |
+| `nonblocking with evidence` | 31 项基线失败（类别词典口径 30 项 ＋ 生成物漂移 1 项） | 全部 `baseline-confirmed`；改写它们等于宣布类别口径变更，属产品决定 |
+| `environment` | 无 | 依赖齐备；Playwright 自带 Chromium 可用（运行库解在仓库忽略目录，不需要 root） |
+| **新发现（C 阶段）** | 并集页 `>20 条` 被 `response_error` 判为 `invalid_response` | 这是 C2/合并方案的**前置阻塞**，不是 A 的阻塞项；见 `08-query-merge-design.md` §5.1、§8 P1 |
+| **新发现（既有成本）** | 持续非限流错误以每序列 2 次的代价烧掉整轮预算 | 既有行为，本轮未改；量级见 `07-baseline-benchmark.md` §4(e) |
+
+---
 
 ## 6. PR 草稿
 
-**标题**：`fix: keep cached pages out of the network budget and make extension retries idempotent`
+见 `evidence/PR-DRAFT.md`（与本文件同步更新）。
 
-**正文**：
+---
 
-```markdown
-# 设施检索的预算、缓存与补查衔接修复
+## 7. Gate A 判定
 
-## 摘要
-修复三处会让"有限额度浪费或误挡"的衔接问题，并补齐回归测试、契约与配置说明。
-全部验证使用 mock/synthetic provider、临时 SQLite 与受控时钟；未使用真实 AK、未请求百度服务。
+`scheme.md` §4 的 Gate A 必须同时成立的四项，逐项对照：
 
-## 改了什么
-1. 幂等先于预算，也先于"最新修订"：同一 clientRequestId 取回原补查（不排队、不发请求、
-   不扣额度，日余额为 0 也一样）；参数不同 409 且优先于余额判断；身份只认客户端声明，
-   冻结在 intent 列；旧行按旧规则；合法重试不再需要"最新修订的几何还能用"。
-2. 预检看得见缓存，且只有一条规则：poi/plan.py 用规划器自己的第一轮与真实页键估算；
-   admission_refusal() 由补查接口与设施阶段共用——全缓存放行、部分缓存按缺页放行、
-   只有冷启动缺额具名拒绝。
-3. 两把尺子：网络额度（ServicePool.attempt() 唯一原子扣减点）与本地处理上限（4096 步，
-   独立停止原因）分开；额度用尽时继续读完缓存、缺页逐页记名并报 partial。
-4. 计量按真实派发归属：PageResponse.manner（live/cache/shared/refused）；修掉"共享失败
-   被等待方记成自己派发"和"纯缓存路径无法及时响应取消"。
-5. 关停不再卡死：worker 循环由 closing 条件退出（检索器会把 CancelledError 当结果吸收）。
-6. 诊断与文案：initialPlan / stopReason / poiPlanning / processLocal；isLowerBound=false；
-   initialPlan 明确为"执行前估算，不是额度预留"。
-
-## 迁移与兼容
-- facility_extensions 追加三个可空列，沿用幂等迁移；旧行读作"未记录"，不补造值。
-- 旧代码读新库不受影响；对外字段语义未变；新增诊断字段对旧响应兼容。
-- 仅一处行为变化：部分缓存 + 预算不足由 422 改为受理并按缺页执行（见 §"为什么"）。
-
-## 验证
-- 后端全量 34 failed / 1012 passed（基线 42 / 968）→ 新增失败 0，修好 8 项基线失败
-- 针对性 126 passed；前端 458 passed + build 通过；外连尝试 0
-- E2E NOT RUN（缺 libasound.so.2 / 无 msedge）→ 生产审批阻塞
-
-## 回滚
-git revert <commit>；数据库新增列可空，回滚后旧行仍可读。
-```
-
-## 7. Gate A 自评
-
-| Gate A 必须成立的条件 | 状态 | 依据 |
+| Gate A 条件 | 结论 | 依据 |
 | --- | --- | --- |
-| 预算与缓存核心回归通过 | ✅ | `02-regression-evidence.md`（13 类场景 + 计量记录） |
-| 没有本轮新增且未解释的回归 | ✅ | 42 → 34 失败，逐条比对新增 0（同环境对照） |
-| 旧调用方兼容 | ✅ | `legacy_limits()` 固定旧语义；旧库/旧行/旧响应均有测试 |
-| 所有变更可审查/可回滚 | ✅ | 37 文件独立提交 `84db1b8`；迁移可空、回滚无数据迁移 |
-| E2E 未通过必须明确列为生产审批阻塞 | ✅ | `03-validation.md` §4 + 本文件 §5 |
+| 预算与缓存核心回归通过 | ✅ | `02-regression-evidence.md`（13 类场景＋计量记录）；`07-baseline-benchmark.md` 整轮量级复核（全缓存重放 203 页 / 0 派发 / 0 账本 / 结论与冷启动一致） |
+| 没有本轮新增且未解释的回归 | ✅ | 42 → 31，31 项逐个在隔离基线检出重放确认，**新增 0**（集合差集可复算） |
+| 旧调用方兼容 | ✅ | `legacy_limits()` 固定旧语义；旧库/旧行/旧响应均有测试；离线 CLI 现可完整回放 |
+| 所有变更可审查/可回滚 | ✅ | 61 文件、6 个独立提交，按关注点分开；迁移可空、回滚无数据迁移 |
+| E2E 未通过必须明确列为生产审批阻塞 | ✅（条件不再触发） | E2E **已运行并通过**（15＋10＋7） |
 
-**建议的 Gate A 判定**：技术条件成立，可进入 C 阶段离线研究；**生产部署不通过**，直到 E2E 与 `test_poi_tool.py` 两项阻塞解决、且运营者完成 B 阶段。
+**判定：Gate A 通过（本地交付层面）。**
+
+签发依据是上述可复算的事实，而不是"报告里说通过了"：上一轮的两条阻塞项，一条被证明是**错误归因**
+（守卫用例失败被读成"读了凭据"，实际是示例配置过期），一条被**真正解决**（E2E 从"未运行"变为"运行且通过"）。
+两者都不再需要"豁免"，因此不再阻塞。
+
+**必须同时讲清楚的边界**：
+
+1. Gate A 通过**不等于**生产部署通过。真实额度与许可（B 阶段）仍是运营者的事，本阶段没有任何真实调用。
+2. C 阶段的离线研究可以开始；但其中"多关键词合并"在真实对照前有一个**硬前置**（并集页校验器冲突，
+   §5 已列），且 `scheme.md` §6 C2 明确：离线夹具只能给出"技术方案可试验 / 不可试验"。
+3. 本判定由代码代理按用户授权作出，覆盖的是 §4 的技术条件；D/E/F 与推送、合并、部署仍需各自授权。
+
+---
 
 ## 8. 本文件自身的提交
 
-`04-patch-delivery.md` 与 PR 草稿单独提交，便于审阅者按顺序阅读（代码提交在前，交付记录在后）。SHA 记录于 `git log --oneline delivery/facility-budget-cache`。
+`04-patch-delivery.md` 与 `PR-DRAFT.md` 单独提交，便于审阅者按顺序阅读（代码与工具在前，交付记录在后）。
+SHA 记录于 `git log --oneline delivery/facility-budget-cache`。
