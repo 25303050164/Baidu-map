@@ -16,12 +16,12 @@
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Alert, Button, Checkbox, Descriptions, Drawer, InputNumber, Select } from 'antd';
+import { Alert, Button, Checkbox, Descriptions, Drawer, InputNumber, Select, Space } from 'antd';
 import type { Center } from '../types';
 import { LocationControls } from '../analysis/LocationControls';
 import { createCheckupService, CheckupError } from './client';
-import { budgetFor, capabilityView, continuationLabel, type CapabilityView } from './capabilities';
-import { isCheckupBusy, STAGE_LABELS } from './types';
+import { budgetFor, capabilityView, hybridTimeEstimate, continuationLabel, type CapabilityView } from './capabilities';
+import { isCheckupBusy, isTerminal, STAGE_LABELS } from './types';
 import type { CheckupState } from './types';
 import { checkupSession, useCheckupState } from './sessions';
 import { LAYER_IDS, type LayerId, type Stage } from './validate';
@@ -32,6 +32,13 @@ import { Fold } from './Fold';
 import { CATEGORY_ORDER, categoryLabel, coverageItems, percent, reportDirectory, reasonLabel,
   verificationLayerLabel, overallUnavailableText } from './report';
 import { nearestFacilities } from './nearest';
+import { missingCoreMajors, estimatedFirstRoundPages, splitScope } from './categories';
+import { extensionLines } from './extensions';
+import { isRetryTerminal, retryActionLabel, retryLines } from './retry';
+import { expiryLine, expiryNotice, retainedSummaryLines } from './retained';
+import type { MajorCategory } from './contract';
+import { nearestEmptyNote } from './nearest';
+import { queryCoverageLine, queryCoverageRetryLine } from './queryCoverage';
 import { WeatherCard } from './WeatherCard';
 import { SERVICE_COMPOSITE } from '../map/layers/serviceField';
 import { outdatedText, recomputedText, versionView, waterView } from './water';
@@ -100,13 +107,15 @@ const PHASE_TONE: Partial<Record<CheckupState['phase'], string>> = {
 };
 
 /** 一条设施路线的读法：判定与距离同进同出，没有距离就不说"在不在标准内"。 */
-function RouteDetail({ route, error }: { route: CheckupState['route']; error?: string }) {
+function RouteDetail({ route, error, facilityName }: { route: CheckupState['route']; error?: string;
+  facilityName?: string | null }) {
   if (error) return <Alert type="warning" title={error} showIcon />;
   if (!route) return null;
   return <>
     <Descriptions className="wb-facts" size="small" column={1} items={[
-      { key: 'facility', label: '设施', children: route.facilityId },
-      { key: 'category', label: '类别', children: `${route.category}（${route.majorCategory}）` },
+      { key: 'facility', label: '设施', children: facilityName ?? route.facilityId },
+      { key: 'category', label: '类别', children: `${categoryLabel(route.category)}（${route.majorCategory
+        ? categoryLabel(route.majorCategory) : '未分类'}）` },
       { key: 'status', label: '检索状态', children: ROUTE_VERDICT[route.poiStatus] ?? route.poiStatus },
       { key: 'straight', label: '直线距离', children: route.straightLineM === null ? '无法确定' : `${route.straightLineM.toFixed(0)} 米` },
       // 判定跟着距离一起给；只有判定没有距离的响应在校验层就被拒了，这里不必兜底。
@@ -161,6 +170,17 @@ const isTabKey = (value: string | undefined): value is TabKey =>
   value !== undefined && (TAB_KEYS as readonly string[]).includes(value);
 let lastTab: TabKey = 'location';
 
+/** 两套类别集合是否是同一组：顺序不同不算变化，省掉一次多余的请求体差异。 */
+function sameScope(left: readonly MajorCategory[], right: readonly MajorCategory[]): boolean {
+  return left.length === right.length && left.every(key => right.includes(key));
+}
+
+const EXTENSION_STATUS_LABELS: Record<string, string> = {
+  queued: '排队中', running: '检索中', completed: '已完成', partial: '部分完成',
+  failed: '未完成', cancelled: '已取消',
+};
+const EXTENSION_DONE = new Set(['completed', 'partial', 'failed', 'cancelled']);
+
 type PanelId = 'side' | 'results';
 type PanelLayout = { x: number; y: number; width: number; height: number };
 type WorkspaceSize = { width: number; height: number };
@@ -207,14 +227,6 @@ function initialPanelLayouts(): Record<PanelId, PanelLayout> {
     side: { x: 16, y: 16, width: 344, height: sideHeight },
     results: { x: Math.max(16, window.innerWidth - 376), y: 16, width: 360, height: resultsHeight },
   };
-}
-
-/** 400 次预算的历史完整任务耗时约 191–812 秒；缩放成范围提示，不当作完成承诺。 */
-function estimateTime(budget: number): string {
-  const scale = budget / 400;
-  const minimum = Math.max(1, Math.round((191.2 * scale) / 60));
-  const maximum = Math.max(minimum, Math.ceil((812.3 * scale) / 60));
-  return `${minimum}–${maximum} 分钟`;
 }
 
 const PHASE_LABELS: Partial<Record<CheckupState['phase'], string>> = {
@@ -294,19 +306,27 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
 
   useEffect(() => {
     const abort = new AbortController();
-    service.capabilities(abort.signal).then(value => {
+    let retryTimer: number | undefined;
+    const loadCapabilities = () => service.capabilities(abort.signal).then(value => {
       const next = capabilityView(value);
       setView(next);
       // 档位是引擎自己的：存下来的档位不在这个引擎的档位表里，就换成它自己的默认档。
       const budgets = next.engines.find(item => item.engineId === engine)?.budgets ?? [];
       setBudget(current => current !== null && budgets.includes(current) ? current : budgetFor(next, engine));
+      if (engine === 'osm_hybrid' && (next.graphState === 'unloaded' || next.graphState === 'loading')) {
+        retryTimer = window.setTimeout(loadCapabilities, 1000);
+      }
     }).catch((error: unknown) => {
       // 取消不是故障：组件已经卸载或重新挂载，这一轮的结果不该再上屏。
       if (abort.signal.aborted) return;
       setCapabilityError(error instanceof CheckupError ? error.message
         : '未能读取体检服务能力表，请检查服务地址后刷新页面');
     });
-    return () => abort.abort();
+    void loadCapabilities();
+    return () => {
+      abort.abort();
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
   }, [service, engine]);
 
   const task = state.task;
@@ -318,6 +338,43 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     ...directory.map(item => ({ value: item.id, label: item.label }))] : DENSITY_CATEGORIES;
   const revision = snapshot?.revision ?? task?.revision;
   const busy = isCheckupBusy(state);
+
+  /**
+   * 设施类别选择器：可选的大类来自后端能力表，界面不自己维护一份分类表。
+   *
+   * `scope` 是用户的勾选（只活在这一次会话里），`catalog.coreMajors` 是默认。核心口径
+   * 进主请求；勾上的扩展大类不进主请求，而是等结果出来之后走按需补查 —— 把它们一起发
+   * 过去会让"31 个小类 × 4 块 = 124 次"撞上默认 60 次的预算，那是一个还没发请求就会被
+   * 拒的任务。
+   */
+  const catalog = view?.facilityCatalog ?? null;
+  const [scope, setScope] = useState<MajorCategory[] | null>(null);
+  const picked = useMemo(() => scope ?? catalog?.coreMajors ?? [], [scope, catalog]);
+  const scopeParts = useMemo(
+    () => (catalog ? splitScope(catalog, picked) : { core: [], extended: [] }),
+    [catalog, picked]);
+  const scopeMinors = useMemo(() => (catalog ? scopeParts.core.reduce(
+    (total, key) => total + (catalog.majors.find(major => major.key === key)?.minorCategories ?? 0),
+    0) : 0), [catalog, scopeParts.core]);
+  const scopeFirstRoundPages = catalog ? estimatedFirstRoundPages(catalog, scopeParts.core) : null;
+  const scopeMissingCore = catalog ? missingCoreMajors(catalog, scopeParts.core) : [];
+
+  function toggleScope(key: MajorCategory, on: boolean) {
+    if (catalog === null) return;
+    setScope(on ? [...new Set([...picked, key])]
+      : picked.filter(item => item !== key));
+  }
+
+  /** 刷新后把已有的补查读回来：结果是服务端的，不靠本地记。 */
+  useEffect(() => {
+    if (task !== undefined && isTerminal(task)) void controller.loadExtensions();
+    // 只跟任务标识与状态走：补查自己的状态变化不该再触发一次列表读取。
+  }, [controller, task?.taskId, task?.status]);
+
+  /** 重试同理：本地不记"跑到哪了"，刷新后从服务端读回来，还在跑的那一轮直接接上。 */
+  useEffect(() => {
+    if (task !== undefined && isTerminal(task)) void controller.loadRetries();
+  }, [controller, task?.taskId, task?.status]);
 
   /**
    * 图层：按当前修订按需取，取到就缓存（控制器按"图层:修订"记），**一次只取一层**。
@@ -372,6 +429,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     && lng >= -180 && lng <= 180 && lat > -85 && lat < 85;
   const engines = view?.engines ?? [];
   const selectedEngine = engines.find(item => item.engineId === engine) ?? null;
+  const hybridEstimate = engine === 'osm_hybrid'
+    ? hybridTimeEstimate(budget, view?.graphState ?? null) : null;
   const live = controller.hasLiveTask;
   /** 这一轮任务提交时的中心：结果、进行中的任务都按它画，不按选点草稿画。 */
   const taskCenter = snapshot?.center ?? state.input?.center;
@@ -397,7 +456,12 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     if (!canStart || !draft) return;
     setCenter(draft); setSelected(null);
     setLayerErrors({}); setFailed({});
-    void controller.start({ center: draft, engine, ...(budget === null ? {} : { budget }) });
+    // 勾选与默认口径一致时不带 `facilities`：请求体保持不变，幂等键也就不会因为一次
+    // 多余的"我选了同样的三类"而换一个指纹。勾选变了才显式声明作用域。
+    const scoped = catalog !== null && scopeParts.core.length > 0
+      && !sameScope(scopeParts.core, catalog.coreMajors);
+    void controller.start({ center: draft, engine, ...(budget === null ? {} : { budget }),
+      ...(scoped ? { categories: scopeParts.core } : {}) });
   }
   function clear() {
     if (controller.clear()) { setSelected(null); setLayerErrors({}); setFailed({}); }
@@ -405,7 +469,11 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   const sawLive = useRef(false);
   useEffect(() => {
     if (LIVE_PHASES.has(state.phase)) sawLive.current = true;
-    if (state.phase === 'completed' && sawLive.current) { sawLive.current = false; setReportOpen(true); }
+    // 明细到期时不要自动打开报告抽屉：那里已经不给报告了，弹出来只会让人以为出了问题。
+    if (state.phase === 'completed' && sawLive.current) {
+      sawLive.current = false;
+      if (state.retained === undefined) setReportOpen(true);
+    }
   }, [state.phase]);
 
   /** 水系标注与版本标识都只认当前这一版修订：换版就换，不留上一版的标注。 */
@@ -418,10 +486,22 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
   const now = Math.max(clock, state.contact?.at ?? 0, state.reconnect?.since ?? 0);
   const liveNow = liveView(state, now);
 
+  // §5 B2 决策 2：到期之后，明细一个字段都不再显示，只留结论与汇总。
+  const retained = state.retained;
+  const expiry = expiryNotice(retained?.retention);
+  const expiresSoon = expiryLine(task?.retention);
+  const retainedFacts = retained ? retainedSummaryLines(retained.summary) : [];
+
   const overall = snapshot?.report?.overall ?? snapshot?.scores?.overall ?? null;
   const items = useMemo(() => snapshot ? coverageItems(snapshot) : [], [snapshot]);
   const nearestGroups = useMemo(() => nearestFacilities(drawables.facilities, taskCenter ?? null,
     undefined, directory), [drawables.facilities, taskCenter, snapshot, view]);
+  // §5 B2 决策 1 的判决：查到多少、达没达标、没达标的话下一步能不能靠重试解决。
+  // 旧修订不报这一项，两个值都是 null，界面上就什么都不显示（不补一个 0% 出来）。
+  const queryCoverage = snapshot ? queryCoverageLine(snapshot.facilities) : null;
+  const queryCoverageNext = snapshot ? queryCoverageRetryLine(snapshot.facilities) : null;
+  // 重试的入口只在"没达标"时出现：达标了还提示重试，就是在劝人多花额度。
+  const retryRunning = state.retry !== undefined && !isRetryTerminal(state.retry.status);
   const weatherCenter = draft ?? taskCenter ?? null;
   const idle = state.phase === 'idle';
 
@@ -573,18 +653,54 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             <label className="wb-field"><span>采样预算</span><Select aria-label="调用预算"
               value={budget ?? undefined} placeholder="—" onChange={setBudget}
               options={(selectedEngine?.budgets ?? []).map(value => ({
-                value, label: `${value} 次 · ${estimateTime(value)}`,
+                value, label: `${value} 次`,
               }))} /></label>
-            {budget !== null && <p className="wb-estimate" data-testid="checkup-time-estimate"
-              data-budget={budget}>历史任务参考 {estimateTime(budget)}；深度设施检索会延长耗时。</p>}
             <p className="wb-hint">实际用时受网络影响</p>
+            {hybridEstimate && <p className="wb-hint" data-testid="checkup-time-estimate">
+              图已就绪 · 全程约 {hybridEstimate}
+            </p>}
             <p className="wb-hint">步行 900 秒 · 服务标准 1000 米</p>
             {selectedEngine?.alert && <Alert type="warning" showIcon title={selectedEngine.alert} />}
             {selectedEngine?.caveat && selectedEngine.caveat !== selectedEngine.alert
               && <p className="wb-hint">{selectedEngine.caveat}</p>}
+
+            {catalog !== null ? <div className="wb-scope" data-testid="checkup-scope">
+              <p className="wb-label">设施类别</p>
+              <p className="wb-hint">标"核心"的三类决定总体覆盖率；其余类别按需补查，
+                只出点位与数量，不进入总体分。</p>
+              {catalog.groups.map(group => <fieldset key={group.key}>
+                <legend>{group.label}</legend>
+                {group.majors.map(major => <Checkbox key={major.key}
+                  data-testid={`checkup-scope-${major.key}`}
+                  checked={picked.includes(major.key)}
+                  onChange={event => toggleScope(major.key, event.target.checked)}>
+                  {major.label}{major.core ? '（核心）' : ''}
+                </Checkbox>)}
+              </fieldset>)}
+              {scopeFirstRoundPages !== null && <p className="wb-hint" data-testid="checkup-scope-budget">
+                核心口径冷启动首轮约 {scopeFirstRoundPages} 页地点检索（按最多 {catalog.blocksUpperBound} 个
+                查询分块 × {scopeMinors} 个检索小类估计）；实际分块由圈面决定，翻页、细分与重试
+                还要更多页，命中缓存的页面不消耗网络额度。
+              </p>}
+              {scopeMissingCore.length > 0 && <Alert type="warning" showIcon
+                data-testid="checkup-scope-missing"
+                title={`总体覆盖率将无法给出：缺 ${scopeMissingCore.map(id => categoryLabel(id)).join('、')}`}
+                description="总体区间分只按核心三类加权，不会用已分析的类别重新加权。" />}
+              {scopeParts.extended.length > 0 && <p className="wb-hint" data-testid="checkup-scope-extended">
+                待补查（结果出来后）：{scopeParts.extended.map(id => categoryLabel(id)).join('、')}
+              </p>}
+            </div> : view !== null ? <p className="wb-hint" data-testid="checkup-scope-unavailable">
+              当前后端不提供设施类别目录，本次按后端的核心口径体检。
+            </p> : null}
             {(view?.quota.label || (view?.quota.lines.length ?? 0) > 0) && <div className="wb-quota">
               {view?.quota.label && <p data-testid="quota-label">{view.quota.label}</p>}
               {view?.quota.lines.map(line => <p key={line}>{line}</p>)}
+            </div>}
+            {/* 检索计划的口径：本地处理上限与网络额度是两本账，首轮计划只是估算。
+                旧后端缺哪一项就不显示哪一项，不写 0 也不写"(未配置)"。 */}
+            {(view?.planningLines.length ?? 0) > 0 && <div className="wb-planning"
+              data-testid="checkup-planning">
+              {view?.planningLines.map(line => <p key={line}>{line}</p>)}
             </div>}
           </section>
         </div>
@@ -708,6 +824,46 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
                 : state.recovery === 'expired' || task?.status === 'failed' ? '重新体检' : '重试'}</Button>} />}
         </section>
 
+        {/* 扩展设施补查：独立一轮，只加设施，不改上面的报告与评分。 */}
+        {task !== undefined && isTerminal(task) && catalog !== null && <>
+          <section className="wb-sec wb-extension" aria-label="扩展设施补查">
+            <p className="wb-label">扩展设施补查</p>
+            {scopeParts.extended.length === 0
+              ? <p className="wb-hint" data-testid="checkup-extension-none">
+                  在"采样与引擎"里勾选核心三类之外的类别，就能在这里补查。
+                </p>
+              : <>
+                <p className="wb-hint">复用本次已经算出的圈面，只再检索这几类；
+                  它不发布新修订，也不进入总体覆盖率。</p>
+                <Button size="small" data-testid="checkup-extension-run"
+                  disabled={state.extensionRunning === true}
+                  onClick={() => void controller.extend(scopeParts.extended)}>
+                  {state.extensionRunning === true ? '检索中…'
+                    : `补查 ${scopeParts.extended.map(id => categoryLabel(id)).join('、')}`}
+                </Button>
+              </>}
+            {state.extensionError && <Alert type="error" showIcon data-testid="checkup-extension-error"
+              title={state.extensionError} />}
+            {(state.extensions?.length ?? 0) > 0 && <ul className="wb-extension-list"
+              data-testid="checkup-extensions">
+              {state.extensions?.map(item => <li key={item.extensionId} data-status={item.status}>
+                <b>{item.categories.map(id => categoryLabel(id)).join('、')}</b>
+                {' · '}{EXTENSION_STATUS_LABELS[item.status] ?? item.status}
+                {Object.keys(item.countsByCategory).length > 0 && <span className="wb-extension-counts">
+                  {' · '}{Object.entries(item.countsByCategory)
+                    .map(([key, value]) => `${categoryLabel(key)} ${value} 处`).join('，')}
+                </span>}
+                {/* 两本账分开报：页面处理含缓存重放，新增网络才是花掉额度的部分。
+                    后端没记的项（旧记录）整行省略，不补 0。 */}
+                {extensionLines(item).map(line => <p key={line} className="wb-extension-facts"
+                  data-testid="checkup-extension-facts">{line}</p>)}
+                {!EXTENSION_DONE.has(item.status) && <Button type="link" size="small"
+                  onClick={() => void controller.cancelExtension(item.extensionId)}>取消</Button>}
+              </li>)}
+            </ul>}
+          </section>
+        </>}
+
         {snapshot && <section className="wb-sec wb-summary" aria-label="覆盖区间摘要">
           <p className="wb-label">{snapshot.completion?.evaluationStatus === 'partial' ? '阶段性总体覆盖区间' : '覆盖率'}</p>
           {overall && overall.available ? <>
@@ -729,9 +885,31 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
 
         {snapshot && <section className="wb-sec wb-nearest" data-testid="checkup-nearest">
           <h2 className="wb-h">周边设施 · 每类最近 5 处</h2>
+          {queryCoverage && <p className="wb-hint"
+            data-testid="checkup-query-coverage">{queryCoverage}</p>}
+          {expiresSoon && <p className="wb-hint"
+            data-testid="checkup-expiry-line">{expiresSoon}</p>}
+          {queryCoverageNext && <div className="wb-retry" data-testid="checkup-retry">
+            <p className="wb-hint" data-testid="checkup-query-coverage-next">
+              {queryCoverageNext}</p>
+            <Space size="small" wrap>
+              <Button size="small" data-testid="checkup-retry-run"
+                disabled={state.retrying === true}
+                onClick={() => void controller.retryCheckup()}>
+                {retryActionLabel(state.retrying === true)}</Button>
+              {retryRunning && <Button size="small" data-testid="checkup-retry-cancel"
+                onClick={() => void controller.cancelRetry(state.retry!.retryId)}>取消</Button>}
+            </Space>
+            {state.retry && retryLines(state.retry).map(line =>
+              <p key={line} className="wb-extension-facts"
+                data-testid="checkup-retry-facts">{line}</p>)}
+            {state.retryError && <Alert type="error" showIcon data-testid="checkup-retry-error"
+              title={state.retryError} />}
+          </div>}
           {!drawables.facilities ? <p className="wb-hint">{layerErrors.facilities
             ?? '设施结果尚未加载。'}</p>
-            : drawables.facilities.state === 'empty' ? <p className="wb-hint">本次体检没有接收的设施。</p>
+            : drawables.facilities.state === 'empty' ? <p className="wb-hint"
+              data-testid="checkup-nearest-empty">{nearestEmptyNote(snapshot.facilities)}</p>
             : <>
               <p className="wb-hint">按直线距离排序；点选可查步行路线。</p>
               {nearestGroups.map(group => <div className="wb-near" key={group.category}>
@@ -760,7 +938,26 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
             <Button size="small" onClick={() => void controller.detail(selectedPoint.key)}
               disabled={busy}>查询步行路线</Button>
           </>}
-          <RouteDetail route={state.route} error={state.routeError} />
+          <RouteDetail route={state.route} error={state.routeError}
+            facilityName={selectedPoint && typeof selectedPoint.properties.name === 'string'
+              && selectedPoint.properties.name.length > 0 ? selectedPoint.properties.name : null} />
+        </section>}
+
+        {expiry && <section className="wb-sec wb-expired" data-testid="checkup-expired">
+          <h2 className="wb-h">这次体检的明细已到期</h2>
+          <p className="wb-hint" data-testid="checkup-expired-notice">{expiry}</p>
+          {retained && <>
+            <p className="wb-hint" data-testid="checkup-retained-revision">
+              {`保留的是第 ${retained.revision} 版（${retained.stage}）的定稿汇总。`}</p>
+            {retainedFacts.length > 0 && <ul className="wb-expired-facts"
+              data-testid="checkup-retained-facts">
+              {retainedFacts.map(line => <li key={line} className="wb-hint">{line}</li>)}
+            </ul>}
+            {retained.notes.map(note => <p key={note} className="wb-hint"
+              data-testid="checkup-retained-note">{note}</p>)}
+          </>}
+          {!retained && <p className="wb-hint" data-testid="checkup-retained-missing">
+            这一版没有留存汇总，只有任务状态可用；明细按保留期不再提供。</p>}
         </section>}
 
         {task && <Fold title="任务信息" className="wb-task">
@@ -784,6 +981,8 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
       {snapshot ? <CheckupReport snapshot={snapshot} stale={stale} waterReviews={view?.waterReviews}
         continuation={task?.completion} continuationPoiLimit={view?.poiRoundLimit} busy={busy}
         onContinue={() => void controller.continueReport()} onCancel={() => void controller.cancel()} />
+        : retained ? <p className="api-muted" data-testid="checkup-report-expired">
+            这次体检的明细已到期，报告不再提供；结论与汇总在左侧"明细已到期"一栏。</p>
         : <p className="api-muted">体检完成后在这里显示报告。</p>}
     </Drawer>
   </main>;

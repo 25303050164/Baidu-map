@@ -12,7 +12,7 @@
 
 4. **第三方依赖**：运行新增 NetworkX 3.6.1、PyProj 3.7.2，复用 Shapely 2.1.2 和现有 Pydantic/FastAPI。准备阶段使用 Pyrosm 0.13.1、OSMnx 2.0.7、GeoPandas 1.1.4，传递依赖固定在 `requirements-osm-build.txt`。没有在线 Overpass、PostGIS 或额外路由服务。Windows 缺少 MSVC 时，本次通过校验 SHA256 的 conda-forge cykhash 预编译包完成安装；`pip check` 通过。建议他人用 conda-forge 准备环境，避免本地编译障碍。
 
-5. **数据下载和准备**：使用 [Geofabrik Shanghai](https://download.geofabrik.de/asia/china/shanghai.html) 固定 `shanghai-260912.osm.pbf`，配合同次归档 `.poly` coverage。PBF SHA256 为 `0490e886ef41881928c1b10500ee280ef009a892ac43d8a476fc082894064b82`。下载日、来源、边界 SHA256 在数据 README 和生成 metadata 中。只有人工准备下载环节联网；不自动更新快照。
+5. **数据下载和准备**：使用 [Geofabrik Shanghai](https://download.geofabrik.de/asia/china/shanghai.html) 固定 `shanghai-latest.osm.pbf`（数据版本 `geofabrik-shanghai-260913`），配合同次归档 `.poly` coverage。PBF SHA256 为 `11e420b2fe24176856b31c26da308e3ec41a9a7f5a2b849d91c34f7069837c12`。下载日、来源、边界 SHA256 在数据 README 和生成 metadata 中。只有人工准备下载环节联网；不自动更新快照。
 
 6. **PBF 生成 graph**：Pyrosm `get_network(network_type="walking", nodes=True, extra_attributes=...)` 使用成熟 walking filter。投影 nodes/edges 到配置米制 CRS，转换成 MultiDiGraph；保留所有组件、孤立节点及环。普通道路双向，显式行人方向标签控制有向边。OSMnx simplify 在关键属性或 OSM way ID 变化处保留节点；已有曲线端点和 barrier 节点也保留。检查简化前后组件数量、长度总和和属性一致性；再逐边验证长度、几何方向和时间。
 

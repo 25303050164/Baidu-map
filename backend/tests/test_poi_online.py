@@ -2,17 +2,23 @@
 import asyncio
 from collections import Counter
 import math
+import time
 
+import httpx
 import pytest
 
+from app.cache import KeyedCache
+from app.poi.cache import CachedPages
 from app.poi.models import PoiCollectRequest
-from app.poi.online import (FINEST_BLOCK_METERS, OnlinePlanner, QueryBlock, QueryDomain,
+from app.poi.online import (CACHED, FINEST_BLOCK_METERS, LIVE, PROCESSING_STEP_LIMIT,
+                            OnlinePlanner, PageResponse, QueryBlock, QueryDomain, RunLimits,
                             clip_to_domain, coarse_blocks)
 from app.poi.planner import RULES, parameters
 from app import catalog
-from app.quota import DailyBudgetExhausted
+from app.quota import BudgetExhausted, DailyBudgetExhausted
 from app.request_control import RequestStopped
 from life_circle.coordinates import LocalProjection
+from life_circle.models import CancelToken
 
 ORIGIN = (121.514, 31.313)
 CATEGORIES = ('market', 'pharmacy', 'primary_school')
@@ -36,6 +42,12 @@ def two_pages(sequence, page):
     """Twenty rows and a stated total of forty, so every query asks for a second page."""
     return payload([row(f"synthetic-{sequence['sequenceId']}-{page}-{index}") for index in range(20)],
                    total=40)
+
+
+class Transport:
+    """Just the page-cache identity a wrapped fetch needs."""
+
+    identity, api_version = 'synthetic:planner-tests', '3.0'
 
 
 class Synthetic:
@@ -345,7 +357,8 @@ def test_invalid_configuration_is_refused():
     with pytest.raises(ValueError, match='empty_query_domain'):
         build(QueryDomain(((0.0, 0.0), (0.0, 0.0), (0.0, 0.0))))
     with pytest.raises(ValueError, match='unknown_category'):
-        build(QueryDomain.circle(1300), categories=('not_in_catalog',))
+        # ``supermarket`` 现在在设施目录里（购物），换一个目录里真的没有的名字。
+        build(QueryDomain.circle(1300), categories=('no_such_category',))
     with pytest.raises(ValueError, match='budget must be a positive integer'):
         build(QueryDomain.circle(1300), budget=0)
     with pytest.raises(ValueError, match='at least one category required'):
@@ -359,3 +372,182 @@ def test_the_planner_takes_the_request_centre():
                             categories=CATEGORIES, budget=60, source='synthetic')
     assert len(planner.coarse) == 4
     assert len(planner.sequences) == 4 * sum(len(RULES['queries'][c]) for c in CATEGORIES)
+
+
+def test_a_throttled_page_is_retried_once_and_the_round_keeps_going():
+    """一次并发超限不再终止整轮：重试成功之后，剩下的查询照常跑完。
+
+    这是"十大类下百度并发限制导致拿不到结果"的直接修复：以前第一次 401 就让整轮归零，
+    现在它只花掉一次有界重试，并且仍被记进它自己的分块记录里。
+    """
+    looked = []
+
+    class ThrottleOnce:
+        async def __call__(self, sequence, page):
+            looked.append(sequence['sequenceId'])
+            if len(looked) == 1:
+                return None, 'rate_limit'
+            return page_of_one(sequence, page), None
+
+    planner = build(QueryDomain.circle(1300), budget=10, categories=('pharmacy',))
+    result = asyncio.run(planner.run(ThrottleOnce()))
+    assert result.stop_reason is None
+    assert result.status == 'completed'
+    assert 'rate_limit' not in result.warnings
+    # 第一次失败留在它自己的页面记录里，没有被抹掉，也没有被读成"这里没有设施"。
+    errors = [error for item in result.coverage for error in item['pageErrors']]
+    assert [error['reason'] for error in errors] == ['rate_limit']
+    assert errors[0]['pageNum'] == 0
+
+
+def test_persistent_throttling_pauses_after_one_bounded_retry_and_keeps_progress():
+    """持续限流：同一页重试一次就暂停本轮，不是每一类都先花一次请求再说。"""
+    looked = []
+
+    class AlwaysThrottled:
+        async def __call__(self, sequence, page):
+            looked.append(sequence['sequenceId'])
+            return None, 'rate_limit'
+
+    planner = build(QueryDomain.circle(1300), budget=60, categories=('pharmacy',))
+    result = asyncio.run(planner.run(AlwaysThrottled()))
+    assert len(looked) == 2 and looked[0] == looked[1]
+    assert result.attempts == 2
+    assert result.stop_reason == 'rate_limit' and 'rate_limit' in result.warnings
+    assert result.status == 'failed'
+    assert {item['stopReason'] for item in result.coverage} == {'rate_limit'}
+
+
+# -- §五 两把尺子：本地处理上限与新增网络预算分开 ---------------------------
+#
+# 这一节的每一项都对着同一类错误：把"页面调度了多少次"当成"发了多少次新请求"。
+# 缓存重放不花额度，所以它不该能停住一次还在找缺页的检索；而额度用完也不该让
+# 已经拿到手的缓存证据跟着一起消失。
+
+def limited(domain, *, categories=('pharmacy',), steps=PROCESSING_STEP_LIMIT, budget=60,
+            **kwargs):
+    """一次按 v2 口径跑的检索：网络额度由服务池管，本地处理另有上限。"""
+    return OnlinePlanner(domain=domain, origin=ORIGIN, categories=categories, budget=budget,
+                         source='synthetic', limits=RunLimits(processing_steps=steps,
+                                                              drain_after_budget_refusal=True),
+                         **kwargs)
+
+
+def pharmacy_pages(categories=('pharmacy',)):
+    """这些类别跑满首轮两页所需的页面处理次数。"""
+    return 2 * 4 * sum(len(RULES['queries'][category]) for category in categories)
+
+
+def test_a_cache_hit_is_not_a_new_network_call():
+    """缓存命中的页面不耗尽新增调用预算：本次要发的是缺页那几次。"""
+    order = []
+
+    async def fetch(sequence, page):
+        order.append((sequence['sequenceId'], page))
+        # 前四条由缓存回答，其余才真的派发；两者返回同样的页，只有记账不同。
+        manner = CACHED if len(order) <= 4 else LIVE
+        return PageResponse(two_pages(sequence, page), None, manner)
+
+    planner = limited(QueryDomain.circle(1300), budget=0)
+    result = asyncio.run(planner.run(fetch))
+    assert result.status == 'completed'
+    assert result.attempts == pharmacy_pages()
+    assert result.network_calls == result.attempts - 4
+    # 页数（处理）与调用数（新增）是两个数，不是一个数的两种说法。
+    assert result.budget == 0
+
+
+def test_the_local_processing_ceiling_has_its_own_stop_reason():
+    """本地处理上限停下来时，说的不是"网络额度用尽"。"""
+    planner = limited(QueryDomain.circle(1300), steps=3)
+    result = asyncio.run(planner.run(Synthetic(default=two_pages)))
+    assert result.attempts == 3 and result.network_calls == 3
+    assert result.stop_reason == 'processing_limit_reached'
+    assert 'processing_limit_reached' in result.warnings
+    assert result.status != 'completed'
+
+
+def test_a_spent_allowance_stops_the_pages_that_need_it_not_the_run():
+    """额度用完：缺页不联网，但已经能读到的缓存证据一条都不丢。"""
+    cached, refused = [], []
+
+    async def fetch(sequence, page):
+        if page == 0:
+            cached.append(sequence['sequenceId'])
+            return PageResponse(two_pages(sequence, page), None, CACHED)
+        refused.append(sequence['sequenceId'])
+        raise BudgetExhausted('poi', 2)
+
+    planner = limited(QueryDomain.circle(1300))
+    result = asyncio.run(planner.run(fetch))
+    assert result.network_calls == 0
+    # 第一页的每一条都留下了：这正是"一个缺页不能让其余证据消失"。
+    assert len(result.observations) == 20 * len(cached)
+    assert result.status == 'partial'
+    assert result.stop_reason == 'network_budget_exhausted'
+    # 每一页自己停下来的原因仍然是池子的那一句，不是被概括掉的"额度用尽"。
+    assert {entry['stopReason'] for entry in result.coverage} == {'task_budget_exhausted'}
+    assert result.stop_reason in result.warnings
+    assert 'task_budget_exhausted' in result.warnings
+
+
+def test_a_cache_only_run_still_checks_cancellation_and_the_deadline():
+    """零网络调用的纯缓存流程也要有界：它绕过了配额池，就不能指望池子来停它。"""
+    looked = Synthetic()
+    token = CancelToken()
+    token.cancel()
+    cancelled = asyncio.run(limited(QueryDomain.circle(1300), token=token).run(looked))
+    assert cancelled.stop_reason == 'cancelled' and cancelled.attempts == 0
+
+    expired = asyncio.run(limited(QueryDomain.circle(1300),
+                                  deadline=time.monotonic() - 1).run(looked))
+    assert expired.stop_reason == 'deadline_reached' and expired.attempts == 0
+    assert looked.calls == []
+
+
+def test_a_pure_cache_run_observes_a_cancellation_that_already_arrived():
+    """§五.9：纯缓存路径既不进池子也不等任何东西 —— 每个调度步都得让出一次。
+
+    取消信号已经排进事件循环，但这轮页面全在缓存里、全程没有 await 点：不让出的话，
+    它会把手上的页面全部处理完再"看到"取消，停在一个已经太晚的地方。
+    """
+    cache = KeyedCache()
+    planner = limited(QueryDomain.circle(1300), steps=64)
+    adapter = CachedPages(cache, Synthetic(), provider=Transport(), task_id='t')
+    for state in planner.first_round:
+        cache.store(adapter.key(state.mapping, 0), page_of_one(state.mapping, 0), task_id='t')
+
+    async def cancel_while_running():
+        asyncio.get_running_loop().call_soon(planner.token.cancel)
+        return await planner.run(adapter)
+
+    result = asyncio.run(cancel_while_running())
+    assert result.stop_reason == 'cancelled'
+    assert result.attempts == 0            # 一个页面都不该再处理
+    assert result.network_calls == 0
+    assert result.observations == []
+
+
+def test_a_dispatched_but_failed_call_is_still_a_new_network_call():
+    """超时是发出去之后才发生的：它同样花了额度，不能被记成"没发出去"。"""
+    async def timeout(sequence, page):
+        raise httpx.TimeoutException('the connection stalled')
+
+    planner = limited(QueryDomain.circle(1300), steps=64)
+    result = asyncio.run(planner.run(timeout))
+    assert result.attempts == result.network_calls == 2 * 4 * len(RULES['queries']['pharmacy'])
+    assert result.status == 'failed'
+    assert {record['reason'] for entry in result.coverage for record in entry['pageRecords']} \
+        == {'timeout'}
+
+
+def test_a_refusal_before_dispatch_costs_nothing():
+    """配额入口在派发前拒绝：那一页既不是新调用，也不该被算成花掉的额度。"""
+    async def refuse(sequence, page):
+        raise BudgetExhausted('poi', 0)
+
+    planner = limited(QueryDomain.circle(1300), steps=64)
+    result = asyncio.run(planner.run(refuse))
+    assert result.attempts > 0
+    assert result.network_calls == 0
+    assert result.stop_reason == 'network_budget_exhausted'

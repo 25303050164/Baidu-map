@@ -37,7 +37,7 @@ class AnalysisInput(BaseModel):
     coordinateSystem: Literal["bd09ll"]
     budget: int = 400
     clientRequestId: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
-    facilityCategories: tuple[MajorCategory, ...] = tuple(catalog.majors())
+    facilityCategories: tuple[MajorCategory, ...] = tuple(catalog.default_analysis_majors())
 
     @field_validator("budget")
     @classmethod

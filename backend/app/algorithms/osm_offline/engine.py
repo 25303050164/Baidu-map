@@ -56,8 +56,11 @@ class OsmOfflineEngine:
         """
         progress = progress or (lambda step, done=None, total=None: None)
         if settings.osm_data_version == "unconfigured":
-            reason = "osm_data_version_unconfigured" if settings.osm_graph_cache_path.is_file() else "graph_cache_missing"
+            cache_path = settings.osm_graph_cache_path
+            reason = "osm_data_version_unconfigured" if cache_path and cache_path.is_file() else "graph_cache_missing"
             return cls(settings, unavailable_reason=reason)
+        if settings.osm_graph_cache_path is None or not settings.osm_graph_cache_path.is_file():
+            return cls(settings, unavailable_reason="graph_cache_missing")
         try:
             graph = load_graph_cache(settings.osm_graph_cache_path, progress)
             if graph.graph.get("osm_data_version") != settings.osm_data_version:

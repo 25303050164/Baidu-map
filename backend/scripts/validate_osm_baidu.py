@@ -57,7 +57,7 @@ def prepare(output, source):
     output.mkdir(parents=True, exist_ok=False)
     old = json.loads(source.read_text(encoding="utf-8"))
     assert len(old["cases"]) == 60
-    settings = Settings(_env_file=None, osm_data_version="geofabrik-shanghai-20260912",
+    settings = Settings(_env_file=None, osm_data_version="geofabrik-shanghai-260913",
                         osm_graph_cache_path=ROOT / "data/osm/shanghai.osm-cache",
                         osm_coverage_boundary_path=ROOT / "data/osm/shanghai.poly")
     print("Loading local OSM snapshot...", flush=True)

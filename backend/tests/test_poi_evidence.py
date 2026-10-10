@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from life_circle.models import RouteObservation
 from life_circle.coordinates import LocalProjection
 
-from app.contracts import PoiEvidence, Facility, RouteEvidence, AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest
+from app.contracts import PoiEvidence, Facility, RouteEvidence, AnalysisResponse, TaskStatusResponse, TaskResultResponse, OsmOfflineRequest, FacilityCatalog
 from app.hybrid_contracts import HybridRequest, HybridResultResponse, HybridError
 from app.poi_evidence import poi_evidence, route_evidence
 from tools.endpoint_e83_poi import confirmed_poi

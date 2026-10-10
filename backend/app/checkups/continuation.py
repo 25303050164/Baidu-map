@@ -74,16 +74,18 @@ class ContinuationMixin:
 
     def _completion(self, task_id, document=None, *, frozen=False):
         record = self.store.get(task_id)
+        if not self.retention_of(record).details_available:
+            return None
         current = self.store.round(task_id)
         if document is None:
             stored = self.store.revision(task_id)
             document = {} if stored is None else stored['snapshot']
-        payload = CheckupRequest(**record.payload)
+        payload = CheckupRequest.from_stored(record.payload)
         group = document.get('facilities') or {}
         complete = group.get('statistics', {}).get('queryCompleteByMajor', {})
         complete = {major: major in payload.facilities.categories and
                     bool(complete.get(major, group.get('queryStatus') == 'completed'))
-                    for major in catalog.majors()}
+                    for major in payload.facilities.categories}
         score = document.get('scores') or {}
         report = document.get('report') or {}
         rows = report.get('categories') or score.get('categories') or []
@@ -148,6 +150,11 @@ class ContinuationMixin:
     def continue_checkup(self, task_id, request):
         from .manager import CheckupError
         record = self.get(task_id)
+        if not self.retention_of(record).details_available:
+            raise CheckupError(410, 'checkup_details_expired', '体检明细已到期，无法继续检索')
+        if any(item.kind == 'retry' and item.status in ('queued', 'running')
+               for item in self.store.extensions_of(task_id)):
+            raise CheckupError(409, 'checkup_retry_in_progress', '已有重试正在进行，请等它结束')
         existing = self.store.round_request(request.client_request_id)
         if existing:
             if existing['task_id'] != task_id or existing['base_revision'] != request.base_revision:
@@ -159,12 +166,11 @@ class ContinuationMixin:
         completion = self._completion(task_id)
         if not completion.can_continue:
             raise CheckupError(409, 'checkup_cannot_continue', '当前报告没有可继续的检索工作，请查看数据限制')
-        payload = CheckupRequest(**record.payload)
+        payload = CheckupRequest.from_stored(record.payload)
         frozen = IsochroneSnapshot(**previous.isochrone)
         identity = self._round_identity(payload, frozen)
         old = self.store.round(task_id)
-        if (set(payload.facilities.categories) != set(catalog.majors())
-                or old and old['identity'] != identity or previous.rules != DISTANCE_RULE
+        if (old and old['identity'] != identity or previous.rules != DISTANCE_RULE
                 or previous.scope.data_version != self.settings.osm_data_version
                 or previous.report and previous.report.category_directory_version not in (None, catalog.VERSION)):
             raise CheckupError(409, 'checkup_incompatible_continuation',

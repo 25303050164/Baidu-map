@@ -11,6 +11,7 @@
  */
 import type { CheckupSnapshot, CoverageRow, OverallScore, ReportVerification, ServiceZone,
   VerificationEvidence } from './contract';
+import { majorMeta, subCategoryByKey } from '../taxonomy';
 
 export const CATEGORY_ORDER = ['shopping', 'medical', 'education'] as const;
 
@@ -61,6 +62,12 @@ const REASON_LABELS: Record<string, string> = {
 /** 给不出分数的原因码 → 中文。 */
 const UNAVAILABLE_LABELS: Record<string, string> = {
   no_spatial_support: '缺少该区域的步行路网或无法建立网格',
+  osm_graph_unavailable: '步行路网不可用，无法建立覆盖评估',
+  facility_stage_unavailable: '设施检索阶段未产出可用结果',
+  facility_query_incomplete: '设施检索未完成，证据不足以评估覆盖率',
+  assessment_domain_exceeds_grid_limit: '评估范围超过网格上限',
+  area_partition_mismatch: '评估面积分区不一致，结果暂不可用',
+  empty_assessment_domain: '评估范围为空',
   categories_not_analysed: '只评估了部分大类，不能加权成总体分',
   category_without_spatial_support: '有大类缺少空间支持，不能加权成总体分',
   query_incomplete: '设施检索未完成，暂无可用评估结果',
@@ -70,7 +77,10 @@ const UNAVAILABLE_LABELS: Record<string, string> = {
 export function categoryLabel(category: string, snapshot?: CheckupSnapshot): string {
   const frozen = snapshot?.report?.categoryDirectory?.find(item => item.id === category);
   if (frozen) return frozen.label;
-  return CATEGORY_LABELS[category] ?? category;
+  return CATEGORY_LABELS[category]
+    ?? majorMeta[category as keyof typeof majorMeta]?.label
+    ?? subCategoryByKey[category]?.label
+    ?? category;
 }
 
 export function reasonLabel(reason: string | null): string | null {
@@ -182,7 +192,7 @@ export function coverageItems(snapshot: CheckupSnapshot): CoverageItem[] {
       unavailableReason: supported ? null : row?.unavailableReason ?? (
         snapshot.facilities?.queryStatus !== 'completed'
           ? 'query_incomplete' : 'no_usable_evidence'),
-      queryComplete: typeof snapshot.facilities?.statistics.queryCompleteByMajor === 'object'
+      queryComplete: typeof snapshot.facilities?.statistics?.queryCompleteByMajor === 'object'
         && snapshot.facilities.statistics.queryCompleteByMajor !== null
         ? (snapshot.facilities.statistics.queryCompleteByMajor as Record<string, boolean>)[category] ?? null
         : snapshot.facilities ? snapshot.facilities.queryStatus === 'completed' : null,
@@ -318,6 +328,13 @@ export type ZoneItem = {
   labelled: boolean;
 };
 
+/** 灰区只存最近设施 ID；若本次快照带设施目录，报告优先给读者看名称。 */
+function facilityName(snapshot: CheckupSnapshot, id: string | null): string | null {
+  if (id === null) return null;
+  const record = (snapshot.facilities?.facilities ?? []).find(item => item.id === id);
+  return typeof record?.name === 'string' && record.name.length > 0 ? record.name : id;
+}
+
 export const ZONE_KIND_LABELS: Record<string, string> = {
   single: '单类灰区', composite: '综合灰区',
 };
@@ -334,7 +351,7 @@ export function zoneItems(snapshot: CheckupSnapshot): ZoneItem[] {
     areaM2: zone.areaM2, areaText: area(zone.areaM2), parts: zone.parts,
     evidenceGrade: zone.evidenceGrade, queryStatus: zone.queryStatus,
     reason: zone.reason, reasonLabel: reasonLabel(zone.reason),
-    nearestFacility: zone.nearestFacility, suggestion: zone.suggestion,
+    nearestFacility: facilityName(snapshot, zone.nearestFacility), suggestion: zone.suggestion,
     labelled: zone.labelVisible,
   }));
 }

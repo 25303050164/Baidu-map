@@ -95,6 +95,12 @@
         }
       ]
     },
+    "农副产品市场:0": {
+      "status": 0,
+      "result_type": "poi_type",
+      "total": 0,
+      "results": []
+    },
     "药店:0": {
       "status": 0,
       "result_type": "poi_type",

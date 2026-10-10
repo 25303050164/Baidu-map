@@ -44,7 +44,7 @@ class RoundStore:
         return dict(row) if row else None
 
     def begin_round(self, task_id, request_id, base_revision, identity, *, initial=False,
-                    poi_before=0, route_before=0, legacy=False, poi_limit=60):
+                    poi_before=0, route_before=0, legacy=False, poi_limit=60, requeue=True):
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             existing = db.execute('SELECT * FROM checkup_rounds WHERE request_id=?', (request_id,)).fetchone()
@@ -69,7 +69,7 @@ class RoundStore:
                        'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                        (task_id, number, request_id, base_revision, identity, int(legacy),
                         poi_before, route_before, task['network_requests'], task['requests'], poi_limit))
-            if not initial:
+            if not initial and requeue:
                 db.execute("UPDATE tasks SET status='queued', stage='poi', cancel_requested=0,"
                            " error=NULL, finished_at=NULL, progress=NULL, updated_at=? WHERE task_id=?",
                            (time.time(), task_id))

@@ -1,0 +1,1543 @@
+{
+  "plan": {
+    "checkupDir": "/home/tairitsu_tempest/Baidu-map/backend/.checkups",
+    "baselineAt": 1791539590.081499,
+    "baselineRecorded": true,
+    "tasks": [
+      {
+        "taskId": "50f7ab7d-13f4-4cff-9247-9603e10b5897",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790645548.419106,
+        "finishedAt": 1790645767.4398272,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 12186438
+      },
+      {
+        "taskId": "4f5d75db-2367-4082-9637-3ce57c972ba6",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790646008.1750486,
+        "finishedAt": 1790646163.9343672,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 9036105
+      },
+      {
+        "taskId": "72e60927-a97d-4616-b6d6-e546ee78d178",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790646642.2931561,
+        "finishedAt": 1790646778.897318,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 11209551
+      },
+      {
+        "taskId": "c74c213d-d0a0-444f-b295-55a57538275b",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790657258.29136,
+        "finishedAt": 1790657305.4071417,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 16414285
+      },
+      {
+        "taskId": "bfd85267-cc6d-4794-b108-75522c577d37",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790659749.0880167,
+        "finishedAt": 1790659889.4167755,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 10351472
+      },
+      {
+        "taskId": "7422dd4e-fd30-4072-956b-e5b1a21e5471",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790659978.2196894,
+        "finishedAt": 1790660017.6483343,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 12198403
+      },
+      {
+        "taskId": "39424022-198a-4040-b22f-1952b5422d02",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790660538.5878594,
+        "finishedAt": 1790660668.8261907,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 10351501
+      },
+      {
+        "taskId": "baaaedf6-0c90-483b-bd67-28a884792caa",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790663303.2114367,
+        "finishedAt": 1790663355.27268,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 14256901
+      },
+      {
+        "taskId": "73a4fe6b-0067-4676-8686-90f1726da339",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790665598.75709,
+        "finishedAt": 1790665675.4495537,
+        "revision": 1,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 699964
+      },
+      {
+        "taskId": "ce0b90d0-72e4-48b7-894f-7f46a9e5c615",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790665676.9664311,
+        "finishedAt": 1790665818.772012,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 8474227
+      },
+      {
+        "taskId": "e92ba3f9-14ea-4e29-80d4-3590dda4e001",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790672733.9417033,
+        "finishedAt": 1790673072.8554556,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 3114599
+      },
+      {
+        "taskId": "41f3501c-cfd1-46ab-b010-29c92cff979d",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790673148.089735,
+        "finishedAt": 1790673161.068112,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 161540
+      },
+      {
+        "taskId": "48082845-e2ae-4e5c-bef1-c44445f4556d",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790673214.2410355,
+        "finishedAt": 1790673227.15978,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 161490
+      },
+      {
+        "taskId": "6ee5d0f4-22bd-46ec-b41f-b2898a945efd",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790673444.0547214,
+        "finishedAt": 1790673577.5472293,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 3114603
+      },
+      {
+        "taskId": "1fbc650c-efc9-4999-ac53-623278926549",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790674477.5689113,
+        "finishedAt": 1790674632.3633983,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 161832
+      },
+      {
+        "taskId": "b6f1943f-94bb-4105-bdae-4868050158d0",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790675695.435673,
+        "finishedAt": 1790676019.5666273,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 23555049
+      },
+      {
+        "taskId": "71867f75-f35b-48d7-ba73-b06110f38b29",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790679994.7747886,
+        "finishedAt": 1790680020.1165776,
+        "revision": 0,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 0
+      },
+      {
+        "taskId": "71a09105-7a3e-402f-aa9d-fc94e857f446",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790680021.7581935,
+        "finishedAt": 1790680164.1936061,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 10701599
+      },
+      {
+        "taskId": "8c6f9990-2434-4ce8-8fa8-27687971b939",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790681210.2568986,
+        "finishedAt": 1790681577.163722,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 23125215
+      },
+      {
+        "taskId": "2c9ea50e-92d5-48a8-9322-caac42410007",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790681590.9431932,
+        "finishedAt": 1790681655.6724646,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 8092136
+      },
+      {
+        "taskId": "3695a432-09a7-4bb6-975c-04a1a7abc7c3",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790682514.6095188,
+        "finishedAt": 1790682723.7236772,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 101016
+      },
+      {
+        "taskId": "ca921626-9102-4d10-93e8-595f9a308186",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790682751.7268095,
+        "finishedAt": 1790682808.6072278,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 101250
+      },
+      {
+        "taskId": "a8f1f639-37b6-43c3-a6da-c9c2c40c1e0a",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790682824.4884286,
+        "finishedAt": 1790682936.9796355,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 10313522
+      },
+      {
+        "taskId": "70450c34-4680-4a42-85ed-f40ae690711b",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790682976.9433196,
+        "finishedAt": 1790682987.4439163,
+        "revision": 1,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 8504
+      },
+      {
+        "taskId": "cb33fd8c-02d0-43c0-89fb-8b072d372d7d",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790682989.2435145,
+        "finishedAt": 1790683018.5981343,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 71626
+      },
+      {
+        "taskId": "818031fb-b4d4-4710-b713-ae5784978efe",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790683324.4411032,
+        "finishedAt": 1790683398.9557414,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 27425023
+      },
+      {
+        "taskId": "affd37c2-d300-49bd-b1da-e8aad0313bc8",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790738882.0486884,
+        "finishedAt": 1790739302.2861683,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 27369141
+      },
+      {
+        "taskId": "db843613-bf4a-4d50-a926-b9851f18fccd",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790739400.9664693,
+        "finishedAt": 1790739637.6182668,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 6730526
+      },
+      {
+        "taskId": "19f463ed-8356-47a9-beb3-20ec4b7eda26",
+        "status": "failed",
+        "sessionId": null,
+        "createdAt": 1790756392.1870925,
+        "finishedAt": 1790952637.5673397,
+        "revision": 0,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 0
+      },
+      {
+        "taskId": "34874340-27b8-44b3-8c69-c17f59ff82bd",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790952649.6135302,
+        "finishedAt": 1790952947.3454342,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 9234906
+      },
+      {
+        "taskId": "ea17070d-4f66-4d3f-8a3c-67f35bbb5bd6",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790953152.2672718,
+        "finishedAt": 1790953274.4048793,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 70704
+      },
+      {
+        "taskId": "97f24515-ca9f-4939-ac6a-64b91d9e6aa2",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790953948.5109034,
+        "finishedAt": 1790953958.7684636,
+        "revision": 1,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 6883
+      },
+      {
+        "taskId": "dc460048-1c89-4ed6-a50d-83ac2e1dc6ec",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790953967.9660516,
+        "finishedAt": 1790954178.2932408,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 28394781
+      },
+      {
+        "taskId": "3da2dd2f-8e7a-424b-ab0a-0b1f44e02bd0",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790955756.8600495,
+        "finishedAt": 1790955780.1023648,
+        "revision": 0,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 0
+      },
+      {
+        "taskId": "30dfd990-7ba3-4f02-9593-4e7f11ffe276",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790955795.080401,
+        "finishedAt": 1790956139.6730793,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 30495990
+      },
+      {
+        "taskId": "9ea220b4-f930-414d-a799-5fe44d9faea8",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790956387.0851054,
+        "finishedAt": 1790956713.8172772,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 22854432
+      },
+      {
+        "taskId": "f8b2112e-cadb-49b6-ac9a-600339e70549",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790959744.637952,
+        "finishedAt": 1790959820.3561478,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263761
+      },
+      {
+        "taskId": "b7d0ba59-a9ac-40e9-8e8d-fd818009abda",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791023532.9917252,
+        "finishedAt": 1791023605.5276587,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263842
+      },
+      {
+        "taskId": "79b31151-b0dc-4ff1-86a1-aa32a58e4dd5",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791024121.8579998,
+        "finishedAt": 1791024191.107027,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263806
+      },
+      {
+        "taskId": "13e37e82-895e-49f8-b203-092840796a91",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791024322.7638052,
+        "finishedAt": 1791024389.7388332,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263845
+      },
+      {
+        "taskId": "bb7f58b8-d07e-4b8f-a83d-1f41eee582cf",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791024845.2900329,
+        "finishedAt": 1791024920.7358928,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263707
+      },
+      {
+        "taskId": "44e9345a-c0e5-4857-a792-3ac039fff886",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791118006.8334818,
+        "finishedAt": 1791118193.9865036,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 80928
+      },
+      {
+        "taskId": "0c9bce26-1ba3-43a9-b663-2c91358ddfae",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791118225.774071,
+        "finishedAt": 1791118641.831385,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 43108451
+      },
+      {
+        "taskId": "c8383266-0ab3-44a3-bab1-f91d981e6cd8",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791118663.9014163,
+        "finishedAt": 1791118872.1100652,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 27383794
+      },
+      {
+        "taskId": "791d90c9-9082-4678-9cf9-990d2b779972",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791121138.821001,
+        "finishedAt": 1791121258.4779496,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 3674335
+      },
+      {
+        "taskId": "e773726b-082a-4093-801c-4ab65fa1a7f1",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791123291.5566728,
+        "finishedAt": 1791123407.7944844,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 2281249
+      },
+      {
+        "taskId": "32f7baae-e21f-49fe-8a07-b45f482b7130",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791127029.5422935,
+        "finishedAt": 1791127225.1745808,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 2281269
+      },
+      {
+        "taskId": "fd75c80f-1086-4b21-abe0-e4e83b9e5bec",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791127414.4592886,
+        "finishedAt": 1791127555.8720183,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 3715647
+      },
+      {
+        "taskId": "bcb245f6-32d4-4cef-b7d7-bd0e6ff0504b",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791169012.9713893,
+        "finishedAt": 1791169327.2478669,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 29192319
+      },
+      {
+        "taskId": "d8baafd7-07c3-4b35-bb88-8a276e5e3053",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791458146.408602,
+        "finishedAt": 1791458403.6259048,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 28168432
+      },
+      {
+        "taskId": "98e7ac66-cef1-4f15-98ca-36d2d10ea1ef",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791458436.6841078,
+        "finishedAt": 1791458557.0276365,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 483166
+      }
+    ],
+    "toClear": [
+      {
+        "taskId": "50f7ab7d-13f4-4cff-9247-9603e10b5897",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790645548.419106,
+        "finishedAt": 1790645767.4398272,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 12186438
+      },
+      {
+        "taskId": "4f5d75db-2367-4082-9637-3ce57c972ba6",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790646008.1750486,
+        "finishedAt": 1790646163.9343672,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 9036105
+      },
+      {
+        "taskId": "72e60927-a97d-4616-b6d6-e546ee78d178",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790646642.2931561,
+        "finishedAt": 1790646778.897318,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 11209551
+      },
+      {
+        "taskId": "c74c213d-d0a0-444f-b295-55a57538275b",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790657258.29136,
+        "finishedAt": 1790657305.4071417,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 16414285
+      },
+      {
+        "taskId": "bfd85267-cc6d-4794-b108-75522c577d37",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790659749.0880167,
+        "finishedAt": 1790659889.4167755,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 10351472
+      },
+      {
+        "taskId": "7422dd4e-fd30-4072-956b-e5b1a21e5471",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790659978.2196894,
+        "finishedAt": 1790660017.6483343,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 12198403
+      },
+      {
+        "taskId": "39424022-198a-4040-b22f-1952b5422d02",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790660538.5878594,
+        "finishedAt": 1790660668.8261907,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 10351501
+      },
+      {
+        "taskId": "baaaedf6-0c90-483b-bd67-28a884792caa",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790663303.2114367,
+        "finishedAt": 1790663355.27268,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 14256901
+      },
+      {
+        "taskId": "73a4fe6b-0067-4676-8686-90f1726da339",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790665598.75709,
+        "finishedAt": 1790665675.4495537,
+        "revision": 1,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 699964
+      },
+      {
+        "taskId": "ce0b90d0-72e4-48b7-894f-7f46a9e5c615",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790665676.9664311,
+        "finishedAt": 1790665818.772012,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 8474227
+      },
+      {
+        "taskId": "e92ba3f9-14ea-4e29-80d4-3590dda4e001",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790672733.9417033,
+        "finishedAt": 1790673072.8554556,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 3114599
+      },
+      {
+        "taskId": "41f3501c-cfd1-46ab-b010-29c92cff979d",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790673148.089735,
+        "finishedAt": 1790673161.068112,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 161540
+      },
+      {
+        "taskId": "48082845-e2ae-4e5c-bef1-c44445f4556d",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790673214.2410355,
+        "finishedAt": 1790673227.15978,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 161490
+      },
+      {
+        "taskId": "6ee5d0f4-22bd-46ec-b41f-b2898a945efd",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790673444.0547214,
+        "finishedAt": 1790673577.5472293,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 3114603
+      },
+      {
+        "taskId": "1fbc650c-efc9-4999-ac53-623278926549",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790674477.5689113,
+        "finishedAt": 1790674632.3633983,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 161832
+      },
+      {
+        "taskId": "b6f1943f-94bb-4105-bdae-4868050158d0",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790675695.435673,
+        "finishedAt": 1790676019.5666273,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 23555049
+      },
+      {
+        "taskId": "71867f75-f35b-48d7-ba73-b06110f38b29",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790679994.7747886,
+        "finishedAt": 1790680020.1165776,
+        "revision": 0,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 0
+      },
+      {
+        "taskId": "71a09105-7a3e-402f-aa9d-fc94e857f446",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790680021.7581935,
+        "finishedAt": 1790680164.1936061,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 10701599
+      },
+      {
+        "taskId": "8c6f9990-2434-4ce8-8fa8-27687971b939",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790681210.2568986,
+        "finishedAt": 1790681577.163722,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 23125215
+      },
+      {
+        "taskId": "2c9ea50e-92d5-48a8-9322-caac42410007",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790681590.9431932,
+        "finishedAt": 1790681655.6724646,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 8092136
+      },
+      {
+        "taskId": "3695a432-09a7-4bb6-975c-04a1a7abc7c3",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790682514.6095188,
+        "finishedAt": 1790682723.7236772,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 101016
+      },
+      {
+        "taskId": "ca921626-9102-4d10-93e8-595f9a308186",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790682751.7268095,
+        "finishedAt": 1790682808.6072278,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 101250
+      },
+      {
+        "taskId": "a8f1f639-37b6-43c3-a6da-c9c2c40c1e0a",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790682824.4884286,
+        "finishedAt": 1790682936.9796355,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 10313522
+      },
+      {
+        "taskId": "70450c34-4680-4a42-85ed-f40ae690711b",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790682976.9433196,
+        "finishedAt": 1790682987.4439163,
+        "revision": 1,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 8504
+      },
+      {
+        "taskId": "cb33fd8c-02d0-43c0-89fb-8b072d372d7d",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790682989.2435145,
+        "finishedAt": 1790683018.5981343,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 71626
+      },
+      {
+        "taskId": "818031fb-b4d4-4710-b713-ae5784978efe",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790683324.4411032,
+        "finishedAt": 1790683398.9557414,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 27425023
+      },
+      {
+        "taskId": "affd37c2-d300-49bd-b1da-e8aad0313bc8",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790738882.0486884,
+        "finishedAt": 1790739302.2861683,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 27369141
+      },
+      {
+        "taskId": "db843613-bf4a-4d50-a926-b9851f18fccd",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790739400.9664693,
+        "finishedAt": 1790739637.6182668,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 6730526
+      },
+      {
+        "taskId": "19f463ed-8356-47a9-beb3-20ec4b7eda26",
+        "status": "failed",
+        "sessionId": null,
+        "createdAt": 1790756392.1870925,
+        "finishedAt": 1790952637.5673397,
+        "revision": 0,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 0
+      },
+      {
+        "taskId": "34874340-27b8-44b3-8c69-c17f59ff82bd",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790952649.6135302,
+        "finishedAt": 1790952947.3454342,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 9234906
+      },
+      {
+        "taskId": "ea17070d-4f66-4d3f-8a3c-67f35bbb5bd6",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790953152.2672718,
+        "finishedAt": 1790953274.4048793,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 70704
+      },
+      {
+        "taskId": "97f24515-ca9f-4939-ac6a-64b91d9e6aa2",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790953948.5109034,
+        "finishedAt": 1790953958.7684636,
+        "revision": 1,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 6883
+      },
+      {
+        "taskId": "dc460048-1c89-4ed6-a50d-83ac2e1dc6ec",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790953967.9660516,
+        "finishedAt": 1790954178.2932408,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 28394781
+      },
+      {
+        "taskId": "3da2dd2f-8e7a-424b-ab0a-0b1f44e02bd0",
+        "status": "cancelled",
+        "sessionId": null,
+        "createdAt": 1790955756.8600495,
+        "finishedAt": 1790955780.1023648,
+        "revision": 0,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 0
+      },
+      {
+        "taskId": "30dfd990-7ba3-4f02-9593-4e7f11ffe276",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790955795.080401,
+        "finishedAt": 1790956139.6730793,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 30495990
+      },
+      {
+        "taskId": "9ea220b4-f930-414d-a799-5fe44d9faea8",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790956387.0851054,
+        "finishedAt": 1790956713.8172772,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 22854432
+      },
+      {
+        "taskId": "f8b2112e-cadb-49b6-ac9a-600339e70549",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1790959744.637952,
+        "finishedAt": 1790959820.3561478,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263761
+      },
+      {
+        "taskId": "b7d0ba59-a9ac-40e9-8e8d-fd818009abda",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791023532.9917252,
+        "finishedAt": 1791023605.5276587,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263842
+      },
+      {
+        "taskId": "79b31151-b0dc-4ff1-86a1-aa32a58e4dd5",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791024121.8579998,
+        "finishedAt": 1791024191.107027,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263806
+      },
+      {
+        "taskId": "13e37e82-895e-49f8-b203-092840796a91",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791024322.7638052,
+        "finishedAt": 1791024389.7388332,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263845
+      },
+      {
+        "taskId": "bb7f58b8-d07e-4b8f-a83d-1f41eee582cf",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791024845.2900329,
+        "finishedAt": 1791024920.7358928,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 263707
+      },
+      {
+        "taskId": "44e9345a-c0e5-4857-a792-3ac039fff886",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791118006.8334818,
+        "finishedAt": 1791118193.9865036,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 80928
+      },
+      {
+        "taskId": "0c9bce26-1ba3-43a9-b663-2c91358ddfae",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791118225.774071,
+        "finishedAt": 1791118641.831385,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 43108451
+      },
+      {
+        "taskId": "c8383266-0ab3-44a3-bab1-f91d981e6cd8",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791118663.9014163,
+        "finishedAt": 1791118872.1100652,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 27383794
+      },
+      {
+        "taskId": "791d90c9-9082-4678-9cf9-990d2b779972",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791121138.821001,
+        "finishedAt": 1791121258.4779496,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 3674335
+      },
+      {
+        "taskId": "e773726b-082a-4093-801c-4ab65fa1a7f1",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791123291.5566728,
+        "finishedAt": 1791123407.7944844,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 2281249
+      },
+      {
+        "taskId": "32f7baae-e21f-49fe-8a07-b45f482b7130",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791127029.5422935,
+        "finishedAt": 1791127225.1745808,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 2281269
+      },
+      {
+        "taskId": "fd75c80f-1086-4b21-abe0-e4e83b9e5bec",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791127414.4592886,
+        "finishedAt": 1791127555.8720183,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 3715647
+      },
+      {
+        "taskId": "bcb245f6-32d4-4cef-b7d7-bd0e6ff0504b",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791169012.9713893,
+        "finishedAt": 1791169327.2478669,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 29192319
+      },
+      {
+        "taskId": "d8baafd7-07c3-4b35-bb88-8a276e5e3053",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791458146.408602,
+        "finishedAt": 1791458403.6259048,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 28168432
+      },
+      {
+        "taskId": "98e7ac66-cef1-4f15-98ca-36d2d10ea1ef",
+        "status": "completed",
+        "sessionId": null,
+        "createdAt": 1791458436.6841078,
+        "finishedAt": 1791458557.0276365,
+        "revision": 5,
+        "detailsAvailable": false,
+        "reason": "legacy",
+        "expiresAt": null,
+        "alreadyCleared": false,
+        "directoryBytes": 483166
+      }
+    ],
+    "kept": [],
+    "orphanDirectories": [
+      {
+        "taskId": "29a2705a-e26c-4155-979a-e5661c14804c",
+        "bytes": 1667354,
+        "reason": "no_index_row"
+      },
+      {
+        "taskId": "40b27786-3611-4cc4-9a1b-0117b61f7bdd",
+        "bytes": 156036,
+        "reason": "no_index_row"
+      },
+      {
+        "taskId": "8564bd0c-15a1-43ad-96b6-e615546f301e",
+        "bytes": 157087,
+        "reason": "no_index_row"
+      },
+      {
+        "taskId": "b4aacad9-b4b3-4f16-9f88-f7fa949d4819",
+        "bytes": 0,
+        "reason": "no_index_row"
+      }
+    ],
+    "totals": {
+      "tasks": 51,
+      "toClear": 51,
+      "alreadyCleared": 0,
+      "orphanDirectories": 4,
+      "bytesToClear": 484214242,
+      "bytesKept": 0
+    }
+  },
+  "result": {
+    "cleared": [
+      {
+        "taskId": "50f7ab7d-13f4-4cff-9247-9603e10b5897"
+      },
+      {
+        "taskId": "4f5d75db-2367-4082-9637-3ce57c972ba6"
+      },
+      {
+        "taskId": "72e60927-a97d-4616-b6d6-e546ee78d178"
+      },
+      {
+        "taskId": "c74c213d-d0a0-444f-b295-55a57538275b"
+      },
+      {
+        "taskId": "bfd85267-cc6d-4794-b108-75522c577d37"
+      },
+      {
+        "taskId": "7422dd4e-fd30-4072-956b-e5b1a21e5471"
+      },
+      {
+        "taskId": "39424022-198a-4040-b22f-1952b5422d02"
+      },
+      {
+        "taskId": "baaaedf6-0c90-483b-bd67-28a884792caa"
+      },
+      {
+        "taskId": "73a4fe6b-0067-4676-8686-90f1726da339"
+      },
+      {
+        "taskId": "ce0b90d0-72e4-48b7-894f-7f46a9e5c615"
+      },
+      {
+        "taskId": "e92ba3f9-14ea-4e29-80d4-3590dda4e001"
+      },
+      {
+        "taskId": "41f3501c-cfd1-46ab-b010-29c92cff979d"
+      },
+      {
+        "taskId": "48082845-e2ae-4e5c-bef1-c44445f4556d"
+      },
+      {
+        "taskId": "6ee5d0f4-22bd-46ec-b41f-b2898a945efd"
+      },
+      {
+        "taskId": "1fbc650c-efc9-4999-ac53-623278926549"
+      },
+      {
+        "taskId": "b6f1943f-94bb-4105-bdae-4868050158d0"
+      },
+      {
+        "taskId": "71867f75-f35b-48d7-ba73-b06110f38b29"
+      },
+      {
+        "taskId": "71a09105-7a3e-402f-aa9d-fc94e857f446"
+      },
+      {
+        "taskId": "8c6f9990-2434-4ce8-8fa8-27687971b939"
+      },
+      {
+        "taskId": "2c9ea50e-92d5-48a8-9322-caac42410007"
+      },
+      {
+        "taskId": "3695a432-09a7-4bb6-975c-04a1a7abc7c3"
+      },
+      {
+        "taskId": "ca921626-9102-4d10-93e8-595f9a308186"
+      },
+      {
+        "taskId": "a8f1f639-37b6-43c3-a6da-c9c2c40c1e0a"
+      },
+      {
+        "taskId": "70450c34-4680-4a42-85ed-f40ae690711b"
+      },
+      {
+        "taskId": "cb33fd8c-02d0-43c0-89fb-8b072d372d7d"
+      },
+      {
+        "taskId": "818031fb-b4d4-4710-b713-ae5784978efe"
+      },
+      {
+        "taskId": "affd37c2-d300-49bd-b1da-e8aad0313bc8"
+      },
+      {
+        "taskId": "db843613-bf4a-4d50-a926-b9851f18fccd"
+      },
+      {
+        "taskId": "19f463ed-8356-47a9-beb3-20ec4b7eda26"
+      },
+      {
+        "taskId": "34874340-27b8-44b3-8c69-c17f59ff82bd"
+      },
+      {
+        "taskId": "ea17070d-4f66-4d3f-8a3c-67f35bbb5bd6"
+      },
+      {
+        "taskId": "97f24515-ca9f-4939-ac6a-64b91d9e6aa2"
+      },
+      {
+        "taskId": "dc460048-1c89-4ed6-a50d-83ac2e1dc6ec"
+      },
+      {
+        "taskId": "3da2dd2f-8e7a-424b-ab0a-0b1f44e02bd0"
+      },
+      {
+        "taskId": "30dfd990-7ba3-4f02-9593-4e7f11ffe276"
+      },
+      {
+        "taskId": "9ea220b4-f930-414d-a799-5fe44d9faea8"
+      },
+      {
+        "taskId": "f8b2112e-cadb-49b6-ac9a-600339e70549"
+      },
+      {
+        "taskId": "b7d0ba59-a9ac-40e9-8e8d-fd818009abda"
+      },
+      {
+        "taskId": "79b31151-b0dc-4ff1-86a1-aa32a58e4dd5"
+      },
+      {
+        "taskId": "13e37e82-895e-49f8-b203-092840796a91"
+      },
+      {
+        "taskId": "bb7f58b8-d07e-4b8f-a83d-1f41eee582cf"
+      },
+      {
+        "taskId": "44e9345a-c0e5-4857-a792-3ac039fff886"
+      },
+      {
+        "taskId": "0c9bce26-1ba3-43a9-b663-2c91358ddfae"
+      },
+      {
+        "taskId": "c8383266-0ab3-44a3-bab1-f91d981e6cd8"
+      },
+      {
+        "taskId": "791d90c9-9082-4678-9cf9-990d2b779972"
+      },
+      {
+        "taskId": "e773726b-082a-4093-801c-4ab65fa1a7f1"
+      },
+      {
+        "taskId": "32f7baae-e21f-49fe-8a07-b45f482b7130"
+      },
+      {
+        "taskId": "fd75c80f-1086-4b21-abe0-e4e83b9e5bec"
+      },
+      {
+        "taskId": "bcb245f6-32d4-4cef-b7d7-bd0e6ff0504b"
+      },
+      {
+        "taskId": "d8baafd7-07c3-4b35-bb88-8a276e5e3053"
+      },
+      {
+        "taskId": "98e7ac66-cef1-4f15-98ca-36d2d10ea1ef"
+      },
+      {
+        "taskId": "29a2705a-e26c-4155-979a-e5661c14804c",
+        "reason": "orphan_directory"
+      },
+      {
+        "taskId": "40b27786-3611-4cc4-9a1b-0117b61f7bdd",
+        "reason": "orphan_directory"
+      },
+      {
+        "taskId": "8564bd0c-15a1-43ad-96b6-e615546f301e",
+        "reason": "orphan_directory"
+      },
+      {
+        "taskId": "b4aacad9-b4b3-4f16-9f88-f7fa949d4819",
+        "reason": "orphan_directory"
+      }
+    ],
+    "skipped": [],
+    "failed": []
+  }
+}

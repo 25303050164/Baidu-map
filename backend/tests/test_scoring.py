@@ -96,9 +96,9 @@ def test_overall_score_weights_all_categories_equally():
     scores = full_scores({"shopping": score("shopping", covered=50, gap=0, unknown=50),
               "medical": score("medical", covered=80, gap=20, unknown=0),
               "education": score("education", covered=20, gap=80, unknown=0)})
-    overall = overall_score(scores)
+    overall = overall_score(scores, expected_categories=MAJOR_CATEGORIES)
     assert isinstance(overall, OverallScore)
-    assert CATEGORY_WEIGHT == pytest.approx(1 / 10)
+    assert CATEGORY_WEIGHT == pytest.approx(1 / 3)
     assert overall.coverage_lower_pct == pytest.approx((50 + 80 + 20 + 700) / 10)
     assert overall.coverage_upper_pct == pytest.approx((100 + 80 + 20 + 700) / 10)
     assert overall.assessable_pct == pytest.approx((50 + 100 + 100 + 700) / 10)
@@ -110,7 +110,7 @@ def test_partial_categories_are_not_renamed_into_a_three_category_total():
     """§7.1：仅分析部分大类时只显示类别区间，不给总体分。"""
     scores = {"shopping": score("shopping", covered=50, gap=0, unknown=50),
               "medical": score("medical", covered=80, gap=20, unknown=0)}
-    overall = overall_score(scores)
+    overall = overall_score(scores, expected_categories=MAJOR_CATEGORIES)
     assert isinstance(overall, OverallUnavailable)
     assert overall.reason == "categories_not_analysed"
     assert overall.missing_categories == tuple(category for category in MAJOR_CATEGORIES
@@ -122,7 +122,7 @@ def test_one_category_without_support_withholds_the_overall_interval():
               "medical": score("medical", covered=80, gap=20, unknown=0),
               "education": score("education", covered=0, gap=0, unknown=100,
                                  spatial_support=False)})
-    overall = overall_score(scores)
+    overall = overall_score(scores, expected_categories=MAJOR_CATEGORIES)
     assert isinstance(overall, OverallUnavailable)
     assert overall.reason == "category_without_spatial_support"
     assert overall.missing_categories == ("education",)
@@ -132,7 +132,21 @@ def test_all_ten_supported_degenerate_interval_equals_the_point_score():
     scores = full_scores({"shopping": score("shopping", covered=60, gap=40, unknown=0),
               "medical": score("medical", covered=90, gap=10, unknown=0),
               "education": score("education", covered=30, gap=70, unknown=0)})
-    overall = overall_score(scores)
+    overall = overall_score(scores, expected_categories=MAJOR_CATEGORIES)
     assert isinstance(overall, OverallScore)
     assert math.isclose(overall.coverage_lower_pct, overall.coverage_upper_pct)
     assert math.isclose(overall.coverage_lower_pct, (60 + 90 + 30 + 700) / 10)
+
+
+def test_explicit_analysis_scope_controls_the_denominator():
+    scores = {
+        "shopping": score("shopping", covered=60, gap=40, unknown=0),
+        "medical": score("medical", covered=90, gap=10, unknown=0),
+        "care": score("care", covered=20, gap=80, unknown=0),
+        "transport": score("transport", covered=10, gap=90, unknown=0),
+    }
+    overall = overall_score(scores, expected_categories=("shopping", "medical", "care", "transport"))
+    assert isinstance(overall, OverallScore)
+    assert overall.categories == ("shopping", "medical", "care", "transport")
+    assert overall.weights == {category: pytest.approx(0.25) for category in overall.categories}
+    assert overall.coverage_lower_pct == pytest.approx(45.0)

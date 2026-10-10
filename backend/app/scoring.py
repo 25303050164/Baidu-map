@@ -14,15 +14,26 @@
 这些区间以当前目录与路网模型为前提，不是统计置信区间，也不包含目录本身遗漏的现实
 设施；没有人口数据就不输出人口覆盖率，设施数量也不代表容量或政策准入（§7.1）。
 """
+from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .catalog import majors
+from .catalog import default_analysis_majors, majors
 from .contracts import MajorCategory
 
 MAJOR_CATEGORIES: tuple[MajorCategory, ...] = tuple(majors())
+DEFAULT_SCORING_CATEGORIES: tuple[MajorCategory, ...] = tuple(default_analysis_majors())
 
-# §7.1：目录全部大类等权；只有目录全部大类齐备时才有总体分。
-CATEGORY_WEIGHT = 1.0 / len(MAJOR_CATEGORIES)
+# §7.1：三大类各占 1/3；只有三大类齐备时才有总体分。
+CATEGORY_WEIGHT = 1.0 / len(DEFAULT_SCORING_CATEGORIES)
+
+
+def category_weights(categories: Iterable[str]) -> dict[str, float]:
+    """Return equal weights for exactly the categories in one analysis scope."""
+    selected = tuple(dict.fromkeys(categories))
+    if not selected:
+        return {}
+    weight = 1.0 / len(selected)
+    return {category: weight for category in selected}
 
 # §11.3 门槛 1：每类别 C＋G＋U 与评估域 A 的误差不超过 max(1 m², A×10⁻⁶)。
 RELATIVE_AREA_TOLERANCE = 1e-6
@@ -125,32 +136,37 @@ def category_score(category: str, areas: CategoryAreas, *, domain_area_m2: float
         unknown_pct=_pct(areas.unknown_m2, domain_area_m2))
 
 
-def overall_score(scores: dict[str, CategoryScore]) -> OverallScore | OverallUnavailable:
-    """目录全部大类的总体区间分，或说明为什么给不出（§7.1）。
+def overall_score(scores: dict[str, CategoryScore],
+                  expected_categories: Iterable[str] | None = None) -> OverallScore | OverallUnavailable:
+    """Score the requested category scope, or explain why it is unavailable.
 
-    只分析部分大类、或某一类没有空间支持时都不给总体分：把两类重新加权成"全部类别总分"
-    会让读者以为全部类别都评估过了。
+    The default scope is the core three categories. Callers that explicitly
+    request an expanded taxonomy must pass that scope so unrequested categories
+    are not treated as missing evidence.
     """
-    missing = tuple(category for category in MAJOR_CATEGORIES if category not in scores)
+    categories = tuple(dict.fromkeys(
+        DEFAULT_SCORING_CATEGORIES if expected_categories is None else expected_categories
+    ))
+    missing = tuple(category for category in categories if category not in scores)
     if missing:
         return OverallUnavailable(reason="categories_not_analysed", missing_categories=missing)
-    unsupported = tuple(category for category in MAJOR_CATEGORIES
+    unsupported = tuple(category for category in categories
                         if not scores[category].supported)
     if unsupported:
         return OverallUnavailable(reason="category_without_spatial_support",
                                   missing_categories=unsupported)
-    lower = sum(scores[category].coverage_lower_pct * CATEGORY_WEIGHT  # type: ignore[operator]
-                for category in MAJOR_CATEGORIES)
-    upper = sum(scores[category].coverage_upper_pct * CATEGORY_WEIGHT  # type: ignore[operator]
-                for category in MAJOR_CATEGORIES)
-    assessable = sum(scores[category].assessable_pct * CATEGORY_WEIGHT  # type: ignore[operator]
-                     for category in MAJOR_CATEGORIES)
-    unknown = sum(scores[category].unknown_pct * CATEGORY_WEIGHT  # type: ignore[operator]
-                  for category in MAJOR_CATEGORIES)
+    weights = category_weights(categories)
+    lower = sum(scores[category].coverage_lower_pct * weights[category]  # type: ignore[operator]
+                for category in categories)
+    upper = sum(scores[category].coverage_upper_pct * weights[category]  # type: ignore[operator]
+                for category in categories)
+    assessable = sum(scores[category].assessable_pct * weights[category]  # type: ignore[operator]
+                     for category in categories)
+    unknown = sum(scores[category].unknown_pct * weights[category]  # type: ignore[operator]
+                  for category in categories)
     return OverallScore(coverage_lower_pct=lower, coverage_upper_pct=upper,
                         assessable_pct=assessable, unknown_pct=unknown,
-                        categories=MAJOR_CATEGORIES,
-                        weights={category: CATEGORY_WEIGHT for category in MAJOR_CATEGORIES})
+                        categories=categories, weights=weights)
 
 
 def interval_degenerates(score: CategoryScore) -> bool:

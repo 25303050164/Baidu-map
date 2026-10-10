@@ -49,6 +49,19 @@ describe('feature collection layers', () => {
     expect(drawable.shapes).toEqual([]);
   });
 
+  it('renders extension major category labels instead of machine keys', () => {
+    const drawable = drawableLayer('facilities', layer({ layerId: 'facilities', displayGeometry: null,
+      geometry: collection([
+        feature(point(116.4, 39.9), { id: 'f-1', name: '社区银行', category: 'bank', majorCategory: 'finance' }),
+        feature(point(116.41, 39.91), { id: 'f-2', name: '街道服务中心', category: 'government', majorCategory: 'public' }),
+      ]) }));
+    expect(drawable.points.map(item => item.title)).toEqual([
+      '社区银行 · 金融 · 银行', '街道服务中心 · 政务公共服务 · 政务/社区服务',
+    ]);
+    expect(drawable.points.map(item => item.title)).not.toContain(expect.stringContaining('finance'));
+    expect(drawable.points.map(item => item.title)).not.toContain(expect.stringContaining('public'));
+  });
+
   it('never invents a category colour for a point that has none', () => {
     const drawable = drawableLayer('facilities', layer({ layerId: 'facilities',
       displayGeometry: null, geometry: collection([feature(point(116.4, 39.9), { id: 'x' })]) }));

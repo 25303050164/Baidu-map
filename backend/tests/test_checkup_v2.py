@@ -15,7 +15,8 @@ from fastapi.testclient import TestClient
 from app.algorithms.baidu_e82 import EndpointAnalyticProvider
 from app.algorithms.hybrid_isochrone.extent import ALGORITHM_VERSION
 from app.algorithms.hybrid_isochrone.models import Evidence, Validity
-from app.checkups.store import CheckupStore
+from app.checkups.store import CheckupStore, extension_identity, extension_matches
+from app.poi.online import PROCESSING_STEP_LIMIT
 from app.config import Settings
 from app.main import create_app
 
@@ -81,6 +82,12 @@ class MetredAnalyticProvider(EndpointAnalyticProvider):
 def make_app(tmp_path, provider_factory=None, **overrides):
     settings = Settings(
         _env_file=None, baidu_map_ak="", analysis_provider="synthetic",
+        # 档位切换点必须固定在测试里：默认值是一个真实日期，过了那天这个夹具就会
+        # 悄悄换成保守档，能力表和额度断言的失败与代码无关。
+        baidu_quota_fallback_at="2099-01-01T00:00:00+08:00",
+        # 日额度同样固定在测试里：本文件要验的是"能力表把应用自己的预算报出来"，
+        # 不是随部署默认值浮动。出厂默认值是 80，见 test_quota 的同名断言。
+        baidu_place_daily_budget=1600,
         checkup_dir=tmp_path / "checkups", hybrid_ledger_dir=tmp_path / "ledgers",
         quota_ledger_path=tmp_path / "quota.sqlite3",
         hybrid_obstacle_path=Path("missing-checkup-obstacles"),
@@ -449,23 +456,48 @@ def test_capabilities_report_both_engines_and_the_fixed_distance_rule(tmp_path):
         assert rules["distance"]["tolerance_m"] == 100
         # The uncertainty band is never presented as a radius enlargement.
         assert rules["bandIsNotRadiusExpansion"] is True
+        # 单任务默认 1200：合成夹具实测"适中"密度整轮 203 次派发，1200 才够一次查到 80%
+        # 覆盖目标（2026-10-09 运营者授权）。
         assert document["budgets"]["poiRequests"] == 1200
+        assert document["budgets"]["maxPoiRequests"] == 1200
         assert document["budgets"]["routeRequests"] == 120
+        # 一次检索的最小次数是"查询分块 × 检索小类"，请求体里算不出来：客户端要能
+        # 在提交前用它判断预算够不够，而不是提交后拿到一个预算不足的失败任务。
+        from app.catalog import default_analysis_majors, majors, poi_keys
+        assert document["budgets"]["poiMinorCategories"] == {
+            "default": len(poi_keys(list(default_analysis_majors()))),
+            "all": len(poi_keys(list(majors())))}
+        assert document["budgets"]["poiBlocksUpperBound"] == 4
+        # "块数上界 × 小类数"是冷启动首轮的**估计**，不是总请求数的下界：几何确定后
+        # 实际分块更少，而翻页与细分一定更多。旧字段保留但报 false。
+        assert document["budgets"]["poiRequestsIsLowerBound"] is False
+        assert document["budgets"]["poiFirstRoundIsAnEstimate"] is True
+        # 预检与执行共用的口径：本地处理上限、网络额度与它分开、首轮是估算而非预留。
+        assert document["poiPlanning"] == {
+            "processingStepLimit": PROCESSING_STEP_LIMIT,
+            "networkBudgetIsSeparate": True,
+            "initialPlanReportsCacheReuse": True,
+            "initialPlanIsReservation": False}
+        # 跨任务复用窗口是部署决定，能力表要把当前生效值报出来；缓存本身是进程内存，
+        # 重启即失效，这一条也要能被客户端看到。
+        assert document["cache"] == {"freshnessSeconds": None, "crossTaskReuse": False,
+                                     "processLocal": True}
         assert document["coverage"]["queryPaddingM"] == 1300
+        assert document["coverage"]["graphState"] == "unavailable"
 
 
 def test_capabilities_report_the_application_budget_never_the_account_balance(tmp_path):
     app = make_app(tmp_path)
     with TestClient(app) as client:
         quota = client.get("/api/v2/capabilities").json()["quota"]
-        assert quota["tier"] == "fallback" and quota["matrixEnabled"] is False
-        # Neither service has a local day cap by default.
+        assert quota["tier"] == "current" and quota["matrixEnabled"] is False
+        # The fixture pins the current tier and its application-only day cap.
         assert quota["services"]["direction"] == {
-            "qps": 2, "maxInflight": 1, "dailyBudget": None,
+            "qps": 3, "maxInflight": 1, "dailyBudget": None,
             "spentToday": None, "remainingToday": None}
         assert quota["services"]["place"] == {
-            "qps": 2, "maxInflight": 1, "dailyBudget": None,
-            "spentToday": None, "remainingToday": None}
+            "qps": 10, "maxInflight": 1, "dailyBudget": 1600,
+            "spentToday": 0, "remainingToday": 1600}
         # Nothing may present this as the account's own remaining allowance.
         assert quota["claimsAccountBalance"] is False
         assert "本应用请求限制" in quota["label"]
@@ -475,7 +507,8 @@ def test_capabilities_report_the_application_budget_never_the_account_balance(tm
 def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
     """§10: a new contract must be checked alongside the old OpenAPI surface."""
     from tools.export_contract import typescript
-    from app.contracts import AnalysisResponse, TaskResultResponse, TaskStatusResponse, OsmOfflineRequest
+    from app.contracts import (AnalysisResponse, FacilityCatalog, TaskResultResponse,
+                               TaskStatusResponse, OsmOfflineRequest)
     from app.hybrid_contracts import HybridError, HybridRequest, HybridResultResponse
 
     app = make_app(tmp_path)
@@ -486,6 +519,10 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
             "/api/v2/checkups/{task_id}", "/api/v2/checkups/{task_id}/result",
             "/api/v2/checkups/{task_id}/layers/{layer_id}", "/api/v2/checkups/{task_id}/cancel",
             "/api/v2/checkups/{task_id}/routes/{facility_id}",
+            "/api/v2/checkups/{task_id}/facility-extensions",
+            "/api/v2/checkups/{task_id}/facility-extensions/{extension_id}",
+            "/api/v2/checkups/{task_id}/facility-extensions/{extension_id}/result",
+            "/api/v2/checkups/{task_id}/facility-extensions/{extension_id}/cancel",
             "/api/v2/capabilities"} <= set(paths)
     # Every legacy surface is still declared next to the versioned one.
     assert {"/api/analyses", "/api/analyses/by-request/{client_request_id}",
@@ -499,13 +536,196 @@ def test_v2_contract_is_generated_without_touching_the_legacy_ones(tmp_path):
     schemas = spec["components"]["schemas"]
     assert {"clientRequestId", "coordinateSystem", "schemaVersion"} <= set(
         schemas["CheckupRequest"]["properties"])
-    # v2 adds no model to the generated demo contract, so the strict POI
-    # evidence types keep the serialization test_poi_evidence locks down.
-    legacy = typescript(ANALYSIS_MODELS, request_models=ANALYSIS_REQUEST_MODELS)
-    assert legacy == (Path(__file__).resolve().parents[2]
-                      / "life-circle-demo/src/api-contract.ts").read_text(encoding="utf-8")
-    assert "export type Checkup" not in legacy
+    from tools.export_contract import CHECKUP_MODELS, CHECKUP_REQUEST_MODELS
+    v2 = typescript(CHECKUP_MODELS, request_models=CHECKUP_REQUEST_MODELS)
+    assert v2 == (Path(__file__).resolve().parents[2]
+                  / "life-circle-demo/src/checkup/contract.ts").read_text(encoding="utf-8")
 
 
 def _unreachable():
     raise AssertionError("a checkup must not run the legacy facility stage")
+
+
+# -- §三.6 并发去重：数据库唯一约束仍然只有一处创建点 ------------------------
+
+def test_two_concurrent_extension_submissions_create_exactly_one_row(tmp_path):
+    """两个线程同时提交同一个请求标识：只创建一行，只让一方拿到 created。
+
+    进程内两个 HTTP 请求不会真的交错（``submit_extension`` 是同步函数、内部没有
+    await），所以这条证据只能落在存储层：数据库的唯一约束 + ``BEGIN IMMEDIATE``
+    才是那个"只创建一次"的地方。
+    """
+    import threading
+
+    store = CheckupStore(tmp_path / "checkups")
+    store.create_schema()
+    identity = extension_identity(categories=["dining", "leisure"], max_poi_requests=None)
+    start, results = threading.Barrier(2), []
+
+    def submit(extension_id):
+        start.wait(timeout=10)
+        try:
+            record, created = store.create_extension(
+                extension_id=extension_id, task_id="t1", client_request_id="same-id",
+                identity=identity, fingerprint="fp", base_revision=1,
+                categories=["dining", "leisure"], budget=60)
+            results.append((record.extension_id, created))
+        except Exception as exc:  # noqa: BLE001 - reported as the failure it is
+            results.append(exc)
+
+    threads = [threading.Thread(target=submit, args=(f"ext-{index}",)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert [item for item in results if isinstance(item, Exception)] == []
+    assert sorted(created for _extension_id, created in results) == [False, True]
+    assert len({extension_id for extension_id, _created in results}) == 1
+    assert len(store.extensions_of("t1")) == 1
+
+
+def test_extension_identity_is_what_the_client_declared(tmp_path):
+    """身份只认客户端声明的那两件事：类别集合与是否显式给了预算。"""
+    store = CheckupStore(tmp_path / "checkups")
+    store.create_schema()
+    store.create_extension(
+        extension_id="ext-1", task_id="t1", client_request_id="same-id",
+        identity=extension_identity(categories=["dining", "leisure"], max_poi_requests=None),
+        fingerprint="fp", base_revision=1, categories=["dining", "leisure"], budget=60)
+    record = store.extension("ext-1")
+
+    def matches(categories, declared, resolved=60):
+        return extension_matches(record, identity=extension_identity(
+            categories=categories, max_poi_requests=declared), resolved_budget=resolved)
+
+    # 省略与"显式写出当时的默认值"是同一个请求；类别顺序无关。
+    assert matches(["leisure", "dining"], None)
+    assert matches(["dining", "leisure"], 60)
+    # 换了类别、或换了一个与冻结预算不同的显式数字，都不是同一个请求。
+    assert not matches(["finance"], None)
+    assert not matches(["dining", "leisure"], 160)
+    # 默认值后来变了也不影响：身份里没有"现在算出来的默认值"。
+    assert extension_matches(record, identity=extension_identity(
+        categories=["dining", "leisure"], max_poi_requests=None), resolved_budget=999)
+
+    # 显式写了预算的那一行反过来看：省略只在"省略解析出来正好是那个数"时命中，
+    # 否则"省略"就成了通配符，能把一次 160 的补查当成 60 的重复提交。
+    store.create_extension(
+        extension_id="ext-2", task_id="t1", client_request_id="explicit-id",
+        identity=extension_identity(categories=["dining"], max_poi_requests=160),
+        fingerprint="fp", base_revision=1, categories=["dining"], budget=160)
+    explicit = store.extension("ext-2")
+
+    def explicit_matches(declared, resolved):
+        return extension_matches(explicit, identity=extension_identity(
+            categories=["dining"], max_poi_requests=declared), resolved_budget=resolved)
+
+    assert explicit_matches(None, 160) is True       # 省略，而现在的默认就是 160
+    assert explicit_matches(None, 60) is False       # 省略，但默认不是它
+    assert explicit_matches(160, 60) is True         # 显式同名，与默认无关
+
+# -- §三.7/§三.8：旧库迁移与"解析默认值"的惰性读取 -------------------------
+
+#: 本轮改动之前的补查表：没有 intent / stop_reason / initial_plan 三列。
+OLD_EXTENSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS facility_extensions (
+    extension_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    client_request_id TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    base_revision INTEGER NOT NULL,
+    categories TEXT NOT NULL,
+    budget INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    stage TEXT,
+    requests INTEGER NOT NULL DEFAULT 0,
+    network_requests INTEGER NOT NULL DEFAULT 0,
+    document TEXT,
+    counts_by_category TEXT,
+    facilities_status TEXT,
+    error TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    finished_at REAL,
+    UNIQUE (task_id, client_request_id)
+);
+"""
+
+
+def test_an_old_extension_table_gains_the_new_columns_without_touching_rows(tmp_path):
+    """§三.7：旧库打开即补齐三个可空列，既有行原样读回，不重算任何预算。"""
+    import sqlite3
+
+    root = tmp_path / "checkups"
+    root.mkdir(parents=True)
+    connection = sqlite3.connect(root / "checkups.sqlite3")
+    connection.executescript(OLD_EXTENSION_SCHEMA)
+    connection.execute(
+        "INSERT INTO facility_extensions (extension_id, task_id, client_request_id, fingerprint,"
+        " base_revision, categories, budget, status, requests, network_requests, created_at,"
+        " updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("ext-old", "t1", "old-id", "fp", 3, '["dining"]', 60, "completed", 20, 4, 1.0, 2.0))
+    connection.commit()
+    connection.close()
+
+    store = CheckupStore(root)
+    store.initialize()
+    record = store.extension("ext-old")
+    # 旧行没有声明，也没有新诊断：读作"没记录"，不补造。
+    assert record.intent is None
+    assert record.stop_reason is None
+    assert record.initial_plan is None
+    assert (record.requests, record.network_requests, record.budget) == (20, 4, 60)
+    # 旧行按它被创建时的规则判定：省略预算、解析出来正好是它冻结的 60 → 同一个请求。
+    assert extension_matches(record, identity=extension_identity(
+        categories=["dining"], max_poi_requests=None), resolved_budget=60) is True
+    assert extension_matches(record, identity=extension_identity(
+        categories=["dining"], max_poi_requests=None), resolved_budget=80) is False
+    # 迁移之后再写入的新行带上新列，两者能共存。
+    store.create_extension(extension_id="ext-new", task_id="t1", client_request_id="new-id",
+                           identity=extension_identity(categories=["leisure"],
+                                                       max_poi_requests=None),
+                           fingerprint="fp", base_revision=3, categories=["leisure"], budget=60)
+    assert store.extension("ext-new").intent == {"categories": ["leisure"], "maxPoiRequests": None}
+
+
+def test_the_current_default_is_only_read_when_the_rule_needs_it(tmp_path):
+    """§三.4：解析默认值可能很贵（要读父任务圈面）—— 不该为一个纯声明比较去读它。"""
+    store = CheckupStore(tmp_path / "checkups")
+    store.create_schema()
+    store.create_extension(extension_id="ext-1", task_id="t1", client_request_id="same-id",
+                           identity=extension_identity(categories=["dining"],
+                                                       max_poi_requests=None),
+                           fingerprint="fp", base_revision=1, categories=["dining"], budget=60)
+    omitted = store.extension("ext-1")
+    calls = []
+
+    def resolved():
+        calls.append("read")
+        return 80
+
+    # 双方都省略：等价判断只依赖两边都没声明这件事。
+    assert extension_matches(omitted, identity=extension_identity(
+        categories=["dining"], max_poi_requests=None), resolved_budget=resolved) is True
+    assert calls == []
+
+    # 显式 60 的那一行：显式对显式，同样不需要读。
+    store.create_extension(extension_id="ext-2", task_id="t1", client_request_id="explicit",
+                           identity=extension_identity(categories=["dining"],
+                                                       max_poi_requests=60),
+                           fingerprint="fp", base_revision=1, categories=["dining"], budget=60)
+    explicit = store.extension("ext-2")
+    assert extension_matches(explicit, identity=extension_identity(
+        categories=["dining"], max_poi_requests=60), resolved_budget=resolved) is True
+    assert calls == []
+
+    # 一边显式、一边省略：这时才需要"省略解析成了多少"，而且只读一次。
+    assert extension_matches(explicit, identity=extension_identity(
+        categories=["dining"], max_poi_requests=None), resolved_budget=resolved) is False
+    assert calls == ["read"]
+    # 解析结果正好等于显式值：同一个请求。
+    calls.clear()
+    assert extension_matches(explicit, identity=extension_identity(
+        categories=["dining"], max_poi_requests=None),
+        resolved_budget=lambda: 60) is True
+    assert calls == []

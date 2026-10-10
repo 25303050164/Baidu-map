@@ -4,10 +4,10 @@ Map data © OpenStreetMap contributors. 数据按 [Open Database License (ODbL)]
 
 OSM 是独立算法基线，**不是 ground truth**。可能缺道路、门禁、校园出口、小区内部连接。原始可达结果是一维道路片段；buffer 面仅用于显示，不能解释为额外离路步行权限。
 
-数据源：[Geofabrik Shanghai](https://download.geofabrik.de/asia/china/shanghai.html)。本次固定快照为 `shanghai-260912.osm.pbf`，下载日期 2026-09-14；不要每日自动更新。PBF SHA256：
+数据源：[Geofabrik Shanghai](https://download.geofabrik.de/asia/china/shanghai.html)。本次固定快照文件名为 `shanghai-latest.osm.pbf`，数据版本 `geofabrik-shanghai-260913`，下载日期 2026-09-14；不要每日自动更新。PBF SHA256：
 
 ```text
-0490e886ef41881928c1b10500ee280ef009a892ac43d8a476fc082894064b82
+11e420b2fe24176856b31c26da308e3ec41a9a7f5a2b849d91c34f7069837c12
 ```
 
 覆盖范围使用同次下载的 Geofabrik `shanghai.poly`（extract 范围，不是从路网死端推断）。SHA256：
@@ -45,38 +45,28 @@ python -m pip install -r requirements-osm-build.txt -e ../life-circle-algorithm
 
 本次 Windows 测试环境使用 conda-forge 的 `cykhash-2.0.1-py312hbb81ca0_3.conda` 预编译扩展，下载后校验 SHA256，再安装到项目虚拟环境；没有安装系统编译器，也没有改算法来绕过 Pyrosm。准备环境建议使用完整 conda 环境。缓存是数据格式，可以跨准备/运行环境使用。
 
-## 2. 下载并固定数据（仅准备阶段联网）
+## 2. 下载、构建和激活
 
-以下命令从 `backend` 运行。已有本轮文件时无需再次下载。
-
-```powershell
-New-Item -ItemType Directory -Force ../data/osm | Out-Null
-Invoke-WebRequest 'https://download.geofabrik.de/asia/china/shanghai-260912.osm.pbf' -OutFile '../data/osm/shanghai-260912.osm.pbf'
-Invoke-WebRequest 'https://download.geofabrik.de/asia/china/shanghai.poly' -OutFile '../data/osm/shanghai.poly'
-Get-FileHash ../data/osm/shanghai-260912.osm.pbf -Algorithm SHA256
-Get-FileHash ../data/osm/shanghai.poly -Algorithm SHA256
-```
-
-如果 Geofabrik 日快照已经清理，请使用已有归档；若改用其他版本，应更新版本号、来源、下载日期、SHA256，不能冒充此快照。
-
-## 3. 配置与构图
-
-Settings 从 `backend/.env` 读取；环境变量优先。相对文件路径统一相对 `backend` 解析，不依赖运行目录。不要改动已有百度密钥。可在当前 PowerShell 仅设置 OSM 项：
+已有部署方提供的运行包时，从仓库根目录执行一条命令即可下载、校验、解压并激活：
 
 ```powershell
-$env:OSM_PBF_PATH='../data/osm/shanghai-260912.osm.pbf'
-$env:OSM_GRAPH_CACHE_PATH='../data/osm/shanghai.osm-cache'
-$env:OSM_DATA_VERSION='geofabrik-shanghai-20260912'
-$env:OSM_METRIC_CRS='EPSG:32651'
-$env:WALK_SPEED_MPS='1.3'
-$env:SNAP_MAX_DISTANCE_M='200'
-$env:ISOCHRONE_BUFFER_M='25'
-$env:OSM_COVERAGE_BOUNDARY_PATH='../data/osm/shanghai.poly'
-$env:OSM_COVERAGE_MARGIN_M='100'
-& $osmPython scripts/prepare_osm_graph.py --source 'https://download.geofabrik.de/asia/china/shanghai-260912.osm.pbf' --downloaded-at '2026-09-14'
+python backend/scripts/setup_osm_region.py download --url '<runtime-package-url>' --region '<region-id>' --sha256 '<archive-sha256>'
 ```
 
-`prepare_osm_graph.py` **不会下载**。读取本地 PBF，通过 Pyrosm `get_network(network_type="walking", nodes=True)`，投影 GeoDataFrames 到米制 CRS，构造保留全部组件的 MultiDiGraph。一般步行道路双向；显式 `oneway:foot`、`foot:forward=no`、`foot:backward=no` 限制方向，汽车 oneway 不自动限制行人。
+ZIP 必须包含 `data/osm/manifest.json`。已经解压到本地时，使用 `list` 和 `select`；不使用 OSM 时使用 `clear`。这些命令会统一写入 `backend/.env`，不需要手工拼接路径。
+
+如果需要自定义地区或重建快照，先从对应地区的 Geofabrik 页面下载 `.osm.pbf` 与 `.poly`，安装一次准备依赖，然后执行：
+
+```powershell
+python -m pip install -r backend/requirements-osm-build.txt
+python backend/scripts/setup_osm_region.py build --region '<region-id>' --pbf '<path-to-pbf>' --coverage '<path-to-poly>' --version '<snapshot-id>' --metric-crs '<metric-crs>' --source '<pbf-url>' --downloaded-at '<yyyy-mm-dd>'
+```
+
+构建命令会生成图缓存、`graph_metadata.json`、风险层、障碍层和 `manifest.json`，校验后直接激活地区。生成包位于 `data/osm/regions/<region-id>/`；`--no-simplify` 可保留所有节点，替换已有地区时追加 `--force`。如果 Geofabrik 日快照已经清理，请使用已有归档；改用其他版本时应更新版本号、来源、下载日期和 SHA256。
+
+## 3. 构图细节
+
+`setup_osm_region.py build` 内部调用 `prepare_osm_graph.py` 的同一构图逻辑。构图脚本**不会下载**，只读取本地 PBF，通过 Pyrosm `get_network(network_type="walking", nodes=True)`，投影 GeoDataFrames 到米制 CRS，构造保留全部组件的 MultiDiGraph。一般步行道路双向；显式 `oneway:foot`、`foot:forward=no`、`foot:backward=no` 限制方向，汽车 oneway 不自动限制行人。
 
 OSMnx 简化时在 `osmid/highway/foot/access/bridge/tunnel/service/oneway:foot` 变化处保留节点；已有曲线的端点和 barrier 节点也保留；`remove_rings=False`。检查总道路长度、组件数量及属性一致性。`--no-simplify` 可保留所有原节点，默认启用简化。
 

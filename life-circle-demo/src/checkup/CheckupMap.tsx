@@ -38,11 +38,11 @@ export type HeatLayer = 'service' | 'density';
 export type CheckupLayerToggles = Partial<Record<LayerId | HeatLayer | 'water', boolean>>;
 
 /**
- * 默认显示圈面、服务覆盖热力和核验；模型网格采样按需打开。
+ * 默认显示圈面、服务覆盖热力和核验；模型网格采样与服务灰区按需打开。
  * 服务覆盖是体检的结论本身；设施密度只说"设施扎不扎堆"，不说覆盖，所以不默认打开。
  */
 export const DEFAULT_CHECKUP_LAYERS: Record<LayerId | HeatLayer | 'water', boolean> = {
-  isochrone: true, accessibility: true, service_gaps: true, facilities: true,
+  isochrone: true, accessibility: true, service_gaps: false, facilities: true,
   heatmap: false, verification: true, report: false, density: false, service: true, water: true,
 };
 

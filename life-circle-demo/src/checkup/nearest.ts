@@ -9,10 +9,30 @@
  * 店会在"最近五处"里占两个名额，看着像两处设施。
  */
 import type { Center } from '../types';
+import type { FacilityGroup } from './contract';
+import { extensionStopLabel } from './extensions';
 import type { LayerDrawable } from './layers';
 import { CATEGORY_COLORS, CATEGORY_ORDER, categoryLabel } from './report';
 
 const EARTH_RADIUS_M = 6_371_008.8;
+
+/**
+ * 设施图层是空的：这一句到底该说"没有设施"还是"没查完"。
+ *
+ * "本次体检没有接收的设施"是一句关于**结果**的结论，只有检索确实查完时才成立。上游一直
+ * 失败、额度用尽或任务被取消时，事实是"没取到"，不是"没有" —— 两者对读者的意义相反：
+ * 前者要补查，后者会让人以为这个圈里真的没有设施（失败永远不是一个零）。
+ *
+ * 停止原因用与补查面板同一张表翻译：同一个后端词表在界面上只该有一种说法。未知取值原样
+ * 带出，绝不显示空白。
+ */
+export function nearestEmptyNote(group: FacilityGroup | null): string {
+  if (group === null || group.queryStatus === 'completed') return '本次体检没有接收的设施。';
+  const reason = extensionStopLabel(group.stopReason);
+  const state = group.queryStatus === 'cancelled' ? '已取消' : '未完成';
+  return `本次设施检索${state}${reason === null ? '' : `（${reason}）`}：`
+    + '已取到的证据保留在报告里，这不代表该区域没有设施。';
+}
 
 /** 两点的直线距离（米）。只用于排序与显示，不参与任何服务标准判定。 */
 export function straightLineM(a: Center, b: Center): number {

@@ -3,13 +3,13 @@ export type MajorCategory = "medical" | "shopping" | "education" | "care" | "din
 export type MinorCategory = "pharmacy" | "hospital_pharmacy" | "hospital" | "clinic" | "checkup" | "market" | "fresh_store" | "supermarket" | "school" | "combined_school" | "middle_school" | "college" | "preschool" | "training" | "nursing_home" | "rehab" | "restaurant" | "cafe" | "bank" | "finance_service" | "government" | "post" | "library" | "park" | "sports" | "entertainment" | "bus" | "parking" | "fuel" | "repair" | "beauty";
 export type DisplayGroup = "healthcare" | "education" | "daily_life" | "public_mobility" | "leisure";
 export type CheckupFacilities = {
-  categories: Array<MajorCategory>;
-  maxPoiRequests: number;
-  maxRouteRequests: number;
+  categories?: Array<MajorCategory>;
+  maxPoiRequests?: number;
+  maxRouteRequests?: number;
 };
 
 export type CheckupIsochrone = {
-  budget: number | null;
+  budget?: number | null;
 };
 
 export type Origin = {
@@ -45,6 +45,14 @@ export type CheckupCompletion = {
   limitations: Array<string>;
 };
 
+export type RetentionView = {
+  detailsAvailable: boolean;
+  expiresAt: number | null;
+  reason: "session_closed" | "superseded" | "legacy" | "cleared" | null;
+  sources: Array<string>;
+  cleared: boolean;
+};
+
 export type TaskProgress = {
   step: string;
   label: string;
@@ -76,6 +84,7 @@ export type CheckupTaskView = {
   lastActivityAt: number | null;
   progress: TaskProgress | null;
   completion?: CheckupCompletion | null;
+  retention: RetentionView | null;
 };
 
 export type AccessibilityEvidence = {
@@ -152,6 +161,7 @@ export type FacilityGroup = {
   dataSource: "baidu_place" | "synthetic";
   queryDomain: Record<string, unknown>;
   dataObtainedAt: number | null;
+  initialPlan: Record<string, unknown> | null;
   countsByCategory: Record<string, number>;
   facilities: Array<Record<string, unknown>>;
   nearbyFacilities: Array<Record<string, unknown>>;
@@ -160,6 +170,8 @@ export type FacilityGroup = {
   quarantine: Array<Record<string, unknown>>;
   queryCoverage: Array<Record<string, unknown>>;
   queryIncompleteRegions: Record<string, Array<Record<string, unknown>>> | null;
+  queryAreaCoverage: Record<string, unknown> | null;
+  sourceTasks: Record<string, Record<string, unknown>> | null;
   statistics: Record<string, unknown>;
   warnings: Array<string>;
   stopReason: string | null;
@@ -328,6 +340,7 @@ export type TraceEvidence = {
   resultHash: string;
   budgets: Record<string, unknown>;
   recomputed: Record<string, unknown> | null;
+  retried: Record<string, unknown> | null;
 };
 
 export type VerificationEvidence = {
@@ -438,10 +451,106 @@ export type CheckupCapabilities = {
   dataVersions: Record<string, unknown>;
   coverage: Record<string, unknown>;
   budgets: Record<string, unknown>;
+  poiPlanning: Record<string, unknown>;
+  cache: Record<string, unknown>;
+  facilityCategories: Record<string, unknown>;
   quota: Record<string, unknown>;
   waterReviews: Array<Record<string, unknown>>;
   categoryDirectoryVersion: string;
   categoryDirectory: Array<CategoryDirectoryEntry>;
+};
+
+export type FacilityExtensionRequest = {
+  schemaVersion?: "checkup-v1";
+  clientRequestId: string;
+  categories: Array<MajorCategory>;
+  maxPoiRequests?: number | null;
+};
+
+export type FacilityExtensionView = {
+  extensionId: string;
+  taskId: string;
+  baseRevision: number;
+  clientRequestId: string;
+  status: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
+  stage: "poi" | "ready" | null;
+  categories: Array<MajorCategory>;
+  budget: Record<string, unknown>;
+  requests: number;
+  networkRequests: number;
+  facilitiesStatus: string | null;
+  countsByCategory: Record<string, number>;
+  stopReason: string | null;
+  initialPlan: Record<string, unknown> | null;
+  error: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+};
+
+export type FacilityExtensionDocument = {
+  extensionId: string;
+  taskId: string;
+  baseRevision: number;
+  categories: Array<MajorCategory>;
+  status: "completed" | "partial" | "failed" | "cancelled";
+  facilitiesStatus: string | null;
+  group: FacilityGroup | null;
+  requests: number;
+  networkRequests: number;
+  budget: Record<string, unknown>;
+  issues: Array<Issue>;
+  notes: Array<string>;
+};
+
+export type FacilityRetryRequest = {
+  schemaVersion?: "checkup-v1";
+  clientRequestId: string;
+  maxPoiRequests?: number | null;
+};
+
+export type FacilityRetryView = {
+  retryId: string;
+  taskId: string;
+  baseRevision: number;
+  clientRequestId: string;
+  status: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
+  stage: "poi" | "ready" | null;
+  budget: Record<string, unknown>;
+  requests: number;
+  networkRequests: number;
+  facilitiesStatus: string | null;
+  stopReason: string | null;
+  initialPlan: Record<string, unknown> | null;
+  error: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+};
+
+export type SessionOpenRequest = {
+  schemaVersion?: "checkup-v1";
+  sessionId?: string | null;
+  tabId?: string | null;
+};
+
+export type SessionView = {
+  sessionId: string;
+  tabId: string;
+  leaseSeconds: number;
+  expiresAt: number;
+  resumed: boolean;
+  openTabs: number;
+  tasks: number;
+};
+
+export type RetainedCheckupView = {
+  taskId: string;
+  revision: number;
+  stage: "isochrone" | "poi" | "accessibility" | "verification" | "reporting" | "ready";
+  businessStatus: "complete" | "partial" | "insufficient";
+  resultHash: string;
+  summary: Record<string, unknown>;
+  retention: RetentionView;
+  notes: Array<string>;
 };
 
 export type ContinueCheckupRequest = {

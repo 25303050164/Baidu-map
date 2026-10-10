@@ -265,7 +265,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output",type=Path,default=BACKEND/"docs/reviews/2026-09-14/osm-offline")
     args = parser.parse_args(); output = args.output.resolve(); output.mkdir(parents=True,exist_ok=True)
-    cfg = Settings(_env_file=None,osm_data_version="geofabrik-shanghai-20260912",
+    cfg = Settings(_env_file=None,osm_data_version="geofabrik-shanghai-260913",
+                   osm_pbf_path=ROOT/"data/osm/shanghai-latest.osm.pbf",
                    osm_graph_cache_path=ROOT/"data/osm/shanghai.osm-cache",
                    osm_coverage_boundary_path=ROOT/"data/osm/shanghai.poly")
     counter = {"attempts":0}
@@ -338,7 +339,7 @@ def main():
         "tested_at":datetime.now(timezone.utc).isoformat(),
         "git_revision":subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),
         "python":platform.python_version(),"startup_seconds":startup_s,
-        "snapshot":{"data_version":cfg.osm_data_version,"pbf_sha256":file_sha(ROOT/"data/osm/shanghai-260912.osm.pbf"),
+        "snapshot":{"data_version":cfg.osm_data_version,"pbf_sha256":file_sha(ROOT/"data/osm/shanghai-latest.osm.pbf"),
                     "cache_sha256":file_sha(cfg.osm_graph_cache_path),"coverage_sha256":file_sha(cfg.osm_coverage_boundary_path),
                     "nodes":engine.store.node_count,"edges":engine.store.edge_count},
         "network_attempts":counter["attempts"],"graph_unchanged":initial_hash==after_hash,"graph_fingerprint":initial_hash,

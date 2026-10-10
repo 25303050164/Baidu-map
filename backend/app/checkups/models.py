@@ -39,6 +39,8 @@ DETAIL_ROUTE_REQUESTS = 20
 QUERY_PADDING_M = int(service_rules.QUERY_PADDING_M)
 
 TERMINAL: frozenset[str] = frozenset({"completed", "failed", "cancelled"})
+#: 一次补查的终态。``partial`` 也是终态：它带回了部分页面，不会自己继续。
+EXTENSION_TERMINAL: frozenset[str] = frozenset({"completed", "partial", "failed", "cancelled"})
 
 
 class CheckupModel(BaseModel):
@@ -59,7 +61,7 @@ class CheckupIsochrone(CheckupModel):
 
 
 class CheckupFacilities(CheckupModel):
-    categories: tuple[MajorCategory, ...] = tuple(catalog.majors())
+    categories: tuple[MajorCategory, ...] = tuple(catalog.default_analysis_majors())
     max_poi_requests: int = Field(default=DEFAULT_POI_REQUESTS, ge=1, le=MAX_POI_REQUESTS)
     max_route_requests: int = Field(default=DEFAULT_ROUTE_REQUESTS, ge=1, le=MAX_ROUTE_REQUESTS)
 
@@ -80,6 +82,19 @@ class CheckupRequest(CheckupModel):
     coordinate_system: Literal["bd09ll"] = "bd09ll"
     isochrone: CheckupIsochrone = Field(default_factory=CheckupIsochrone)
     facilities: CheckupFacilities = Field(default_factory=CheckupFacilities)
+
+    @classmethod
+    def from_stored(cls, values: dict):
+        """Read a previously accepted 1600-cap request without widening new admission."""
+        raw = values.get('facilities') or {}
+        key = 'maxPoiRequests' if 'maxPoiRequests' in raw else 'max_poi_requests'
+        limit = raw.get(key)
+        if type(limit) is int and MAX_POI_REQUESTS < limit <= 1600:
+            bounded = {**values, 'facilities': {**raw, key: MAX_POI_REQUESTS}}
+            request = cls(**bounded)
+            request.facilities = request.facilities.model_copy(update={'max_poi_requests': limit})
+            return request
+        return cls(**values)
 
     def fingerprint(self) -> dict:
         """Identity-free input digest; the request id names, it does not configure."""
@@ -107,6 +122,70 @@ class CheckupCompletion(CheckupModel):
     restart_retrieval: bool = False
     stop_reason: str | None = None
     limitations: list[str] = Field(default_factory=list)
+
+
+class SessionOpenRequest(CheckupModel):
+    """开一个浏览会话，或回到已有的那一个（§5 B2 决策 2 的第一条期限）。
+
+    两个标识分两处存，因为它们的寿命不一样：**会话**属于这个浏览器（同一浏览器的两个
+    标签页共用一个），**标签页**属于一个标签页（刷新要接着用同一个，关掉就该消失）。
+    客户端负责保管它们，服务端只回答"这个会话现在还算数吗"。
+    """
+    schema_version: Literal["checkup-v1"] = SCHEMA_VERSION
+    #: 已有的会话标识。带上它就要求**续上同一个会话**：它已经到期时明确拒绝，
+    #: 而不是悄悄开一个新的 —— 那会让"关闭浏览器即到期"这条规则形同虚设。
+    session_id: str | None = Field(default=None, min_length=1, max_length=100)
+    #: 已有的标签页标识（刷新时带上）：同一个标签页刷新不该被算成多开了一个标签页。
+    tab_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class SessionView(CheckupModel):
+    """一个会话此刻的状态：租约还剩多久、有几个标签页还开着。
+
+    ``expires_at`` 是**租约到期时刻**，不是"数据已经删了"：到期之后还有一段可判定的
+    时间用来拒绝迟到的心跳，但明细的可用性由 ``RetentionView`` 单独回答。
+    """
+    session_id: str
+    tab_id: str
+    lease_seconds: float
+    expires_at: float
+    #: 这一次是接上了已有的会话，还是新开了一个。
+    resumed: bool
+    open_tabs: int = Field(default=1, ge=0)
+    #: 这个会话里的任务数：界面据此说明"这些结果会跟这个会话一起到期"。
+    tasks: int = Field(default=0, ge=0)
+
+
+class RetainedCheckupView(CheckupModel):
+    """明细到期之后仍然给得出的那一部分（§5 B2 决策 2）。
+
+    ``summary`` 是定稿时冻结的白名单汇总：结论、分数区间、面积、计数、停止原因。它里面
+    **没有**设施名称、UID、地址、坐标或几何 —— 到期之后还能看到什么，由这份白名单定义，
+    而不是由"原文件里还剩什么"定义。
+    """
+    task_id: str
+    revision: int = Field(ge=1)
+    stage: Stage
+    business_status: BusinessStatus
+    result_hash: str
+    summary: dict = Field(default_factory=dict)
+    retention: "RetentionView"
+    notes: list[str] = Field(default_factory=list)
+
+
+class RetentionView(CheckupModel):
+    """这份结果的明细还能不能提供、什么时候到期、为什么。
+
+    ``details_available`` 为假时**不等于**"没有这个任务"：任务、评分与汇总都还在，
+    缺的是含设施名称、UID 与坐标的那部分明细（`evidence/06` §2 决策 2）。
+    """
+    details_available: bool
+    expires_at: float | None = None
+    reason: Literal["session_closed", "superseded", "legacy", "cleared"] | None = None
+    #: 这一版明细来自哪几个任务（含它自己）：复用别人的页面时，那个任务的期限也是它的期限。
+    sources: list[str] = Field(default_factory=list)
+    #: 到期时刻已经过了但文件还在（清理由后台巡检做）：界面据此区分"已经删了"与"即将删"。
+    cleared: bool = False
 
 
 class EngineRef(CheckupModel):
@@ -142,6 +221,9 @@ class TraceEvidence(CheckupModel):
     #: 数据修订后离线重算出的一版：从哪一版来、为什么重算。重算不发网络请求，
     #: ``budgets`` 仍是原任务花掉的额度。
     recomputed: dict | None = None
+    #: §5 B2 决策 1 的重试发布的一版：从哪一版来、这一轮新增了多少真实调用、当时
+    #: 共同完成了多少圈面。与 ``recomputed`` 分开：重算不花钱，重试花钱并带来新证据。
+    retried: dict | None = None
 
 
 class FacilityGroup(CheckupModel):
@@ -163,6 +245,10 @@ class FacilityGroup(CheckupModel):
     data_source: Literal["baidu_place", "synthetic"]
     query_domain: dict
     data_obtained_at: float | None = None
+    #: 首轮检索计划与缓存复用估算（§四）：初始页数、可复用页数、预计新增调用数与当时的
+    #: 预算。它是一次估算、不是额度预留，也不承诺翻页与细分能在其中跑完。
+    #: 旧修订没有这一项，读作"未记录"。
+    initial_plan: dict | None = None
     counts_by_category: dict[str, int] = Field(default_factory=dict)
     facilities: list[dict] = Field(default_factory=list)
     #: Accepted facilities outside the boundary but inside the query range (§2.3):
@@ -176,9 +262,129 @@ class FacilityGroup(CheckupModel):
     #: did not finish. The assessment refuses a gap within service reach of them.
     #: ``None`` means not recorded (an older revision): the task-wide status applies.
     query_incomplete_regions: dict[str, list[dict]] | None = None
+    #: §5 B2 决策 1：所有所选小类**共同**完成检索的圈面比例。它算的是各小类未完成区域
+    #: 取并集后的残余，而不是各小类覆盖率的平均 —— 后者会让"某一类整块没查、其余全部查完"
+    #: 读成 90%。旧修订没有这一项（键缺失或明确 ``null``），两者都表示"未记录"，都不是 0。
+    query_area_coverage: dict | None = None
+    #: §5 B2 决策 2：这一版明细出自哪几个任务 —— 来源标识 → 页数、其中新取的页数、最早的
+    #: 取数时刻。复用别人的页面时，**那个任务的期限**也是这一版的期限，所以来源必须落在
+    #: 报告里；只记「来自缓存」会让一份派生报告看起来像这些数据是它自己取回来的。
+    #: 旧修订没有这一项，读作「未记录」：那时也没有任何跨任务复用（窗口默认未配置）。
+    source_tasks: dict[str, dict] | None = None
     statistics: dict = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     stop_reason: str | None = None
+
+
+class FacilityExtensionRequest(CheckupModel):
+    """按需补查：复用原体检已经算出的圈面，只再跑一次设施检索。
+
+    扩展类别产出点位、数量和分类统计，**不**进入核心综合分，也不进入综合灰区：
+    原体检的修订、评分和报告不因为一次补查而改变。这样"十类设施"是加出来的，
+    不是把有业务依据的三类口径换掉。
+    """
+    schema_version: Literal["checkup-v1"] = SCHEMA_VERSION
+    client_request_id: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
+    categories: tuple[MajorCategory, ...]
+    #: 不给就按类别数推导一个够用的下限；给了但不够就明确拒绝，不静默少查。
+    max_poi_requests: int | None = Field(default=None, ge=1, le=MAX_POI_REQUESTS)
+
+    @model_validator(mode="after")
+    def unique_categories(self):
+        if len(set(self.categories)) != len(self.categories):
+            raise ValueError("duplicate facility category")
+        if not self.categories:
+            raise ValueError("at least one facility category is required")
+        return self
+
+
+class FacilityRetryRequest(CheckupModel):
+    """§5 B2 决策 1：同一次体检的**重试**，用新预算接着把没查完的地段查下去。
+
+    与补查的区别只有一条，但它是本质的一条：补查产出的是**并列**的一份结果，原体检的
+    修订、评分和报告一个字都不变；重试产出的是**这一次体检自己的新修订**，因为运营者的
+    要求是"普通体检必须查到完整结果" —— 那必须体现在这一份报告里，而不是旁边多一个文件。
+
+    类别不在这里给：重试沿用原体检已经冻结的类别集合。允许改类别就等于允许悄悄换掉
+    这次体检问的问题，"这次查完了没有"随之失去意义。
+    """
+    schema_version: Literal["checkup-v1"] = SCHEMA_VERSION
+    client_request_id: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9_-]+$")
+    #: 本轮的新预算。不给就用部署默认（240）；给了但不够首轮就明确拒绝，不静默少查。
+    max_poi_requests: int | None = Field(default=None, ge=1, le=MAX_POI_REQUESTS)
+
+
+class FacilityRetryView(CheckupModel):
+    """一次重试的状态：它自己的预算、它到达的修订，以及它剩下的缺口。"""
+    retry_id: str
+    task_id: str
+    base_revision: int = Field(ge=1)
+    client_request_id: str
+    status: Literal["queued", "running", "completed", "partial", "failed", "cancelled"]
+    stage: Literal["poi", "ready"] | None = None
+    budget: dict = Field(default_factory=dict)
+    requests: int = Field(default=0, ge=0)
+    network_requests: int = Field(default=0, ge=0)
+    facilities_status: str | None = None
+    stop_reason: str | None = None
+    initial_plan: dict | None = None
+    error: str | None = None
+    created_at: float
+    finished_at: float | None = None
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in EXTENSION_TERMINAL
+
+
+class FacilityExtensionView(CheckupModel):
+    """一次补查的状态。它有自己的标识和预算，不占用原任务的设施额度。"""
+    extension_id: str
+    task_id: str
+    base_revision: int = Field(ge=1)
+    client_request_id: str
+    status: Literal["queued", "running", "completed", "partial", "failed", "cancelled"]
+    stage: Literal["poi", "ready"] | None = None
+    categories: list[MajorCategory]
+    budget: dict = Field(default_factory=dict)
+    requests: int = Field(default=0, ge=0)
+    network_requests: int = Field(default=0, ge=0)
+    facilities_status: str | None = None
+    counts_by_category: dict[str, int] = Field(default_factory=dict)
+    #: 这次补查停在哪里：``completed`` 之外的具名原因（额度、限流、本地上限、取消……）。
+    #: 旧行没有记录时读作 null，不猜一个。
+    stop_reason: str | None = None
+    #: 执行前算出、随结果一起定稿的首轮估算：首轮页数、缓存可复用页数、预计新增调用数与
+    #: 当时的预算。它是在派发第一页**之前**算的（不是提交时冻结的承诺），也不要求翻页与
+    #: 细分跑在其中；旧行读作 null。
+    initial_plan: dict | None = None
+    error: str | None = None
+    created_at: float
+    finished_at: float | None = None
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in EXTENSION_TERMINAL
+
+
+class FacilityExtensionDocument(CheckupModel):
+    """一次补查的完整结果。
+
+    ``group`` 为 null 只有一个意思：这次检索没有产出可用结果（具名原因在
+    ``issues`` 里）。它绝不是"这片区域没有这类设施"，空清单与空目录是两件事。
+    """
+    extension_id: str
+    task_id: str
+    base_revision: int = Field(ge=1)
+    categories: list[MajorCategory]
+    status: Literal["completed", "partial", "failed", "cancelled"]
+    facilities_status: str | None = None
+    group: FacilityGroup | None = None
+    requests: int = Field(default=0, ge=0)
+    network_requests: int = Field(default=0, ge=0)
+    budget: dict = Field(default_factory=dict)
+    issues: list[Issue] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
 
 
 class CategoryCoverage(CheckupModel):
@@ -568,6 +774,10 @@ class CheckupTaskView(CheckupModel):
     last_activity_at: float | None = None
     progress: TaskProgress | None = None
     completion: CheckupCompletion | None = Field(default=None, json_schema_extra={'x-legacy-optional': True})
+    #: §5 B2 决策 2：这份结果的明细还能不能提供、为什么、什么时候到期。它是**任务视图**上
+    #: 的活字段（不像修订那样冻结），因为它描述的是"现在"，而到期时刻会随后来发生的体检
+    #: 变化 —— 冻结进修订就等于把一个会变的答案写成常数。
+    retention: RetentionView | None = None
 
     def is_terminal(self) -> bool:
         return self.status in TERMINAL
@@ -635,6 +845,15 @@ class CheckupCapabilities(CheckupModel):
     data_versions: dict
     coverage: dict
     budgets: dict
+    #: 设施检索的预检口径：本地处理步数上限、网络预算与它分开、首轮计划会报缓存复用。
+    #: 旧后端不给这一项，界面据此说"这一版不报预检口径"，而不是显示一个 0。
+    poi_planning: dict = Field(default_factory=dict)
+    #: §3.4 的跨任务复用窗口：``freshnessSeconds`` 为 null 表示缓存只在同一个任务内复用，
+    #: 所以重复体检同一片区域不会省下任何请求。这个开关要让用户看得见。
+    cache: dict = Field(default_factory=dict)
+    #: 设施目录的 v2 视图（展示组 / 大类 / 每类检索小类数 / 哪几类是核心口径）：
+    #: 类别选择器和预算算术都从这里来，不在界面里另写一份分类表。
+    facility_categories: dict = Field(default_factory=dict)
     # The application's own remaining allowance, never the account's.
     quota: dict
     #: Water reviews this deployment applies: ``[{reviewId, version, label, title, bbox}]``.

@@ -21,6 +21,26 @@ from app.engines import IsochroneSnapshot
 from life_circle.coordinates import LocalProjection
 
 
+@pytest.fixture
+def compact_ten_category_plan(monkeypatch, request):
+    """Ten majors; the cross-round fixture has 160 pages, other fixtures have 80.
+
+    Keep the integration fixture bounded; the planner tests exercise the full
+    catalog, pagination, subdivision and strict 1200-call exhaustion separately.
+    """
+    from app.poi.planner import RULES
+    original = catalog.poi_keys
+    minors = tuple(original([major])[0] for major in catalog.majors())
+    monkeypatch.setattr(catalog, 'poi_keys', lambda majors=None: tuple(
+        key for key in minors if majors is None or catalog.major_of(key) in majors))
+    for key in minors:
+        first = RULES['queries'][key][0]
+        words = [first, first + '服务']
+        if request.node.name == 'test_ten_categories_complete_across_manual_rounds_without_rebuilding_boundary':
+            words += [first + '机构', first + '中心']
+        monkeypatch.setitem(RULES['queries'], key, words)
+
+
 def body(**overrides):
     overrides.setdefault('facilities', {})
     overrides['facilities'].setdefault('categories', list(catalog.majors()))
@@ -112,6 +132,7 @@ def test_round_admission_is_atomic_and_reservations_survive_restart(tmp_path):
                          fingerprint='x', payload={}, budget=200)
 
 
+@pytest.mark.usefixtures("compact_ten_category_plan")
 def test_ten_categories_complete_across_manual_rounds_without_rebuilding_boundary(tmp_path):
     app = make_report_app(tmp_path, [ORIGIN])
     manager = app.state.checkups
@@ -193,6 +214,7 @@ def fast_app(tmp_path, places):
     return app, calls
 
 
+@pytest.mark.usefixtures("compact_ten_category_plan")
 def test_legacy_report_restarts_only_retrieval_and_preserves_historical_costs(tmp_path):
     places = SyntheticPlaces(at_origin())
     app, calls = fast_app(tmp_path, places)
@@ -228,6 +250,7 @@ def test_legacy_report_restarts_only_retrieval_and_preserves_historical_costs(tm
         assert rejected.json()['code'] == 'checkup_cannot_continue'
 
 
+@pytest.mark.usefixtures("compact_ten_category_plan")
 def test_cancel_then_restart_keeps_checkpoint_and_never_auto_resumes(tmp_path):
     places = SyntheticPlaces(at_origin(), delay=.02)
     app, calls = fast_app(tmp_path, places)
@@ -263,6 +286,7 @@ def test_cancel_then_restart_keeps_checkpoint_and_never_auto_resumes(tmp_path):
         assert final['completion']['cumulativePoiRequests'] == len(places.sent)
 
 
+@pytest.mark.usefixtures("compact_ten_category_plan")
 def test_default_budget_completes_ten_categories_in_one_round(tmp_path):
     app = make_report_app(tmp_path, [ORIGIN])
     app.state.checkups.registry.get('baidu_e82').compute = lambda *args, **kwargs: _small_boundary_async()
@@ -333,6 +357,7 @@ def test_budget_contract_accepts_1200_and_keeps_historical_completion_default():
     assert CheckupCompletion().round_poi_limit == 60
 
 
+@pytest.mark.usefixtures("compact_ten_category_plan")
 def test_partial_report_rejects_changed_data_version(tmp_path):
     app, _ = fast_app(tmp_path, SyntheticPlaces(at_origin()))
     with TestClient(app) as client:
@@ -342,3 +367,30 @@ def test_partial_report_rejects_changed_data_version(tmp_path):
             json={'clientRequestId': 'changed-data', 'baseRevision': view['revision']})
         assert response.status_code == 409
         assert response.json()['code'] == 'checkup_incompatible_continuation'
+
+
+def test_retention_clears_durable_details_but_preserves_paid_reservations(tmp_path):
+    store = CheckupStore(tmp_path)
+    store.initialize()
+    store.create(task_id='expired', client_request_id='first', engine='test', fingerprint='x',
+                 payload={}, budget=200)
+    store.begin_round('expired', 'first', 0, 'identity', initial=True, poi_limit=1200)
+    reservation = store.reserve_request('expired', 1, 'poi', {'key': 'page', 'name': 'detail'})
+    store.complete_request(reservation, {'results': [{'name': 'detail'}]}, None)
+    store.save_checkpoint('expired', {'observations': [{'name': 'detail'}]})
+    assert store.mark_details_cleared('expired', now=time.time())
+    assert not store.mark_details_cleared('expired', now=time.time())
+    assert store.checkpoint('expired') is None
+    assert store.saved_pages('expired') == []
+    assert store.round_spend('expired', 1) == {'poi': 1}
+    store.close()
+
+
+def test_stored_1600_request_remains_readable_without_widening_new_requests():
+    from app.checkups.models import CheckupRequest
+    from pydantic import ValidationError
+    historical = body(facilities={'maxPoiRequests': 1600})
+    with pytest.raises(ValidationError):
+        CheckupRequest(**historical)
+    assert CheckupRequest.from_stored(historical).facilities.max_poi_requests == 1600
+    assert historical['facilities']['maxPoiRequests'] == 1600

@@ -42,7 +42,10 @@ def quota(tmp_path, **overrides):
     overrides = {"baidu_place_daily_budget": 1600, **overrides}
     overrides.setdefault("baidu_fallback_place_daily_budget",
                          overrides["baidu_place_daily_budget"])
+    # 档位切换时间固定在远未来：这些用例说的是 current 档的日额度，测试自己不该
+    # 因为跑在哪一天而改变生效档位（切换之后生效的是 fallback 档的那一个数字）。
     settings = Settings(_env_file=None, baidu_map_ak=SECRET, baidu_place_qps=10000,
+                        baidu_quota_fallback_at='2099-01-01T00:00:00+08:00',
                         quota_ledger_path=Path(tmp_path) / 'quota.sqlite3', **overrides)
     return Quota(settings)
 

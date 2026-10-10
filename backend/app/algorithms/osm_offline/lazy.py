@@ -20,6 +20,14 @@ class LazyOsmOfflineEngine:
     def _report(self, step, done=None, total=None):
         self.loading = (step, done, total)
 
+    def begin_preload(self):
+        """Mark a configured graph as loading before its worker is scheduled."""
+        with self._lock:
+            if self._engine is not None or self.state == "loading":
+                return False
+            self.state = "loading"
+            return True
+
     def get(self):
         if self._engine is not None:
             return self._engine

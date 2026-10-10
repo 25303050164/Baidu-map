@@ -49,6 +49,21 @@ class PlaceTransport(Protocol):
     def session(self, pool, *, budget, deadline): ...
 
 
+def declared_identity(settings, places_factory=None) -> tuple[str, str]:
+    """The ``(provider, apiVersion)`` the coming run will key its pages under.
+
+    A precheck has to compute the very keys the execution will look up, and the
+    only authority on that identity is the transport itself: the factory's result
+    for a deployment that substitutes one, or the production class's own
+    declaration. Neither opens a client and neither sends anything, so a request
+    that is about to be refused for budget still costs nothing to inspect.
+    """
+    if places_factory is None:
+        return OnlinePlaceTransport.identity, OnlinePlaceTransport.api_version
+    transport = places_factory(settings)
+    return transport.identity, transport.api_version
+
+
 async def open_online(settings, stack) -> "OnlinePlaceTransport":
     """The production transport: one client for one stage, or a named refusal."""
     if not settings.ak_configured:

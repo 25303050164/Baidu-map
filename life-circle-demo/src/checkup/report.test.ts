@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   area, coverageBars, coverageItems, dataSourcesView, evidenceNotes, gapSummary, overallView, percent,
-  radarView, reasonLabel, verificationView, verificationFacilityRows, zoneItems,
+  radarView, reasonLabel, unavailableLabel, categoryLabel, verificationView, verificationFacilityRows, zoneItems,
   coverageGroups, reportSummary,
 } from './report';
 import { AREA, CATEGORIES, report, snapshot, water, zone } from './fixtures';
@@ -32,6 +32,19 @@ describe('formatting', () => {
   it('switches to hectares once the number stops being readable', () => {
     expect(area(12_500)).toBe('1.25 公顷');
     expect(area(2_500)).toBe('2500 m²');
+  });
+
+  it('translates extension major categories and minor category keys before rendering', () => {
+    expect(categoryLabel('finance')).toBe('金融');
+    expect(categoryLabel('public')).toBe('政务公共服务');
+    expect(categoryLabel('bank')).toBe('银行');
+    expect(categoryLabel('new_category')).toBe('new_category');
+  });
+
+  it('translates unavailable coverage reasons instead of exposing backend codes', () => {
+    expect(unavailableLabel('facility_query_incomplete'))
+      .toBe('设施检索未完成，证据不足以评估覆盖率');
+    expect(unavailableLabel(null)).toBe('本类别没有空间支持，未给出百分比');
   });
 });
 
@@ -185,6 +198,13 @@ describe('grey zones', () => {
     expect(items.map(item => item.id)).toEqual(['b', 'a']);
     expect(items[0]).toMatchObject({ title: '灰区 1', kindLabel: '单类灰区', areaText: '9.00 公顷',
       suggestion: '大片', categoryLabels: ['医疗健康'] });
+  });
+
+  it('uses the facility name from the frozen directory for the nearest facility', () => {
+    const base = snapshot({ facilities: {
+      facilities: [{ id: 'synthetic:pharmacy-1', name: '社区药房' }],
+    } as unknown as NonNullable<CheckupSnapshot['facilities']> });
+    expect(zoneItems(base)[0].nearestFacility).toBe('社区药房');
   });
 
   it('translates a known reason and leaves an unknown one as the raw code', () => {

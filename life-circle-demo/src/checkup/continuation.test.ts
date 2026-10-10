@@ -20,7 +20,11 @@ function service(): CheckupService {
     layer: vi.fn(async (_id, layerId, revision) => layer({ layerId, revision })),
     cancel: vi.fn(async () => task({ status: 'cancelled' })), route: vi.fn(async () => route()),
     byRequest: vi.fn(async () => task()),
-    continueReport: vi.fn(async () => task({ status: 'queued', completion })) };
+    continueReport: vi.fn(async () => task({ status: 'queued', completion })),
+    extensionCreate: vi.fn(), extensionStatus: vi.fn(), extensionList: vi.fn(),
+    extensionResult: vi.fn(), extensionCancel: vi.fn(), retryCreate: vi.fn(),
+    retryStatus: vi.fn(), retryList: vi.fn(), retryCancel: vi.fn(), retainedResult: vi.fn(),
+    sessionOpen: vi.fn(), sessionHeartbeat: vi.fn(), sessionClose: vi.fn() };
 }
 
 describe('manual report continuation', () => {

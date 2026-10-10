@@ -277,12 +277,12 @@ export function CheckupReport({ snapshot, stale, waterReviews = NO_REVIEWS, cont
         {groups.assessed.length > 0 && <>
           <p className="checkup-muted">按缺口面积从大到小排列；缺少面积记录的类别列在后面。</p>
           <ul className="rp-cats">{groups.assessed.map(item => <CoverageRow key={item.category} item={item}
-            count={snapshot.facilities?.countsByCategory[item.category]} />)}</ul>
+            count={snapshot.facilities?.countsByCategory?.[item.category]} />)}</ul>
         </>}
         {groups.unavailable.length > 0 && <div data-testid="coverage-unavailable">
           <h3>暂无法评估</h3>
           <ul className="rp-cats">{groups.unavailable.map(item => <CoverageRow key={item.category} item={item}
-            count={snapshot.facilities?.countsByCategory[item.category]} />)}</ul>
+            count={snapshot.facilities?.countsByCategory?.[item.category]} />)}</ul>
         </div>}
         {items.length === 0 && <p className="checkup-muted">尚无分类覆盖结果，暂无法评估。</p>}
         <p className="checkup-muted">最低覆盖率 = C / A，最高覆盖率 = (C + U) / A；C 已覆盖、U 未知，
