@@ -13,10 +13,12 @@
 这条返回的路线距离支撑（§6.3）。
 """
 import time
+from dataclasses import asdict
 from typing import Protocol
 
 import httpx
 from life_circle.providers import BaiduProvider
+from life_circle.models import RouteObservation
 
 from ..baidu import silence_transport_logs
 from ..quota import AttemptCancelled, BudgetExhausted, DeadlineReached
@@ -116,6 +118,9 @@ class RouteSession:
                 self.stop_reason = 'deadline'
                 return None
             try:
+                if self.budget is not None:
+                    self.budget.request_context[pool] = {'facilityId': facility_id,
+                                                         'origin': origin, 'destination': destination}
                 # The token is passed only when there is one, so an injected pool keeps
                 # its plain signature.
                 extra = {} if self.token is None else {'token': self.token}
@@ -130,6 +135,8 @@ class RouteSession:
                         facility_id, origin, destination,
                         min(MAX_TIMEOUT_SECONDS, timeout))
                     attempt.outcome(value.reason)
+                    if self.budget is not None and self.budget.on_result is not None:
+                        self.budget.on_result(self.budget.reservations[pool], asdict(value), value.reason)
             # 桶用尽和到点都不是"这条路走不通"，而是"这次没有结论"：停下来，把原因
             # 带到证据里去，而不是让异常从阶段里冒出来变成一次失败。
             except BudgetExhausted:
@@ -148,3 +155,42 @@ class RouteSession:
             if value.reason not in RETRY_REASONS:
                 break
         return value
+
+
+class ReplayRoutes:
+    """Reuse exact successful route requests after a restart, with their original time."""
+    def __init__(self, session, *, store, task_id, budget):
+        self.session, self.store, self.task_id, self.budget = session, store, task_id, budget
+        self.saved = {self.key(c['facilityId'], c['origin'], c['destination']): value
+                      for c, value in store.saved_routes(task_id)
+                      if all(k in c for k in ('facilityId', 'origin', 'destination'))}
+
+    @staticmethod
+    def key(facility_id, origin, destination):
+        return facility_id, tuple(origin), tuple(destination)
+
+    def __getattr__(self, name):
+        return getattr(self.session, name)
+
+    def available(self, facility_id, origin, destination):
+        return (self.key(facility_id, origin, destination) in self.saved
+                or self.budget.remaining(ROUTE_POOL) > 0)
+
+    async def __call__(self, facility_id, origin, destination, *, pool=ROUTE_POOL):
+        key = self.key(facility_id, origin, destination)
+        if key in self.saved:
+            value = dict(self.saved[key])
+            for name in ('destination', 'route_origin', 'route_destination', 'request_origin'):
+                if value.get(name) is not None:
+                    value[name] = tuple(value[name])
+            return RouteObservation(**value)
+        self.budget.request_context[pool] = {'facilityId': facility_id, 'origin': origin,
+                                             'destination': destination}
+        before = self.budget.reservations.get(pool)
+        observation = await self.session(facility_id, origin, destination, pool=pool)
+        reservation = self.budget.reservations.get(pool)
+        if observation is not None and reservation is not None and reservation != before:
+            self.store.complete_request(reservation, asdict(observation), observation.reason)
+            if observation.reason is None:
+                self.saved[key] = asdict(observation)
+        return observation
