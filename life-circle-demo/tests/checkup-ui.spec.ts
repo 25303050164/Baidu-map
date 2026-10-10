@@ -727,3 +727,75 @@ test('stages advance as the backend reports them, and the engines come from the 
   await expect(page.getByTestId('checkup-engine')).toContainText('引擎：OSM＋百度');
   await expect(page.getByRole('button', { name: '开始体检', exact: true })).toBeEnabled();
 });
+
+
+async function expectLegendDock(page: Page) {
+  await expect.poll(async () => {
+    const [side, legend, workspace, report] = await Promise.all([
+      page.locator('.wb-side').boundingBox(), page.getByTestId('checkup-legend').boundingBox(),
+      page.locator('.wb-body').boundingBox(), page.locator('.wb-results').boundingBox(),
+    ]);
+    return !!(side && legend && workspace && report
+      && Math.abs(side.x - legend.x) < 1 && Math.abs(side.width - legend.width) < 1
+      && Math.abs(legend.y - side.y - side.height - 12) < 1
+      && legend.y + legend.height <= workspace.y + workspace.height - 27
+      && legend.x + legend.width <= report.x);
+  }).toBe(true);
+}
+
+for (const [width, height] of [[1280, 720], [1440, 900], [2048, 1066]]) {
+  test(`legend docks below the left panel without report overlap at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await setup(page, { tenCategories: true, serviceCells: true, facilityCount: 12 });
+    await page.goto('/');
+    await pickAndStart(page);
+    await expect(page.getByTestId('checkup-report')).not.toBeVisible();
+    await expect(page.getByTestId('checkup-legend')).toBeVisible();
+    await expectLegendDock(page);
+    await page.screenshot({ path: `output/checkup-ui/legend-dock-${width}x${height}.png` });
+    const before = await page.locator('.wb-side').boundingBox();
+    await page.getByTestId('checkup-legend').getByRole('button', { name: '图例', exact: true }).click();
+    await expect(page.getByTestId('checkup-legend')).toHaveAttribute('data-open', 'no');
+    await expectLegendDock(page);
+    const collapsed = await page.locator('.wb-side').boundingBox();
+    expect(collapsed!.height).toBeGreaterThanOrEqual(before!.height);
+    await page.getByTestId('checkup-legend').getByRole('button', { name: '图例', exact: true }).click();
+    await expectLegendDock(page);
+  });
+}
+
+test('legend follows drag, resize and keyboard controls through viewport changes', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await setup(page, { tenCategories: true, serviceCells: true, facilityCount: 12 });
+  await page.goto('/'); await pickAndStart(page);
+  await expect(page.getByTestId('checkup-report')).not.toBeVisible();
+  await expectLegendDock(page);
+  const drag = async (id: string, dx: number, dy: number) => {
+    const box = await page.getByTestId(id).boundingBox();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + dx, box!.y + box!.height / 2 + dy, { steps: 5 });
+    await page.mouse.up();
+  };
+  await drag('panel-move-side', 40, 35); await expectLegendDock(page);
+  await drag('panel-resize-side', 72, 2000); await expectLegendDock(page);
+  await page.getByTestId('panel-move-side').press('ArrowDown'); await expectLegendDock(page);
+  await page.getByTestId('panel-resize-side').press('ArrowLeft'); await expectLegendDock(page);
+  await page.setViewportSize({ width: 1280, height: 720 }); await expectLegendDock(page);
+  await page.setViewportSize({ width: 1440, height: 560 }); await expectLegendDock(page);
+  await page.setViewportSize({ width: 1440, height: 500 });
+  await expect(page.getByTestId('panel-move-side')).toHaveCount(0);
+  await expect(page.locator('.wb-side')).toHaveCSS('position', 'static');
+  const legend = await page.getByTestId('checkup-legend').boundingBox();
+  const map = await page.getByTestId('checkup-map-section').boundingBox();
+  const side = await page.locator('.wb-side').boundingBox();
+  expect(legend!.y + legend!.height).toBeLessThan(map!.y + map!.height);
+  expect(side!.y).toBeGreaterThanOrEqual(map!.y + map!.height);
+  await page.screenshot({ path: 'output/checkup-ui/legend-dock-low-height.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('panel-move-results')).toHaveCount(0);
+  await expect(page.getByTestId('checkup-legend')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'output/checkup-ui/legend-dock-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 900 }); await expectLegendDock(page);
+});

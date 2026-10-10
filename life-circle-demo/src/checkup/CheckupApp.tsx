@@ -173,19 +173,27 @@ type PanelInteraction = {
   initial: PanelLayout;
 };
 
+const LEGEND_GAP = 12;
+const LEGEND_BOTTOM_MARGIN = 28;
+const LEGEND_HEADER_ALLOWANCE = 48;
+
 const PANEL_SIZE_LIMITS: Record<PanelId, { minWidth: number; maxWidth: number }> = {
   side: { minWidth: 300, maxWidth: 480 }, results: { minWidth: 320, maxWidth: 520 },
 };
 
-function boundedLayout(layout: PanelLayout, panel: PanelId, workspace: WorkspaceSize): PanelLayout {
+function boundedLayout(layout: PanelLayout, panel: PanelId, workspace: WorkspaceSize,
+  legendHeight = 0): PanelLayout {
   const limits = PANEL_SIZE_LIMITS[panel];
   const maxWidth = Math.min(limits.maxWidth, Math.max(limits.minWidth, workspace.width - 32));
-  const maxHeight = Math.min(760, Math.max(280, workspace.height - 32));
+  // The left panel and its legend move as one column. Leave 12px between
+  // them and 28px below the legend for map attribution.
+  const bottom = panel === 'side' && legendHeight > 0 ? legendHeight + LEGEND_GAP + LEGEND_BOTTOM_MARGIN : 16;
+  const maxHeight = Math.min(760, Math.max(280, workspace.height - 16 - bottom));
   const width = Math.min(maxWidth, Math.max(limits.minWidth, layout.width));
   const height = Math.min(maxHeight, Math.max(280, layout.height));
   return {
     x: Math.max(16, Math.min(layout.x, workspace.width - width - 16)),
-    y: Math.max(16, Math.min(layout.y, workspace.height - height - 16)),
+    y: Math.max(16, Math.min(layout.y, workspace.height - height - bottom)),
     width,
     height,
   };
@@ -229,9 +237,10 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     width: window.innerWidth, height: Math.max(320, window.innerHeight - 52),
   }));
   const [panelLayouts, setPanelLayouts] = useState<Record<PanelId, PanelLayout>>(initialPanelLayouts);
+  const [legendHeight, setLegendHeight] = useState(0);
   const [frontPanel, setFrontPanel] = useState<PanelId>('side');
   const panelInteraction = useRef<PanelInteraction | null>(null);
-  const wasFloating = useRef(window.innerWidth > 1080);
+  const wasFloating = useRef(window.innerWidth > 1080 && window.innerHeight >= 560);
   const [tab, setTab] = useState<TabKey>(isTabKey(saved.tab) ? saved.tab : lastTab);
   const chooseTab = (key: TabKey) => { lastTab = key; setTab(key); };
   const initial = saved.draft ?? state.input?.center ?? DEFAULT_CENTER;
@@ -258,7 +267,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
       const bounds = workspace.getBoundingClientRect();
       const nextSize = { width: bounds.width, height: bounds.height };
       setWorkspaceSize(nextSize);
-      const floating = nextSize.width > 1080;
+      const floating = nextSize.width > 1080 && window.innerHeight >= 560;
       const enteringFloating = floating && !wasFloating.current;
       wasFloating.current = floating;
       setPanelLayouts(current => {
@@ -272,8 +281,9 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     };
     const observer = new ResizeObserver(measure);
     observer.observe(workspace);
+    window.addEventListener('resize', measure);
     measure();
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
   }, []);
 
   // 界面偏好随改随存：刷新或切回来时，图层开关、热力模式、报告开合都按离开时的样子。
@@ -443,12 +453,23 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
           : `${duration(liveNow.activityAgo)}前`}</span> }] : []),
   ]} />;
 
-  const floatingPanels = workspaceSize.width > 1080;
+  const floatingPanels = workspaceSize.width > 1080 && window.innerHeight >= 560;
+  // Keep the requested size in state: collapsing the legend can restore the
+  // panel's height, rather than permanently shrinking the user's preferred size.
+  const visibleLayouts = {
+    side: boundedLayout(panelLayouts.side, 'side', workspaceSize, floatingPanels ? legendHeight : 0),
+    results: boundedLayout(panelLayouts.results, 'results', workspaceSize),
+  };
+  const legendStyle: CSSProperties | undefined = floatingPanels ? {
+    left: visibleLayouts.side.x, top: visibleLayouts.side.y + visibleLayouts.side.height + LEGEND_GAP,
+    right: 'auto', bottom: 'auto', width: visibleLayouts.side.width, maxWidth: 'none',
+    '--legend-body-max-height': `${Math.min(240, Math.max(0, workspaceSize.height - 280 - 16 - LEGEND_GAP - LEGEND_BOTTOM_MARGIN - LEGEND_HEADER_ALLOWANCE))}px`,
+  } as CSSProperties : undefined;
   const panelStyle = (panel: PanelId): CSSProperties | undefined => floatingPanels ? {
-    left: panelLayouts[panel].x,
-    top: panelLayouts[panel].y,
-    width: panelLayouts[panel].width,
-    height: panelLayouts[panel].height,
+    left: visibleLayouts[panel].x,
+    top: visibleLayouts[panel].y,
+    width: visibleLayouts[panel].width,
+    height: visibleLayouts[panel].height,
     zIndex: frontPanel === panel ? 12 : 10,
   } : undefined;
 
@@ -458,7 +479,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     event.preventDefault();
     setFrontPanel(panel);
     panelInteraction.current = { panel, mode, pointerId: event.pointerId,
-      startX: event.clientX, startY: event.clientY, initial: panelLayouts[panel] };
+      startX: event.clientX, startY: event.clientY, initial: visibleLayouts[panel] };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -472,7 +493,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
       : { ...interaction.initial, width: interaction.initial.width + deltaX,
         height: interaction.initial.height + deltaY };
     setPanelLayouts(current => ({ ...current,
-      [interaction.panel]: boundedLayout(next, interaction.panel, workspaceSize) }));
+      [interaction.panel]: boundedLayout(next, interaction.panel, workspaceSize, legendHeight) }));
   }
 
   function endPanelInteraction(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -485,13 +506,13 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     setFrontPanel(panel);
     const step = event.shiftKey ? 24 : 8;
     setPanelLayouts(current => {
-      const layout = current[panel];
+      const layout = boundedLayout(current[panel], panel, workspaceSize, legendHeight);
       const horizontal = event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0;
       const vertical = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0;
       const next = mode === 'move'
         ? { ...layout, x: layout.x + horizontal, y: layout.y + vertical }
         : { ...layout, width: layout.width + horizontal, height: layout.height + vertical };
-      return { ...current, [panel]: boundedLayout(next, panel, workspaceSize) };
+      return { ...current, [panel]: boundedLayout(next, panel, workspaceSize, legendHeight) };
     });
   }
 
@@ -637,7 +658,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
         .map(id => state.layers?.[id]?.revision))].join(',')}>
       <CheckupMap center={center} onPick={choose} resultCenter={taskCenter}
         layers={toggles} drawables={drawables} coverage={coverage} serviceMode={serviceMode}
-        categoryDirectory={directory}
+        categoryDirectory={directory} legendStyle={legendStyle} onLegendHeightChange={setLegendHeight}
         densityCategory={densityCategory} water={water}
         selectedId={selected} onSelect={setSelected} />
       <div className="wb-map-banners">

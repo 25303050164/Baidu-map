@@ -1,5 +1,5 @@
 /*
- * 体检工作台：地图铺满，左上操作卡、右上结果卡浮在地图上，图例在右下角。
+ * 体检工作台：地图铺满，左上操作卡、右上结果卡浮在地图上，图例跟随左侧卡片在下方。
  * 百度开放平台的做法：白卡片、大圆角、淡蓝阴影、主蓝只给主操作与关键数字；
  * 说明文字一律收进可展开的目录项（原生 details），卡面上只留控件与结论。
  */
@@ -198,14 +198,14 @@
 .api-map-notice strong{display:block;margin-bottom:4px;font-size:15px;color:var(--ink)}
 .api-muted{font-size:12px;line-height:1.7;color:var(--ink-3)}
 
-/* 图例：右下角白卡，头部可以收起；限定语用小一号的灰字。 */
-.api-map-legend{position:absolute;right:16px;bottom:28px;z-index:6;width:max-content;max-width:min(360px,calc(100% - 32px));
+/* 图例：左侧面板下方白卡，头部可以收起；限定语用小一号的灰字。 */
+.api-map-legend{position:absolute;left:16px;bottom:28px;z-index:6;width:max-content;max-width:min(360px,calc(100% - 32px));
   border-radius:12px;background:#fff;box-shadow:var(--shadow-card);font-size:12px;line-height:1.6;color:var(--ink-2)}
 .lg-head{display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;border:0;background:none;font-size:12px;font-weight:600;color:var(--ink);text-align:left}
 .lg-head::after{content:"";width:6px;height:6px;margin:0 0 3px auto;border-right:1.5px solid var(--ink-3);border-bottom:1.5px solid var(--ink-3);transform:rotate(45deg)}
 .api-map-legend[data-open="no"] .lg-head::after{margin-bottom:0;transform:rotate(-135deg)}
 .api-map-legend[data-open="no"] .lg-body{display:none}
-.lg-body{display:grid;gap:8px;max-height:40vh;overflow:auto;padding:0 14px 12px}
+.lg-body{display:grid;gap:8px;max-height:var(--legend-body-max-height,40vh);overflow:auto;padding:0 14px 12px}
 .api-legend-item{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .api-legend-item.api-legend-block{display:grid;gap:3px;white-space:normal}
 .api-legend-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
@@ -219,8 +219,8 @@
 .api-legend-cats{color:var(--ink-3)}
 .api-legend-cats .api-legend-item{gap:4px;color:var(--ink-2)}
 
-/* 平板：地图在上、两张卡片在下，整页滚动。 */
-@media(max-width:1080px){
+/* 平板与低高度窗口：地图在上、两张卡片在下，整页滚动。 */
+@media(max-width:1080px), (max-height:559px){
   .wb{height:auto;min-height:100dvh}
   .wb-body{flex:none;display:grid;overflow:visible;align-items:start;gap:12px;padding-bottom:12px;
     grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"map map" "side results"}
