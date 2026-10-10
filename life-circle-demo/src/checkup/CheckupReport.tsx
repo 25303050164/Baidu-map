@@ -1,3 +1,4 @@
+import { continuationLabel } from './capabilities';
 /**
  * v2 体检报告：覆盖率区间、灰区清单与证据说明。
  *
@@ -193,13 +194,14 @@ function DataSources({ view }: { view: DataSourcesView }) {
 const NO_REVIEWS: readonly WaterReviewRef[] = [];
 
 export function CheckupReport({ snapshot, stale, waterReviews = NO_REVIEWS, continuation,
-  busy = false, onContinue, onCancel }: {
+  busy = false, continuationPoiLimit = null, onContinue, onCancel }: {
   snapshot: CheckupSnapshot;
   stale?: boolean;
   /** 当前部署采用的水系复核（能力表）；用来认出早于复核的旧版本。 */
   waterReviews?: readonly WaterReviewRef[];
   continuation?: CheckupCompletion | null;
   busy?: boolean;
+  continuationPoiLimit?: number | null;
   onContinue?: () => void;
   onCancel?: () => void;
 }) {
@@ -230,7 +232,7 @@ export function CheckupReport({ snapshot, stale, waterReviews = NO_REVIEWS, cont
         {busy && <Alert type="info" title={`正在补全；正文保留第 ${snapshot.revision} 版报告`} />}
         {onContinue && continuation?.canContinue && !busy && <Button type="primary" disabled={stale}
           onClick={onContinue} data-testid="report-continue">
-          {continuation.restartRetrieval ? '复用边界，重新检索（最多 60 次）' : '继续补全，最多追加 60 次检索'}
+          {continuationLabel(continuation.restartRetrieval, continuationPoiLimit)}
         </Button>}
         {busy && onCancel && <Button onClick={onCancel}>停止本轮补全</Button>}
         {stale && <Alert type="warning" showIcon title="条件已修改，本报告仍属于原中心点的那一次体检。" />}

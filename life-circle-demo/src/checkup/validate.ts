@@ -171,7 +171,7 @@ export function validCompletion(value: unknown): boolean {
     'cumulativePoiRequests', 'routeRequests', 'routeRemaining', 'evaluatedCategories', 'totalCategories']
     .every(key => count(value[key]))
     && (value.roundPoiRequests as number) <= (value.roundPoiLimit as number)
-    && (value.roundPoiLimit as number) <= 60
+    && (value.roundPoiLimit as number) > 0
     && (value.routeRequests as number) + (value.routeRemaining as number) <= 120
     && (value.evaluatedCategories as number) <= (value.totalCategories as number)
     && object(value.queryCompleteByMajor) && Object.values(value.queryCompleteByMajor).every(v => typeof v === 'boolean')

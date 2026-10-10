@@ -188,7 +188,7 @@ def test_isochrone_stage_publishes_a_revision_without_a_second_facility_search(t
         # Every pool of the task is on the record, spent or not. The synthetic
         # transport issues no request, so the boundary reports none.
         assert trace["budgets"] == {"isochrone": {"limit": 200, "spent": 0},
-                                    "poi": {"limit": 60, "spent": 0},
+                                    "poi": {"limit": 1200, "spent": 0},
                                     "route": {"limit": 120, "spent": 0},
                                     "detail": {"limit": 20, "spent": 0}}
 
@@ -449,7 +449,7 @@ def test_capabilities_report_both_engines_and_the_fixed_distance_rule(tmp_path):
         assert rules["distance"]["tolerance_m"] == 100
         # The uncertainty band is never presented as a radius enlargement.
         assert rules["bandIsNotRadiusExpansion"] is True
-        assert document["budgets"]["poiRequests"] == 60
+        assert document["budgets"]["poiRequests"] == 1200
         assert document["budgets"]["routeRequests"] == 120
         assert document["coverage"]["queryPaddingM"] == 1300
 

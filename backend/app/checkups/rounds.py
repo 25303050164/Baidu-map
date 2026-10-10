@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS checkup_rounds (
  base_revision INTEGER NOT NULL, identity TEXT NOT NULL, legacy INTEGER NOT NULL DEFAULT 0,
  poi_before INTEGER NOT NULL DEFAULT 0, route_before INTEGER NOT NULL DEFAULT 0,
  network_before INTEGER NOT NULL DEFAULT 0, attempts_before INTEGER NOT NULL DEFAULT 0,
+ poi_limit INTEGER NOT NULL DEFAULT 60,
  PRIMARY KEY(task_id, number)
 );
 CREATE TABLE IF NOT EXISTS checkup_checkpoints (
@@ -43,7 +44,7 @@ class RoundStore:
         return dict(row) if row else None
 
     def begin_round(self, task_id, request_id, base_revision, identity, *, initial=False,
-                    poi_before=0, route_before=0, legacy=False):
+                    poi_before=0, route_before=0, legacy=False, poi_limit=60):
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             existing = db.execute('SELECT * FROM checkup_rounds WHERE request_id=?', (request_id,)).fetchone()
@@ -63,9 +64,11 @@ class RoundStore:
             previous = db.execute('SELECT number FROM checkup_rounds WHERE task_id=? ORDER BY number DESC LIMIT 1',
                                   (task_id,)).fetchone()
             number = previous['number'] + 1 if previous else (2 if legacy else 1)
-            db.execute('INSERT INTO checkup_rounds VALUES (?,?,?,?,?,?,?,?,?,?)',
+            db.execute('INSERT INTO checkup_rounds (task_id,number,request_id,base_revision,identity,legacy,'
+                       'poi_before,route_before,network_before,attempts_before,poi_limit) '
+                       'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                        (task_id, number, request_id, base_revision, identity, int(legacy),
-                        poi_before, route_before, task['network_requests'], task['requests']))
+                        poi_before, route_before, task['network_requests'], task['requests'], poi_limit))
             if not initial:
                 db.execute("UPDATE tasks SET status='queued', stage='poi', cancel_requested=0,"
                            " error=NULL, finished_at=NULL, progress=NULL, updated_at=? WHERE task_id=?",

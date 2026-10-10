@@ -122,7 +122,7 @@ def test_ten_categories_complete_across_manual_rounds_without_rebuilding_boundar
         return small_boundary()
     engine.compute = counted
     with TestClient(app) as client:
-        task_id, view = run(client, body())
+        task_id, view = run(client, body(facilities={"maxPoiRequests": 60}))
         assert view['status'] == 'completed', view
         first = document(client, task_id)
         first_bytes = json.dumps(first, sort_keys=True)
@@ -148,7 +148,8 @@ def test_ten_categories_complete_across_manual_rounds_without_rebuilding_boundar
             assert view['status'] == 'completed', view
             value = view['completion']
             assert value['roundNumber'] == number
-            assert 0 <= value['roundPoiRequests'] <= 60
+            assert value['roundPoiLimit'] == 1200
+            assert 60 < value['roundPoiRequests'] <= 1200
             assert value['routeRequests'] <= 120
             assert value['routeRequests'] + value['routeRemaining'] == 120
             assert value['cumulativePoiRequests'] >= history[-1]
@@ -210,7 +211,9 @@ def test_legacy_report_restarts_only_retrieval_and_preserves_historical_costs(tm
         assert response.status_code == 202, response.text
         final = terminal(client, task_id)
         assert final['status'] == 'completed', final
-        assert final['completion']['cumulativePoiRequests'] == 61
+        assert final['completion']['roundPoiLimit'] == 1200
+        assert final['completion']['cumulativePoiRequests'] == 1 + final['completion']['roundPoiRequests']
+        assert final['completion']['roundPoiRequests'] > 60
         assert final['completion']['routeRequests'] == 1
         assert final['completion']['routeRemaining'] == 0
         assert len(calls) == 1
@@ -222,7 +225,7 @@ def test_legacy_report_restarts_only_retrieval_and_preserves_historical_costs(tm
         rejected = client.post(f'/api/v2/checkups/{task_id}/continue',
                                json={'clientRequestId': 'incompatible', 'baseRevision': final['revision']})
         assert rejected.status_code == 409
-        assert rejected.json()['code'] == 'checkup_incompatible_continuation'
+        assert rejected.json()['code'] == 'checkup_cannot_continue'
 
 
 def test_cancel_then_restart_keeps_checkpoint_and_never_auto_resumes(tmp_path):
@@ -258,3 +261,84 @@ def test_cancel_then_restart_keeps_checkpoint_and_never_auto_resumes(tmp_path):
         assert new_calls == []
         assert len(places.sent) == len(set(places.sent))
         assert final['completion']['cumulativePoiRequests'] == len(places.sent)
+
+
+def test_default_budget_completes_ten_categories_in_one_round(tmp_path):
+    app = make_report_app(tmp_path, [ORIGIN])
+    app.state.checkups.registry.get('baidu_e82').compute = lambda *args, **kwargs: _small_boundary_async()
+    with TestClient(app) as client:
+        task_id, view = run(client, body())
+        value = view['completion']
+        assert view['status'] == 'completed', view
+        assert value['roundPoiLimit'] == 1200
+        assert 60 < value['roundPoiRequests'] < 1200
+        assert value['evaluationStatus'] == 'complete'
+        assert value['evaluatedCategories'] == 10
+        assert all(value['queryCompleteByMajor'].values())
+        result = document(client, task_id)
+        assert result['scores']['overall']['available']
+        assert result['completion']['roundPoiLimit'] == 1200
+        assert result['report']['completion']['roundPoiLimit'] == 1200
+
+
+async def _small_boundary_async():
+    return small_boundary()
+
+
+def test_dense_queries_stop_at_1200_including_retries():
+    attempts = 0
+    async def fetch(sequence, page):
+        nonlocal attempts
+        attempts += 1
+        if attempts % 3 == 1:
+            return None, 'timeout'
+        answer = two_pages(sequence, page)
+        answer['total'] = 1000  # truncated blocks require subdivision
+        return answer, None
+    current = OnlinePlanner(domain=QueryDomain.circle(1300), origin=PLANNER_ORIGIN,
+        categories=catalog.poi_keys(catalog.majors()), budget=1200, source='synthetic')
+    result = asyncio.run(current.run(fetch))
+    assert result.status == 'partial'
+    assert result.stop_reason == 'budget_exhausted'
+    assert result.attempts == attempts == 1200
+    assert current.checkpoint()['queue'] or any(current.checkpoint()['later'].values())
+
+
+def test_old_round_schema_migrates_actual_initial_and_fixed_continuation_limits(tmp_path):
+    store = CheckupStore(tmp_path)
+    store.initialize()
+    store.create(task_id='old', client_request_id='old-request', engine='test', fingerprint='x',
+                 payload={'facilities': {'max_poi_requests': 7}}, budget=200)
+    with store._connection() as db:
+        db.execute('DROP TABLE checkup_rounds')
+        db.execute('CREATE TABLE checkup_rounds (task_id TEXT,number INTEGER,request_id TEXT,'
+                   'base_revision INTEGER,identity TEXT,legacy INTEGER,poi_before INTEGER,'
+                   'route_before INTEGER,network_before INTEGER,attempts_before INTEGER)')
+        db.execute("INSERT INTO checkup_rounds VALUES ('old',1,'old-request',0,'x',0,0,0,0,0)")
+        db.execute("INSERT INTO checkup_rounds VALUES ('old',2,'old-next',5,'x',0,7,1,8,8)")
+    store.create_schema()
+    store.create_schema()  # migration is idempotent
+    with store._connection() as db:
+        rows = db.execute('SELECT number,poi_limit FROM checkup_rounds ORDER BY number').fetchall()
+    assert [tuple(row) for row in rows] == [(1, 7), (2, 60)]
+
+
+def test_budget_contract_accepts_1200_and_keeps_historical_completion_default():
+    from pydantic import ValidationError
+    from app.checkups.models import CheckupFacilities, CheckupCompletion
+    assert CheckupFacilities().max_poi_requests == 1200
+    assert CheckupFacilities(max_poi_requests=1200).max_poi_requests == 1200
+    with pytest.raises(ValidationError):
+        CheckupFacilities(max_poi_requests=1201)
+    assert CheckupCompletion().round_poi_limit == 60
+
+
+def test_partial_report_rejects_changed_data_version(tmp_path):
+    app, _ = fast_app(tmp_path, SyntheticPlaces(at_origin()))
+    with TestClient(app) as client:
+        task_id, view = run(client, body(facilities={'maxPoiRequests': 1, 'maxRouteRequests': 1}))
+        app.state.checkups.settings.osm_data_version = 'changed'
+        response = client.post(f'/api/v2/checkups/{task_id}/continue',
+            json={'clientRequestId': 'changed-data', 'baseRevision': view['revision']})
+        assert response.status_code == 409
+        assert response.json()['code'] == 'checkup_incompatible_continuation'

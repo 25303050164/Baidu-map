@@ -1,3 +1,4 @@
+import { capabilityView, continuationLabel } from './capabilities';
 import { describe, expect, it, vi } from 'vitest';
 import { CheckupController } from './controller';
 import { CheckupError, type CheckupService } from './client';
@@ -76,6 +77,8 @@ describe('manual report continuation', () => {
   it('validates limits while accepting historical responses with no continuation fields', () => {
     expect(validCompletion(undefined)).toBe(true);
     expect(validCompletion(completion)).toBe(true);
+    expect(validCompletion({ ...completion, roundPoiLimit: 1200, roundPoiRequests: 1200 })).toBe(true);
+    expect(validCompletion({ ...completion, roundPoiLimit: 1200, roundPoiRequests: 1201 })).toBe(false);
     expect(validCompletion({ ...completion, roundPoiRequests: 61 })).toBe(false);
     expect(validCompletion({ ...completion, routeRequests: 121 })).toBe(false);
     expect(validCompletion({ ...completion, evaluatedCategories: 3 })).toBe(false);
@@ -91,4 +94,14 @@ describe('manual report continuation', () => {
     expect(controller.state.snapshot?.revision).toBe(5);
     expect(api.continueReport).not.toHaveBeenCalled();
   });
+});
+
+it('uses the next-round capability allowance rather than the historical report limit', () => {
+  const value = capabilities();
+  value.budgets.poiRequests = 1200;
+  const view = capabilityView(value);
+  expect(view.poiRoundLimit).toBe(1200);
+  expect(continuationLabel(completion.restartRetrieval, view.poiRoundLimit)).toContain('1200');
+  expect(continuationLabel(true, view.poiRoundLimit)).toBe('复用边界，重新检索（最多 1200 次）');
+  expect(continuationLabel(false)).toBe('继续补全');
 });

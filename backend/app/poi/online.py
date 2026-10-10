@@ -1,7 +1,8 @@
 """§4.2 adaptive online planning: coarse blocks, rotation, subdivision, evidence.
 
 The full-catalog fixed 4×4 plan in ``planner.py`` needs 1520 first-page requests and
-cannot fit the standard 60-attempt online budget. This module plans the same
+cannot fit the former 60-attempt online budget. Checkups now allow up to 1200
+attempts per round. This module plans the same
 ``around`` search adaptively instead: it starts from the query domain's envelope
 split 2×2, keeps the blocks that intersect the domain, and spends its budget in a
 rotation across categories so that no category is exhausted first.

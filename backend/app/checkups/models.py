@@ -26,10 +26,10 @@ TaskStatus = Literal["queued", "running", "cancelling", "completed", "failed", "
 BusinessStatus = Literal["complete", "partial", "insufficient"]
 Stage = Literal["isochrone", "poi", "accessibility", "verification", "reporting", "ready"]
 
-# Fixed first-release budgets. A request may lower them, never raise them.
-DEFAULT_POI_REQUESTS = 60
+# Finite checkup budgets. Callers may lower these limits.
+DEFAULT_POI_REQUESTS = 1200
 DEFAULT_ROUTE_REQUESTS = 120
-MAX_POI_REQUESTS = 60
+MAX_POI_REQUESTS = 1200
 MAX_ROUTE_REQUESTS = 120
 DETAIL_ROUTE_REQUESTS = 20
 

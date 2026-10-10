@@ -44,6 +44,7 @@ export type CapabilityView = {
   defaultEngine: string | null;
   defaultBudget: number | null;
   quota: QuotaSummary;
+  poiRoundLimit: number | null;
   /** 当前部署采用的水系复核（用来认出早于复核的旧版本）；旧后端不给时为空。 */
   waterReviews: WaterReviewRef[];
   categoryDirectory: Array<{ id: string; label: string; order: number }>;
@@ -101,6 +102,8 @@ export function capabilityView(value: Capabilities): CapabilityView {
     // 默认预算由后端指定，且必须在这一档里：校验层已经查过，这里不再兜底。
     defaultBudget: first?.defaultBudget ?? null,
     quota: quotaSummary(value),
+    poiRoundLimit: number(value.budgets.poiRequests) && value.budgets.poiRequests > 0
+      ? value.budgets.poiRequests : null,
     waterReviews: waterReviewRefs(value.waterReviews),
     categoryDirectory: value.categoryDirectory ?? [],
   };
@@ -110,4 +113,10 @@ export function capabilityView(value: Capabilities): CapabilityView {
 export function budgetFor(view: CapabilityView, engineId: string): number | null {
   const engine = view.engines.find(item => item.engineId === engineId);
   return engine?.defaultBudget ?? null;
+}
+
+/** The next round's allowance comes from capabilities, not the frozen prior report. */
+export function continuationLabel(restart: boolean, limit: number | null = null): string {
+  return restart ? `复用边界，重新检索${limit === null ? '' : `（最多 ${limit} 次）`}`
+    : `继续补全${limit === null ? '' : `，最多追加 ${limit} 次检索`}`;
 }

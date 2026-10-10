@@ -21,10 +21,14 @@ for (const width of [1440, 390]) {
   test(`manual continuation preserves report and restores the same round at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await setup(page, { tenCategories: true });
+    await page.route('**/api/v2/capabilities', route => {
+      const value = capabilities(); value.budgets.poiRequests = 1200;
+      return route.fulfill({ json: value });
+    });
     let running = false, finished = false, posts = 0;
     const completion = (): CheckupCompletion => ({ reportRevision: finished ? 9 : 5,
-      roundNumber: posts ? 2 : 1, roundPoiLimit: 60, roundPoiRequests: running ? 12 : 60,
-      cumulativePoiRequests: posts ? (running ? 72 : 120) : 60, routeRequests: 120, routeRemaining: 0,
+      roundNumber: posts ? 2 : 1, roundPoiLimit: posts ? 1200 : 60, roundPoiRequests: running ? 12 : (posts ? 90 : 60),
+      cumulativePoiRequests: posts ? (running ? 72 : 150) : 60, routeRequests: 120, routeRemaining: 0,
       queryCompleteByMajor: { medical: false, shopping: true }, evaluatedCategories: 6, totalCategories: 10,
       evaluationStatus: 'partial', canContinue: !running, restartRetrieval: false,
       stopReason: running ? null : 'budget_exhausted', limitations: ['设施检索尚未完成'] });
@@ -55,6 +59,7 @@ for (const width of [1440, 390]) {
     await page.getByRole('button', { name: '开始体检', exact: true }).click();
     const reportPanel = page.getByTestId('checkup-report');
     await expect(reportPanel).toBeVisible();
+    await expect(page.getByTestId('report-continue')).toContainText('1200');
     await page.getByTestId('report-continue').click();
     await expect(reportPanel).toContainText('正文保留第 5 版报告');
     expect(posts).toBe(1);
@@ -64,7 +69,7 @@ for (const width of [1440, 390]) {
     finished = true; running = false;
     await expect(page.getByTestId('checkup-report')).toBeVisible();
     await expect(page.getByTestId('checkup-report')).not.toContainText('正文保留');
-    await expect(page.getByTestId('checkup-report').getByTestId('checkup-completion')).toContainText('累计 120 次');
+    await expect(page.getByTestId('checkup-report').getByTestId('checkup-completion')).toContainText('累计 150 次');
     expect(posts).toBe(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
@@ -708,7 +713,7 @@ test('stages advance as the backend reports them, and the engines come from the 
   // 档位是引擎自己带来的，不是界面写死的三档。
   // antd 的下拉项由虚拟列表渲染，可见性判定不稳，这里断言挂载与文本 —— 那才是"能选什么"。
   await expect(page.getByTestId('checkup-time-estimate')).toHaveAttribute('data-budget', '400');
-  await expect(page.getByTestId('checkup-time-estimate')).toContainText('全程约 3–14 分钟');
+  await expect(page.getByTestId('checkup-time-estimate')).toContainText('历史任务参考 3–14 分钟');
   await page.getByRole('combobox', { name: '调用预算' }).click();
   await expect(page.getByRole('option', { name: /200 次.*2–7 分钟/ })).toBeAttached();
   await expect(page.getByRole('option', { name: /400 次.*3–14 分钟/ })).toBeAttached();

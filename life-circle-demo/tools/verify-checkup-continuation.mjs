@@ -75,7 +75,7 @@ try {
     await expect(page.getByTestId('checkup-phase')).toHaveAttribute('data-phase', 'completed', { timeout: 60000 });
     const snapshot = await read('/result');
     if (JSON.stringify(snapshot.isochrone) !== JSON.stringify(initial.isochrone)) throw new Error('Boundary changed');
-    if (snapshot.completion.roundPoiRequests > 60 || snapshot.completion.routeRequests > 120) throw new Error('Budget exceeded');
+    if (snapshot.completion.roundPoiRequests > snapshot.completion.roundPoiLimit || snapshot.completion.routeRequests > 120) throw new Error('Budget exceeded');
     writeFileSync(resolve(output, `round-${snapshot.completion.roundNumber}.json`), JSON.stringify(snapshot, null, 2));
   }
   await page.reload();

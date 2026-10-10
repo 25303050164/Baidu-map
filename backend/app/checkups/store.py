@@ -151,6 +151,19 @@ class CheckupStore(RoundStore):
                                                isolation_level=None)
             connection.executescript(SCHEMA)
             connection.executescript(ROUND_SCHEMA)
+            connection.execute("BEGIN IMMEDIATE")
+            round_columns = {row["name"] for row in connection.execute("PRAGMA table_info(checkup_rounds)")}
+            if "poi_limit" not in round_columns:
+                connection.execute("ALTER TABLE checkup_rounds ADD COLUMN poi_limit INTEGER NOT NULL DEFAULT 60")
+                # Old continuation rounds always used 60. Initial rounds could
+                # explicitly lower it; missing request fields meant 60 then.
+                for row in connection.execute("SELECT r.task_id,t.payload FROM checkup_rounds r "
+                                              "JOIN tasks t ON t.task_id=r.task_id WHERE r.number=1").fetchall():
+                    facilities = json.loads(row["payload"]).get("facilities", {})
+                    limit = facilities.get("max_poi_requests", facilities.get("maxPoiRequests", 60))
+                    connection.execute("UPDATE checkup_rounds SET poi_limit=? WHERE task_id=? AND number=1",
+                                       (limit, row["task_id"]))
+            connection.execute("COMMIT")
             present = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
             for name, declaration in ADDED_COLUMNS:
                 if name not in present:

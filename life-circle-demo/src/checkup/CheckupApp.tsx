@@ -20,7 +20,7 @@ import { Alert, Button, Checkbox, Descriptions, Drawer, InputNumber, Select } fr
 import type { Center } from '../types';
 import { LocationControls } from '../analysis/LocationControls';
 import { createCheckupService, CheckupError } from './client';
-import { budgetFor, capabilityView, type CapabilityView } from './capabilities';
+import { budgetFor, capabilityView, continuationLabel, type CapabilityView } from './capabilities';
 import { isCheckupBusy, STAGE_LABELS } from './types';
 import type { CheckupState } from './types';
 import { checkupSession, useCheckupState } from './sessions';
@@ -555,7 +555,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
                 value, label: `${value} 次 · ${estimateTime(value)}`,
               }))} /></label>
             {budget !== null && <p className="wb-estimate" data-testid="checkup-time-estimate"
-              data-budget={budget}>全程约 {estimateTime(budget)}</p>}
+              data-budget={budget}>历史任务参考 {estimateTime(budget)}；深度设施检索会延长耗时。</p>}
             <p className="wb-hint">实际用时受网络影响</p>
             <p className="wb-hint">步行 900 秒 · 服务标准 1000 米</p>
             {selectedEngine?.alert && <Alert type="warning" showIcon title={selectedEngine.alert} />}
@@ -679,7 +679,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
           {task?.completion?.canContinue && !busy && <Button block type="primary"
             data-testid="checkup-continue" disabled={stale}
             onClick={() => void controller.continueReport()}>
-            {task.completion.restartRetrieval ? '复用边界，重新检索（最多 60 次）' : '继续补全，最多追加 60 次检索'}
+            {continuationLabel(task.completion.restartRetrieval, view?.poiRoundLimit)}
           </Button>}
           {state.error && <Alert type="error" title={state.error} showIcon data-testid="checkup-error"
             action={<Button aria-label="重试" size="small"
@@ -761,7 +761,7 @@ export default function CheckupApp({ engine, algorithmSwitch }: { engine: string
     <Drawer title="体检报告" open={reportOpen} onClose={() => setReportOpen(false)} size={960}
       rootClassName="rp-drawer">
       {snapshot ? <CheckupReport snapshot={snapshot} stale={stale} waterReviews={view?.waterReviews}
-        continuation={task?.completion} busy={busy}
+        continuation={task?.completion} continuationPoiLimit={view?.poiRoundLimit} busy={busy}
         onContinue={() => void controller.continueReport()} onCancel={() => void controller.cancel()} />
         : <p className="api-muted">体检完成后在这里显示报告。</p>}
     </Drawer>

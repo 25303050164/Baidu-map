@@ -332,7 +332,8 @@ class CheckupManager(ContinuationMixin):
         # an orderly stop never discards a result that has been paid for.
         self._publish_isochrone(task_id, payload, snapshot, budget)
         self.store.begin_round(task_id, payload.client_request_id, 0,
-                               self._round_identity(payload, snapshot), initial=True)
+                               self._round_identity(payload, snapshot), initial=True,
+                               poi_limit=payload.facilities.max_poi_requests)
         self._bind_round(task_id, budget)
         if token.cancelled:
             self._finish(task_id, status="cancelled",

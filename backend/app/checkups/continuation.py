@@ -7,7 +7,7 @@ from ..engines import EngineContext, IsochroneSnapshot, canonical_hash
 from ..poi.online import RETRY_ERRORS, FATAL
 from .facilities import collect_facilities
 from .facilities import FacilityOutcome
-from .models import CheckupCompletion, CheckupRequest, DISTANCE_RULE, RULE_VERSION, TERMINAL
+from .models import CheckupCompletion, CheckupRequest, DEFAULT_POI_REQUESTS, DISTANCE_RULE, RULE_VERSION, TERMINAL
 from .progress import StepReporter
 from .rounds import RoundConflict
 
@@ -132,6 +132,9 @@ class ContinuationMixin:
                 next((row['revision'] for row in reversed(self.store.revisions(task_id))
                       if row['stage'] == 'reporting'), 0)),
             round_number=current['number'] if current else 1,
+            round_poi_limit=current['poi_limit'] if current else
+                record.payload.get('facilities', {}).get('max_poi_requests',
+                    record.payload.get('facilities', {}).get('maxPoiRequests', 60)),
             round_poi_requests=used.get('poi', 0) if current else poi,
             cumulative_poi_requests=poi, route_requests=route,
             route_remaining=max(0, payload.facilities.max_route_requests - route),
@@ -169,7 +172,8 @@ class ContinuationMixin:
         try:
             created = self.store.begin_round(task_id, request.client_request_id, request.base_revision,
                                             identity, poi_before=completion.cumulative_poi_requests,
-                                            route_before=completion.route_requests, legacy=old is None)
+                                            route_before=completion.route_requests, legacy=old is None,
+                                            poi_limit=DEFAULT_POI_REQUESTS)
         except RoundConflict as exc:
             raise CheckupError(409, 'checkup_' + str(exc), '续查状态发生冲突，请刷新后重试') from None
         if created:
@@ -182,7 +186,7 @@ class ContinuationMixin:
         current = self.store.round(task_id)
         previous, _ = self.snapshot(task_id, current['base_revision'])
         frozen = IsochroneSnapshot(**previous.isochrone)
-        budget = self.quota.task_budget(isochrone=record.budget, poi=60,
+        budget = self.quota.task_budget(isochrone=record.budget, poi=current['poi_limit'],
                                        route=payload.facilities.max_route_requests)
         budget.spent['route'] = current['route_before']
         self._bind_round(task_id, budget)
@@ -196,9 +200,9 @@ class ContinuationMixin:
                                 artifact_dir=self.store.artifact_dir(task_id))
         report = StepReporter(lambda **fields: self.store.update(task_id, **fields))
         self.store.update(task_id, stage='poi')
-        # Each continuation gets 60 POI attempts, regardless of a smaller first round.
+        # Use the admitted round limit, including after a deployment or restart.
         continuation_payload = payload.model_copy(update={'facilities': payload.facilities.model_copy(
-            update={'max_poi_requests': 60})})
+            update={'max_poi_requests': current['poi_limit']})})
         outcome = await collect_facilities(
             continuation_payload, frozen, settings=self.settings, context=context, quota=self.quota,
             budget=budget, cache=self.cache, places_factory=self.place_factory, store=self.store,
